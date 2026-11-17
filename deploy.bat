@@ -2,7 +2,7 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 title WOW Nightswarm - Decentraland deploy
-if exist .git (where git >nul 2>nul && (echo [0/3] Getting the latest version... & git pull --ff-only))
+if exist .git (where git >nul 2>nul && (echo [0/3] Checking for updates... & git pull --ff-only -q >nul 2>nul))
 where node >nul 2>nul || (echo [!] Node.js is not installed. Install the LTS version from https://nodejs.org and run this again. & start https://nodejs.org & pause & exit /b 1)
 echo [1/3] Installing packages (first time only takes a few minutes)...
 call npm install --no-audit --no-fund || (pause & exit /b 1)
