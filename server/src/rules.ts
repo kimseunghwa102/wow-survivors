@@ -4,9 +4,15 @@ export type MetaKey = (typeof META_KEYS)[number]
 export const META_MAX = 5
 export const metaCost = (lvl: number) => 80 * (lvl + 1) * (lvl + 1)
 
+/** Armory: permanent manual weapons, bought in order. Must match ARMORY in src/game/defs.ts. */
+export const ARMORY_COST = [0, 200, 500, 2000, 4000, 20000, 100000]
+/** Daily login streak rewards (day 1..7, day 7+ repeats the last). */
+export const DAILY_REWARD = [100, 150, 250, 400, 600, 800, 1200]
+export const dayKey = (t = Date.now()) => new Date(t).toISOString().slice(0, 10)
+
 /** Anti-cheat ceilings. The game runs on the player's client, so the server only accepts plausible results. */
 export const LIMITS = {
-  goldPerSecond: 12, // strongest simulated runs earn ~6.5 gold/s
+  goldPerSecond: 25, // deep runs (bosses, scaled coins) peak around ~15 gold/s
   goldPerPvpKill: 150,
   goldBase: 0, // no free allowance, otherwise run-spam would farm gold
   killsPerSecond: 20,

@@ -5,7 +5,7 @@ import {
 } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { Run, Ev } from './core'
-import { ENEMIES, EnemyKind } from './defs'
+import { ENEMIES, EnemyKind, ARMORY, bossFor } from './defs'
 
 const HIDE = Vector3.create(32, -40, 24)
 const V = Vector3.create
@@ -31,7 +31,7 @@ class Pool {
 }
 
 // ─────────────── pools ───────────────
-const ENEMY_POOL: Record<EnemyKind, number> = { bat: 55, ghoul: 40, skeleton: 35, wraith: 25, elite: 3, lich: 2 }
+const ENEMY_POOL: Record<EnemyKind, number> = { bat: 52, ghoul: 38, skeleton: 33, wraith: 24, elite: 3, boss: 0 }
 const enemyPools = {} as Record<EnemyKind, Pool>
 const enemyEnt = new Map<number, { e: Entity; kind: EnemyKind }>()
 
@@ -55,6 +55,25 @@ let novaPool: [Pool, Pool]
 let strikePool: [Pool, Pool]
 let lvlPool: Pool
 let dmgPool: Pool
+// armory / boss visuals
+const SWING_FX = ['fist', 'pan', 'hammer', 'flame', 'reaper'] as const
+const swingPools = {} as Record<(typeof SWING_FX)[number], Pool>
+let quakePool: Pool
+let tracerPool: Pool
+let warnPool: Pool
+let slamPool: Pool
+let bossEnt: Entity
+let bossShown = 0
+let held: Entity
+let heldTier = -1
+let swingT = 0
+let missile: Entity
+let blast: Entity
+let nukeFlight: null | { x0: number; z0: number; x1: number; z1: number; t: number; d: number } = null
+let blastT = 0
+let blastR = 0
+type Fx = { e: Entity; life: number; max: number; pool: Pool; kind: 'swing' | 'quake' | 'tracer' | 'warn' | 'slam'; r: number; w?: number }
+const fxs: Fx[] = []
 
 function fxPool(k: FxKind, n: number, spin = 0): [Pool, Pool] {
   const make = (asc: boolean) =>
@@ -105,6 +124,17 @@ export function setupView() {
   novaPool = fxPool('pulse', 4)
   strikePool = fxPool('sigil', 10)
   lvlPool = pick('models/fx_levelup.glb', 2, 90)
+  bossEnt = ent()
+  held = ent()
+  for (const k of SWING_FX) swingPools[k] = pick(`models/fx_sw_${k}.glb`, 3, 0)
+  quakePool = pick('models/fx_quake.glb', 3, 0)
+  tracerPool = pick('models/fx_tracer.glb', 8, 0)
+  missile = ent()
+  GltfContainer.create(missile, { src: 'models/w_nuke.glb' })
+  blast = ent()
+  GltfContainer.create(blast, { src: 'models/fx_nuke.glb' })
+  warnPool = pick('models/fx_slam_warn.glb', 2, 0)
+  slamPool = pick('models/fx_slam.glb', 2, 0)
   dmgPool = new Pool(() => {
     const e = ent()
     TextShape.create(e, { text: '', fontSize: 3, textColor: Color4.White(), font: Font.F_SANS_SERIF, textAlign: TextAlignMode.TAM_MIDDLE_CENTER, outlineWidth: 0.2, outlineColor: Color3.Black() })
@@ -124,9 +154,24 @@ let dmgCount = 0
 export function renderRun(run: Run | null, events: Ev[], dt: number) {
   // enemies
   const seen = new Set<number>()
+  let bossSeen = false
   if (run) {
     for (const e of run.enemies) {
       if (!e.alive) continue
+      if (e.kind === 'boss') {
+        bossSeen = true
+        const bt = Transform.getMutable(bossEnt)
+        if (bossShown !== e.id) {
+          bossShown = e.id
+          const d = bossFor(e.boss ?? 0)
+          GltfContainer.createOrReplace(bossEnt, { src: d.model })
+          Animator.createOrReplace(bossEnt, { states: [{ clip: 'Idle', playing: true, loop: true, speed: 0.8 }] })
+          bt.scale = V(d.scale, d.scale, d.scale)
+        }
+        bt.position = V(e.x, 0, e.z)
+        bt.rotation = yawQ((Math.atan2(run.x - e.x, run.z - e.z) * 180) / Math.PI)
+        continue
+      }
       seen.add(e.id)
       let v = enemyEnt.get(e.id)
       if (!v) {
@@ -134,11 +179,17 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
         if (!ent_) continue
         v = { e: ent_, kind: e.kind }
         enemyEnt.set(e.id, v)
+        const sc = ENEMIES[e.kind].scale * e.sc
+        Transform.getMutable(ent_).scale = V(sc, sc, sc)
       }
       const t = Transform.getMutable(v.e)
       t.position = V(e.x, ENEMIES[e.kind].hover, e.z)
       t.rotation = yawQ((Math.atan2(run.x - e.x, run.z - e.z) * 180) / Math.PI)
     }
+  }
+  if (!bossSeen && bossShown) {
+    bossShown = 0
+    Transform.getMutable(bossEnt).position = HIDE
   }
   for (const [id, v] of enemyEnt)
     if (!seen.has(id)) {
@@ -252,6 +303,49 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
       t.rotation = yawQ(Math.random() * 360)
       t.scale = V(ev.r * 2, 1, ev.r * 2)
       active.push({ e, life: 0.28, max: 0.28, kind: 'strike', r: ev.r, asc })
+    } else if (ev.t === 'swing') {
+      const kind = ARMORY[ev.tier].fx as (typeof SWING_FX)[number]
+      const e = swingPools[kind]?.take()
+      swingT = 0.2
+      if (!e) continue
+      const t = Transform.getMutable(e)
+      t.position = V(ev.x, 1.0, ev.z)
+      t.rotation = yawQ(ev.yaw)
+      const w = ev.range * (ev.arc >= 180 ? 2.3 : ev.arc >= 140 ? 1.9 : 1.5)
+      t.scale = V(w, 1, ev.range * 1.1)
+      fxs.push({ e, life: 0.2, max: 0.2, pool: swingPools[kind], kind: 'swing', r: ev.range, w })
+    } else if (ev.t === 'quake') {
+      const e = quakePool.take()
+      if (!e) continue
+      Transform.getMutable(e).position = V(ev.x, 0.05, ev.z)
+      fxs.push({ e, life: 0.4, max: 0.4, pool: quakePool, kind: 'quake', r: ev.r })
+    } else if (ev.t === 'tracer') {
+      const e = tracerPool.take()
+      swingT = 0.06
+      if (!e) continue
+      const t = Transform.getMutable(e)
+      t.position = V(ev.x, 1.15, ev.z)
+      t.rotation = yawQ(ev.yaw)
+      t.scale = V(1, 1, ev.len)
+      fxs.push({ e, life: 0.07, max: 0.07, pool: tracerPool, kind: 'tracer', r: ev.len })
+    } else if (ev.t === 'nukeLaunch') {
+      nukeFlight = { x0: ev.x, z0: ev.z, x1: ev.tx, z1: ev.tz, t: 0, d: ev.delay }
+    } else if (ev.t === 'nuke') {
+      nukeFlight = null
+      Transform.getMutable(missile).position = HIDE
+      blastT = 2.2
+      blastR = ev.r
+      Transform.getMutable(blast).position = V(ev.x, 0, ev.z)
+    } else if (ev.t === 'slamWarn') {
+      const e = warnPool.take()
+      if (!e) continue
+      Transform.getMutable(e).position = V(ev.x, 0.05, ev.z)
+      fxs.push({ e, life: ev.dur, max: ev.dur, pool: warnPool, kind: 'warn', r: ev.r })
+    } else if (ev.t === 'slam') {
+      const e = slamPool.take()
+      if (!e) continue
+      Transform.getMutable(e).position = V(ev.x, 0.05, ev.z)
+      fxs.push({ e, life: 0.55, max: 0.55, pool: slamPool, kind: 'slam', r: ev.r })
     } else if (ev.t === 'levelup' && run) {
       const e = lvlPool.take()
       if (!e) continue
@@ -267,6 +361,64 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
       Transform.getMutable(e).position = V(ev.x + (Math.random() - 0.5) * 0.4, 1.8, ev.z)
       active.push({ e, life: 0.6, max: 0.6, kind: 'dmg', y: 1.8, asc: false })
     }
+  }
+  for (let i = fxs.length - 1; i >= 0; i--) {
+    const f = fxs[i]
+    f.life -= dt
+    const k = 1 - Math.max(0, f.life) / f.max
+    const t = Transform.getMutable(f.e)
+    if (f.kind === 'swing') t.scale = V(f.w! * (0.8 + 0.3 * k), 1, f.r * 1.1)
+    else if (f.kind === 'quake') t.scale = V(f.r * 2 * (0.3 + 0.7 * k), 1, f.r * 2 * (0.3 + 0.7 * k))
+    else if (f.kind === 'warn') t.scale = V(f.r * 2 * (0.15 + 0.85 * k), 1, f.r * 2 * (0.15 + 0.85 * k))
+    else if (f.kind === 'slam') t.scale = V(f.r * 2 * (0.4 + 0.6 * k), 1 + (1 - k) * 3, f.r * 2 * (0.4 + 0.6 * k))
+    if (f.life <= 0) {
+      f.pool.give(f.e)
+      fxs.splice(i, 1)
+    }
+  }
+  // nuke missile arc + blast
+  if (nukeFlight) {
+    const n = nukeFlight
+    n.t += dt
+    const k = Math.min(1, n.t / n.d)
+    const x = n.x0 + (n.x1 - n.x0) * k
+    const z = n.z0 + (n.z1 - n.z0) * k
+    const y = 1.5 + Math.sin(k * Math.PI) * 9 - k * 1.5
+    const vy = Math.cos(k * Math.PI) * 9 * Math.PI - 1.5
+    const horiz = Math.hypot(n.x1 - n.x0, n.z1 - n.z0) || 1
+    const t = Transform.getMutable(missile)
+    t.position = V(x, y, z)
+    t.rotation = Quaternion.multiply(yawQ((Math.atan2(n.x1 - n.x0, n.z1 - n.z0) * 180) / Math.PI), Quaternion.fromEulerDegrees((-Math.atan2(vy / n.d, horiz / n.d) * 180) / Math.PI, 0, 0))
+    t.scale = V(1.6, 1.6, 1.6)
+  }
+  if (blastT > 0) {
+    blastT -= dt
+    const k = 1 - Math.max(0, blastT) / 2.2
+    const d = blastR * 2 * Math.min(1, 0.2 + k * 1.6)
+    Transform.getMutable(blast).scale = V(d, blastR * (0.4 + k * 0.9), d)
+    if (blastT <= 0) Transform.getMutable(blast).position = HIDE
+  }
+  // the equipped armory weapon floats at the player's right hand and swings
+  const want = run && run.alive ? run.equip : -1
+  if (want !== heldTier) {
+    heldTier = want
+    if (want >= 0) GltfContainer.createOrReplace(held, { src: ARMORY[want].model })
+    else Transform.getMutable(held).position = HIDE
+  }
+  if (run && run.alive && want >= 0) {
+    const yaw = aimYaw
+    const a = (yaw * Math.PI) / 180
+    const fx = Math.sin(a)
+    const fz = Math.cos(a)
+    const gun = !!ARMORY[want].gun
+    if (swingT > 0) swingT -= dt
+    const sk = Math.max(0, swingT) / (gun ? 0.06 : 0.2)
+    const swing = gun ? 0 : (1 - sk) * 150 - 80
+    const push = gun ? -sk * 0.15 : want === 0 ? Math.sin((1 - sk) * Math.PI) * 0.5 : 0
+    const t = Transform.getMutable(held)
+    t.position = V(run.x + fz * 0.5 + fx * (0.25 + push), gun ? 1.15 : 1.25, run.z - fx * 0.5 + fz * (0.25 + push))
+    t.rotation = Quaternion.multiply(yawQ(yaw + (swingT > 0 ? swing : -20)), Quaternion.fromEulerDegrees(gun ? 0 : swingT > 0 ? 10 : -35, 0, 0))
+    t.scale = V(1, 1, 1)
   }
   for (let i = active.length - 1; i >= 0; i--) {
     const a = active[i]
@@ -301,7 +453,17 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
   }
 }
 
+let aimYaw = 0
+/** where the player aims (camera yaw) — set by the game each frame */
+export function setAim(y: number) {
+  aimYaw = y
+}
+
 /** clear everything (run ended) */
 export function clearView() {
   renderRun(null, [], 0)
+  nukeFlight = null
+  Transform.getMutable(missile).position = HIDE
+  Transform.getMutable(bossEnt).position = HIDE
+  bossShown = 0
 }

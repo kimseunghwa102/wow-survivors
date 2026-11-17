@@ -1,14 +1,14 @@
 // Game controller: glues the simulation, rendering, sound, multiplayer and UI state together.
-import { engine, Transform, AvatarLocomotionSettings } from '@dcl/sdk/ecs'
+import { engine, Transform, AvatarLocomotionSettings, inputSystem, InputAction, PointerEventType } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
 import { movePlayerTo } from '~system/RestrictedActions'
 import LAYOUT from '../../layout.json'
 import { Run, Option, Ev, inArena } from './core'
-import { WeaponId, WEAPONS } from './defs'
-import { renderRun, clearView, setupView } from './view'
+import { WeaponId, WEAPONS, ARMORY, NUKE_TIER, bossFor } from './defs'
+import { renderRun, clearView, setupView, setAim } from './view'
 import { play, setupSfx, musicLevel } from './sfx'
 import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf } from './net'
-import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile } from './persist'
+import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile, serverArmoryBuy, serverClaimDaily } from './persist'
 
 export type Phase = 'idle' | 'start' | 'running' | 'levelup' | 'chest' | 'dead'
 export type MetaKey = 'might' | 'hp' | 'magnet' | 'xp'
@@ -37,8 +37,21 @@ export const G = {
   hurtFlash: 0,
   shopOpen: false,
   lastAttackerId: '',
-  pvpKills: 0
+  pvpKills: 0,
+  // armory + daily
+  armory: 0,
+  equip: -1, // -1 = best owned
+  armoryOpen: false,
+  armoryBusy: false,
+  daily: null as null | { streak: number; claimable: boolean; next: number; doubleReady: boolean },
+  dailyBusy: false,
+  flash: 0, // white screen flash (nuke)
+  aim: 0,
+  nukeAsk: false,
+  doubleBonus: 0
 }
+
+export const equipped = () => Math.min(G.equip < 0 ? G.armory : G.equip, G.armory, NUKE_TIER - 1)
 
 export function banner(text: string, sec = 3) {
   G.banner = text
@@ -50,11 +63,53 @@ export function applyProfile(p: ServerProfile | null) {
   G.bank = p.bank
   G.meta = { ...p.meta }
   G.best = { t: p.best.time, l: p.best.level, k: p.best.kills }
+  if (p.armory !== undefined) G.armory = Math.max(G.armory, p.armory)
+  if (p.daily) G.daily = p.daily
+}
+
+export function buyArmory(tier: number) {
+  if (G.armoryBusy || tier !== G.armory + 1 || tier >= ARMORY.length) return
+  const cost = ARMORY[tier].cost
+  if (G.bank < cost) return banner(`Need ● ${cost.toLocaleString()} gold`, 2)
+  const done = () => {
+    G.equip = -1
+    play('buy')
+    banner(`${ARMORY[tier].name.toUpperCase()} UNLOCKED!`, 3)
+  }
+  if (save.online) {
+    G.armoryBusy = true
+    serverArmoryBuy(tier)
+      .then((p) => {
+        applyProfile(p)
+        if ((p.armory ?? 0) >= tier) done()
+      })
+      .catch((e) => banner(`Purchase failed: ${String(e?.message ?? e)}`, 3))
+      .finally(() => (G.armoryBusy = false))
+    return
+  }
+  G.bank -= cost
+  G.armory = tier
+  done()
+}
+
+export function claimDaily() {
+  if (G.dailyBusy || !G.daily?.claimable || !save.online) return
+  G.dailyBusy = true
+  serverClaimDaily(me().name)
+    .then(({ reward, profile }) => {
+      applyProfile(profile)
+      play('buy')
+      banner(`DAILY REWARD +${reward} GOLD · ${profile.daily?.streak ?? 1}-DAY STREAK`, 4)
+    })
+    .catch((e) => banner(`${String(e?.message ?? e)}`, 3))
+    .finally(() => (G.dailyBusy = false))
 }
 
 export function startRun(w: WeaponId) {
   void serverStartRun(w, me().name)
-  G.run = new Run(w, { ...G.meta })
+  G.run = new Run(w, { ...G.meta }, G.armory, equipped())
+  G.doubleBonus = 0
+  G.armoryOpen = false
   G.pvpKills = 0
   G.phase = 'running'
   G.lastAttackerId = ''
@@ -162,6 +217,7 @@ function endRun(killer?: string) {
         applyProfile(res.profile)
         if (G.summary) {
           G.summary.gold = res.granted
+          G.doubleBonus = res.bonus ?? 0
           G.summary.rank = res.rank
           G.summary.newBest = res.newBest
         }
@@ -190,7 +246,6 @@ function handle(evs: Ev[]) {
         break
       case 'kill':
         play('kill', 0.9 + Math.random() * 0.25)
-        if (e.kind === 'lich') banner('THE HOLLOW KING HAS FALLEN!', 4)
         break
       case 'gem':
         play('gem', 1 + Math.min(0.5, (r.xp / r.need) * 0.5))
@@ -211,10 +266,6 @@ function handle(evs: Ev[]) {
         play('hurt')
         G.hurtFlash = 0.25
         break
-      case 'boss':
-        play('boss')
-        banner('THE HOLLOW KING RISES!', 5)
-        break
       case 'slash':
         play('slash', 0.9 + Math.random() * 0.2)
         break
@@ -226,6 +277,42 @@ function handle(evs: Ev[]) {
         break
       case 'nova':
         play('pulse', 0.95 + Math.random() * 0.1)
+        break
+      case 'swing':
+        play((['punch', 'bonk', 'smash', 'flameslash', 'reaper'] as const)[Math.min(4, e.tier)], 0.92 + Math.random() * 0.16)
+        break
+      case 'tracer':
+        play('gun', 0.9 + Math.random() * 0.2)
+        break
+      case 'quake':
+        play('slam', 1.5)
+        break
+      case 'nukeLaunch':
+        play('nukelaunch')
+        banner('☢ DOOMSDAY INBOUND ☢', 2)
+        break
+      case 'nuke':
+        play('nuke')
+        G.flash = 0.6
+        break
+      case 'bossSpawn': {
+        const b = bossFor(e.boss)
+        play('roar')
+        play('boss')
+        banner(`${b.name.toUpperCase()} — ${b.title}`, 5)
+        break
+      }
+      case 'bossDown': {
+        const b = bossFor(e.boss)
+        play('evolve')
+        banner(`${b.name.toUpperCase()} HAS FALLEN!`, 4)
+        break
+      }
+      case 'slamWarn':
+        play('warn')
+        break
+      case 'slam':
+        play('slam')
         break
       case 'elite':
         play('elite')
@@ -291,6 +378,7 @@ export function setupGame() {
     dt = Math.min(dt, 0.1)
     if (G.bannerT > 0) G.bannerT -= dt
     if (G.hurtFlash > 0) G.hurtFlash -= dt
+    if (G.flash > 0) G.flash -= dt
     const pt = Transform.getOrNull(engine.PlayerEntity)
     if (!pt) return
     const px = pt.position.x
@@ -313,6 +401,20 @@ export function setupGame() {
       if (frozen) r.invuln = Math.max(r.invuln, 0.3)
       const targets = G.phase === 'running' ? attackable(true, G.inArena) : []
       const evs = r.step(dt, frozen, targets)
+      if (!frozen && r.alive) {
+        // aim where the camera looks (third person) — fall back to the avatar's facing
+        const ct = Transform.getOrNull(engine.CameraEntity)
+        let aim = yaw
+        if (ct) {
+          const cf = Vector3.rotate(Vector3.Forward(), ct.rotation)
+          if (Math.abs(cf.x) + Math.abs(cf.z) > 0.05) aim = (Math.atan2(cf.x, cf.z) * 180) / Math.PI
+        }
+        G.aim = aim
+        setAim(aim)
+        if (inputSystem.isPressed(InputAction.IA_POINTER)) r.manualAttack(aim, targets)
+        if (inputSystem.isTriggered(InputAction.IA_SECONDARY, PointerEventType.PET_DOWN) || G.nukeAsk) r.nuke(aim)
+      }
+      G.nukeAsk = false
       renderRun(r, evs, dt)
       handle(evs)
       // swiftness passive → avatar speed

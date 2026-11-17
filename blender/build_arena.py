@@ -398,6 +398,15 @@ for k in range(4):
     B.cyl(fx + math.cos(a) * 1.1, 0.4, fz + math.sin(a) * 1.1, 0.07, 2.0, GOLD, seg=6)
     B.octa(fx + math.cos(a) * 1.1, 2.55, fz + math.sin(a) * 1.1, 0.14, 0.25, CRYS_C)
 B.ring(fx, 2.35, fz, 1.0, 1.1, 0.06, GOLD, seg=20)
+# Armory pedestal (the equipped weapon floats above it at runtime)
+ax_, az_ = 3.0, 7.6
+B.cyl(ax_, 0.04, az_, 1.1, 0.5, DMARBLE, seg=16, collide=True)
+B.cyl(ax_, 0.54, az_, 1.15, 0.06, GOLD, seg=16)
+B.ring(ax_, 0.6, az_, 0.8, 0.95, 0.04, FIRE, seg=20)
+for k in range(6):
+    a = math.radians(k * 60)
+    B.box(ax_ + math.cos(a) * 1.0, 1.2, az_ + math.sin(a) * 1.0, 0.08, 1.3, 0.08, IRON)
+    B.octa(ax_ + math.cos(a) * 1.0, 1.95, az_ + math.sin(a) * 1.0, 0.09, 0.16, CRYS)
 # how-to board
 hx, _, hz = L['howto']
 B.box(hx, 1.7, hz, 4.6, 3.4, 0.18, IRON)

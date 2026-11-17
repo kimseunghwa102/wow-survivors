@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import { META_KEYS, MetaKey } from './rules'
+import { META_KEYS, MetaKey, ARMORY_COST, DAILY_REWARD, dayKey } from './rules'
 
 /** minimal pg-compatible client (pg.Pool in production, pg-mem in tests) */
 export type Sql = { query: (text: string, params?: unknown[]) => Promise<{ rows: any[]; rowCount: number | null }> }
@@ -42,6 +42,10 @@ CREATE TABLE IF NOT EXISTS runs (
   flagged     BOOLEAN NOT NULL DEFAULT FALSE
 );
 CREATE INDEX IF NOT EXISTS runs_address ON runs(address);
+ALTER TABLE players ADD COLUMN IF NOT EXISTS armory INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS daily_last TEXT;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS daily_streak INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS double_last TEXT;
 CREATE INDEX IF NOT EXISTS players_best ON players(best_time DESC);
 `
 
@@ -59,6 +63,8 @@ export type Profile = {
   pvpKills: number
   totalRuns: number
   totalKills: number
+  armory: number
+  daily: { streak: number; claimable: boolean; next: number; doubleReady: boolean }
 }
 
 export function toProfile(r: any): Profile {
@@ -71,8 +77,53 @@ export function toProfile(r: any): Profile {
     best: { time: r.best_time, level: r.best_level, kills: r.best_kills },
     pvpKills: r.pvp_kills,
     totalRuns: r.total_runs,
-    totalKills: r.total_kills
+    totalKills: r.total_kills,
+    armory: r.armory ?? 0,
+    daily: dailyInfo(r)
   }
+}
+
+function yesterday() {
+  return dayKey(Date.now() - 86400000)
+}
+
+export function dailyInfo(r: any) {
+  const today = dayKey()
+  const claimable = r.daily_last !== today
+  const alive = r.daily_last === today || r.daily_last === yesterday()
+  const streak = alive ? r.daily_streak ?? 0 : 0
+  const nextStreak = claimable ? streak + 1 : streak + 1
+  return {
+    streak,
+    claimable,
+    next: DAILY_REWARD[Math.min(DAILY_REWARD.length, Math.max(1, nextStreak)) - 1],
+    doubleReady: r.double_last !== today
+  }
+}
+
+/** claim today's login reward; streak continues if yesterday was claimed */
+export async function claimDaily(db: Sql, address: string) {
+  const today = dayKey()
+  const p = (await db.query('SELECT * FROM players WHERE address = $1', [address])).rows[0]
+  if (!p || p.daily_last === today) return 0
+  const streak = p.daily_last === yesterday() ? (p.daily_streak ?? 0) + 1 : 1
+  const reward = DAILY_REWARD[Math.min(DAILY_REWARD.length, streak) - 1]
+  const r = await db.query(
+    "UPDATE players SET bank = bank + $1::integer, total_gold = total_gold + $2::integer, daily_last = $3, daily_streak = $4::integer, updated_at = NOW() WHERE address = $5 AND (daily_last IS NULL OR daily_last <> $6)",
+    [reward, reward, today, streak, address, today]
+  )
+  return (r.rowCount ?? 0) > 0 ? reward : 0
+}
+
+/** buy the next armory weapon (must be bought in order) */
+export async function buyArmory(db: Sql, address: string, tier: number) {
+  if (!(tier >= 1 && tier < ARMORY_COST.length)) return false
+  const cost = ARMORY_COST[tier]
+  const r = await db.query(
+    'UPDATE players SET bank = bank - $1::integer, armory = $2::integer, updated_at = NOW() WHERE address = $3 AND armory = $4::integer AND bank >= $5::integer',
+    [cost, tier, address, tier - 1, cost]
+  )
+  return (r.rowCount ?? 0) > 0
 }
 
 export async function getOrCreate(db: Sql, address: string, name: string, guest: boolean) {
@@ -116,16 +167,23 @@ export async function finishRun(
   )
   const p = (await db.query('SELECT * FROM players WHERE address = $1', [address])).rows[0]
   const newBest = res.time > p.best_time
+  // first finished run of the day banks double gold
+  const today = dayKey()
+  let bonus = 0
+  if (p.double_last !== today && res.gold > 0 && !res.flagged) {
+    bonus = res.gold
+    await db.query('UPDATE players SET double_last = $1 WHERE address = $2', [today, address])
+  }
   await db.query(
     `UPDATE players SET bank = bank + $1, total_gold = total_gold + $1, total_runs = total_runs + 1, total_kills = total_kills + $2,
        pvp_kills = pvp_kills + $3, flags = flags + $4,
        best_time = $5, best_level = $6, best_kills = $7, updated_at = NOW() WHERE address = $8`,
     [
-      res.gold, res.kills, res.pvpKills, res.flagged ? 1 : 0,
+      res.gold + bonus, res.kills, res.pvpKills, res.flagged ? 1 : 0,
       newBest ? res.time : p.best_time, newBest ? res.level : p.best_level, newBest ? res.kills : p.best_kills, address
     ]
   )
-  return newBest
+  return { newBest, bonus }
 }
 
 export async function buy(db: Sql, address: string, key: MetaKey, cost: number) {

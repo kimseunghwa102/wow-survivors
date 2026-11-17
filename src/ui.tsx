@@ -1,8 +1,8 @@
 import ReactEcs, { ReactEcsRenderer, UiEntity, Label, Button } from '@dcl/sdk/react-ecs'
 import { Color4 } from '@dcl/sdk/math'
-import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain } from './game/game'
+import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped } from './game/game'
 import { optionLabel, Option } from './game/core'
-import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId } from './game/defs'
+import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor } from './game/defs'
 import { feed, topRuns } from './game/net'
 import { save } from './game/persist'
 import { play } from './game/sfx'
@@ -74,6 +74,25 @@ function SidePanel() {
         <Label value={`HP  ${Math.ceil(r.hp)} / ${r.maxHp}`} fontSize={10} color={DIM} uiTransform={{ height: 14, margin: { top: 4 } }} textAlign="middle-left" />
         <Bar frac={r.hp / r.maxHp} color={hpCol} w="100%" h={12} />
       </UiEntity>
+      {/* armory weapon + nuke */}
+      <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', padding: 8, margin: { top: 6 } }} uiBackground={{ color: PANEL }}>
+        <Label value={`<b>${ARMORY[r.equip].name}</b>  ·  hold LEFT CLICK`} fontSize={12} color={C(ARMORY[r.equip].color)} uiTransform={{ height: 16 }} textAlign="middle-left" />
+        {r.armory >= NUKE_TIER ? (
+          <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', width: '100%', margin: { top: 4 } }}>
+            <Button
+              value={r.canNuke ? '☢ NUKE [F]' : `☢ ${Math.ceil(Math.max(0, r.nukeCd))}s`}
+              fontSize={12}
+              color={WHITE}
+              uiTransform={{ width: 110, height: 26 }}
+              uiBackground={{ color: r.canNuke ? C('#D01A1A') : C('#3A2020') }}
+              onMouseDown={() => (G.nukeAsk = true)}
+            />
+            <UiEntity uiTransform={{ width: 110, height: 8, margin: { left: 8 } }} uiBackground={{ color: C('#000000', 0.6) }}>
+              <UiEntity uiTransform={{ width: `${Math.round((1 - Math.max(0, r.nukeCd) / NUKE.cd) * 100)}%`, height: '100%' }} uiBackground={{ color: C('#FF3B2E') }} />
+            </UiEntity>
+          </UiEntity>
+        ) : null}
+      </UiEntity>
       {/* loadout */}
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', padding: 8, margin: { top: 6 } }} uiBackground={{ color: PANEL }}>
         <Label value="<b>SKILLS</b>" fontSize={11} color={DIM} uiTransform={{ height: 15 }} textAlign="middle-left" />
@@ -95,6 +114,40 @@ function SidePanel() {
       <Feed />
     </UiEntity>
   )
+}
+
+function BossBar() {
+  const r = G.run
+  const b = r?.boss
+  if (!r || !b) return null
+  const d = bossFor(b.boss ?? 0)
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 18 }, width: '100%', justifyContent: 'center' }}>
+      <UiEntity uiTransform={{ flexDirection: 'column', alignItems: 'center', padding: 6, width: 560 }} uiBackground={{ color: C('#0B0712', 0.8) }}>
+        <Label value={`<b>${d.name}</b>  ·  ${d.title}`} fontSize={16} color={C(d.color)} uiTransform={{ height: 22 }} />
+        <UiEntity uiTransform={{ width: 540, height: 14 }} uiBackground={{ color: C('#000000', 0.7) }}>
+          <UiEntity uiTransform={{ width: `${Math.max(0, (b.hp / b.maxHp) * 100)}%`, height: '100%' }} uiBackground={{ color: C(d.color) }} />
+        </UiEntity>
+        <Label value={`${Math.max(0, Math.ceil(b.hp)).toLocaleString()} / ${Math.round(b.maxHp).toLocaleString()}`} fontSize={10} color={DIM} uiTransform={{ height: 14 }} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+function NextBoss() {
+  const r = G.run
+  if (!r || r.boss) return null
+  const d = bossFor(r.bossIndex)
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 14 }, width: '100%', justifyContent: 'center' }}>
+      <Label value={`next boss: <b>${d.name}</b> at Lv ${d.lvl}`} fontSize={12} color={C(d.color, 0.85)} />
+    </UiEntity>
+  )
+}
+
+function Flash() {
+  if (G.flash <= 0) return null
+  return <UiEntity uiTransform={{ positionType: 'absolute', width: '100%', height: '100%' }} uiBackground={{ color: C('#FFF3D6', Math.min(0.85, G.flash * 1.6)) }} />
 }
 
 function HpBar() {
@@ -137,6 +190,20 @@ function LobbyHint() {
       <UiEntity uiTransform={{ padding: 10, flexDirection: 'column', alignItems: 'center' }} uiBackground={{ color: PANEL }}>
         <Label value="<b>WOW NIGHTSWARM</b>  ·  walk through the east gate to start a run" fontSize={16} color={WHITE} />
         <Label value={`Bank ● ${G.bank}   ·   Best ${mmss(G.best.t)} (Lv ${G.best.l})   ·   Arcane Forge = permanent boosts`} fontSize={13} color={GOLD} />
+        <UiEntity uiTransform={{ flexDirection: 'row', margin: { top: 6 } }}>
+          {G.daily ? (
+            <Button
+              value={G.daily.claimable ? `🎁 CLAIM DAILY ● ${G.daily.next}` : `✓ Day ${G.daily.streak} streak · tomorrow ● ${G.daily.next}`}
+              fontSize={13}
+              color={WHITE}
+              uiTransform={{ width: 260, height: 32, margin: 4 }}
+              uiBackground={{ color: G.daily.claimable ? C('#C08A00') : C('#2A2A3A') }}
+              onMouseDown={tap(claimDaily)}
+            />
+          ) : null}
+          <Button value="⚔ ARMORY" fontSize={13} color={WHITE} uiTransform={{ width: 140, height: 32, margin: 4 }} uiBackground={{ color: C('#7B3BFF') }} onMouseDown={tap(() => (G.armoryOpen = true))} />
+        </UiEntity>
+        {G.daily?.doubleReady ? <Label value="First run today banks DOUBLE gold!" fontSize={12} color={C('#3DFF8E')} /> : null}
         <Label value={save.status} fontSize={11} color={save.online ? C('#3DFF8E') : DIM} />
       </UiEntity>
     </UiEntity>
@@ -234,9 +301,10 @@ function DeadModal() {
   return (
     <Modal title={s.killer ? `SLAIN BY ${s.killer.toUpperCase()}` : 'YOU DIED'} color={C('#FF5468')} sub={s.newBest ? 'NEW PERSONAL BEST!' : `Best: ${mmss(G.best.t)}`}>
       <Label value={`Survived ${mmss(s.t)}   ·   Level ${s.l}   ·   ${s.k} kills   ·   ${s.pvpKills} hunters slain`} fontSize={18} color={WHITE} uiTransform={{ height: 28 }} />
-      <Label value={s.saving ? 'Saving to your wallet…' : `+${s.gold} gold banked${s.killer ? ' (30% taken by your killer)' : ''}${rank ? `   ·   Hall of Legends #${rank}` : ''}`} fontSize={15} color={GOLD} uiTransform={{ height: 24 }} />
+      <Label value={s.saving ? 'Saving to your wallet…' : `+${s.gold} gold banked${G.doubleBonus ? ' (DAILY DOUBLE!)' : ''}${s.killer ? ' (30% taken by your killer)' : ''}${rank ? `   ·   Hall of Legends #${rank}` : ''}`} fontSize={15} color={GOLD} uiTransform={{ height: 24 }} />
       <UiEntity uiTransform={{ flexDirection: 'row', margin: { top: 12 } }}>
         <Button value="PLAY AGAIN" fontSize={18} color={WHITE} uiTransform={{ width: 200, height: 44, margin: 6 }} uiBackground={{ color: C('#7B3BFF') }} onMouseDown={tap(playAgain)} />
+        <Button value="⚔ ARMORY" fontSize={16} color={WHITE} uiTransform={{ width: 150, height: 44, margin: 6 }} uiBackground={{ color: C('#C08A00') }} onMouseDown={tap(() => (G.armoryOpen = true))} />
         <Button value="SANCTUARY & FORGE" fontSize={16} color={WHITE} uiTransform={{ width: 220, height: 44, margin: 6 }} uiBackground={{ color: C('#2A2A3A') }} onMouseDown={tap(returnToSanctuary)} />
       </UiEntity>
     </Modal>
@@ -263,6 +331,52 @@ function ShopModal() {
   )
 }
 
+function ArmoryModal() {
+  const eq = equipped()
+  return (
+    <Modal title="ARMORY" sub={`Bank ● ${G.bank.toLocaleString()}  ·  your own attack: hold LEFT CLICK in the rift  ·  weapons are kept forever`}>
+      {ARMORY.map((w, i) => {
+        const owned = i <= G.armory
+        const next = i === G.armory + 1
+        const isNuke = i === NUKE_TIER
+        const inHand = !isNuke && i === eq
+        return (
+          <UiEntity key={w.name} uiTransform={{ flexDirection: 'row', alignItems: 'center', width: 640, height: 44, margin: 2 }} uiBackground={{ color: inHand ? C('#2A1A40') : C('#1E1430') }}>
+            <UiEntity uiTransform={{ width: 6, height: '100%' }} uiBackground={{ color: C(w.color) }} />
+            <Label value={`<b>${w.name}</b>`} fontSize={15} color={owned ? C(w.color) : DIM} uiTransform={{ width: 160, margin: { left: 8 } }} textAlign="middle-left" />
+            <Label value={w.desc} fontSize={12} color={WHITE} uiTransform={{ width: 260 }} textAlign="middle-left" />
+            {owned ? (
+              isNuke ? (
+                <Label value="OWNED · F key" fontSize={13} color={C('#3DFF8E')} uiTransform={{ width: 150 }} />
+              ) : (
+                <Button
+                  value={inHand ? 'IN HAND' : 'EQUIP'}
+                  fontSize={13}
+                  color={WHITE}
+                  uiTransform={{ width: 150, height: 32 }}
+                  uiBackground={{ color: inHand ? C('#3DFF8E', 0.35) : C('#3A2A5A') }}
+                  onMouseDown={tap(() => (G.equip = i))}
+                />
+              )
+            ) : (
+              <Button
+                value={G.armoryBusy && next ? '…' : `● ${w.cost.toLocaleString()}`}
+                fontSize={13}
+                color={WHITE}
+                uiTransform={{ width: 150, height: 32 }}
+                uiBackground={{ color: next ? (G.bank >= w.cost ? C('#C08A00') : C('#3A2A4A')) : C('#222222') }}
+                onMouseDown={tap(() => buyArmory(i))}
+              />
+            )}
+          </UiEntity>
+        )
+      })}
+      <Label value="Unlock in order. Damage grows with your level during a run." fontSize={12} color={DIM} uiTransform={{ height: 20, margin: { top: 6 } }} />
+      <Button value="CLOSE" fontSize={15} color={WHITE} uiTransform={{ width: 160, height: 38, margin: { top: 8 } }} uiBackground={{ color: C('#2A2A3A') }} onMouseDown={tap(() => (G.armoryOpen = false))} />
+    </Modal>
+  )
+}
+
 function Hurt() {
   if (G.hurtFlash <= 0) return null
   return <UiEntity uiTransform={{ positionType: 'absolute', width: '100%', height: '100%' }} uiBackground={{ color: C('#FF0000', 0.18 * (G.hurtFlash / 0.25)) }} />
@@ -271,7 +385,10 @@ function Hurt() {
 const Root = () => (
   <UiEntity uiTransform={{ width: '100%', height: '100%', positionType: 'absolute' }}>
     <Hurt />
+    <Flash />
     <TopHud />
+    <BossBar />
+    <NextBoss />
     <SidePanel />
     <HpBar />
     <Banner />
@@ -281,6 +398,7 @@ const Root = () => (
     {G.phase === 'chest' && G.chest ? <ChestModal /> : null}
     {G.phase === 'dead' ? <DeadModal /> : null}
     {G.shopOpen && G.phase !== 'levelup' && G.phase !== 'chest' ? <ShopModal /> : null}
+    {G.armoryOpen && !G.shopOpen && (G.phase === 'idle' || G.phase === 'dead' || G.phase === 'start') ? <ArmoryModal /> : null}
   </UiEntity>
 )
 

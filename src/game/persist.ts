@@ -13,6 +13,8 @@ export type ServerProfile = {
   pvpKills: number
   totalRuns: number
   totalKills: number
+  armory?: number
+  daily?: { streak: number; claimable: boolean; next: number; doubleReady: boolean }
 }
 export type GlobalBoard = { runs: { n: string; t: number; l: number; k: number }[]; pvp: [string, number][]; players: number }
 
@@ -74,7 +76,7 @@ export async function serverEndRun(result: { time: number; level: number; kills:
   try {
     const r = await call('POST', '/api/run/end', { runId, ...result })
     save.profile = r.profile
-    return r as { granted: number; newBest: boolean; rank: number; profile: ServerProfile }
+    return r as { granted: number; bonus?: number; newBest: boolean; rank: number; profile: ServerProfile }
   } catch (e) {
     console.log('run/end failed', e)
     return null
@@ -85,6 +87,18 @@ export async function serverBuy(key: string) {
   const r = await call('POST', '/api/shop/buy', { key })
   save.profile = r.profile
   return r.profile as ServerProfile
+}
+
+export async function serverArmoryBuy(tier: number) {
+  const r = await call('POST', '/api/armory/buy', { tier })
+  save.profile = r.profile
+  return r.profile as ServerProfile
+}
+
+export async function serverClaimDaily(name: string) {
+  const r = await call('POST', '/api/daily/claim', { name })
+  save.profile = r.profile
+  return { reward: r.reward as number, profile: r.profile as ServerProfile }
 }
 
 export async function loadBoard() {

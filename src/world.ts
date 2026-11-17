@@ -4,7 +4,8 @@ import LAYOUT from '../layout.json'
 import { node, text, setText, hitbox, bob, V, FACE } from './helpers'
 import { topRuns, topPvp } from './game/net'
 import { save, loadBoard } from './game/persist'
-import { G } from './game/game'
+import { G, equipped } from './game/game'
+import { ARMORY } from './game/defs'
 
 export function buildWorld() {
   // night sky
@@ -44,7 +45,7 @@ export function buildWorld() {
   text(V(hx, 2.75, hz - 0.13), 'HOW TO PLAY', 4.2, '#FFD86A', { rot: FACE.south })
   text(
     V(hx - 1.95, 1.45, hz - 0.13),
-    'Walk through the gate to start a run.\nYour weapons attack automatically.\nCollect gems → level up → pick upgrades.\nMax a weapon + own its partner passive,\nthen open a vault to ASCEND it.\nBrutes drop vaults. The Hollow King: 5:00.\nOther hunters can hurt you in the arena —\nslay them for a bounty!\nThe Sanctuary is safe (run pauses).',
+    'Walk through the gate to start a run.\nSkills fire on their own · HOLD LEFT CLICK to\nattack with your Armory weapon · F = nuke.\nGems → level up → upgrades. Max a skill + its\npartner passive, open a vault to ASCEND it.\nA BOSS rises every few levels — dragons from\nLv 50, the World Eater at Lv 200, then endless.\nClaim your DAILY reward · first run = 2x gold.\nOther hunters can hurt you in the rift!',
     2.15,
     '#FFFFFF',
     { rot: FACE.south, align: TextAlignMode.TAM_MIDDLE_LEFT }
@@ -55,6 +56,27 @@ export function buildWorld() {
     G.shopOpen = true
   })
   text(V(sx, 3.4, sz), 'ARCANE FORGE', 3.2, '#5EF2FF', { billboard: true, outline: '#001A22' })
+
+  // Armory: the weapon you'd swing floats over a pedestal; click to open the shop
+  const [ax, , az] = LAYOUT.armory
+  const showHolder = node(V(ax, 1.7, az))
+  bob(showHolder, 0.15, 1800)
+  const show = node(V(0, 0, 0), undefined, showHolder, V(1.4, 1.4, 1.4))
+  Tween.setRotateContinuous(show, Quaternion.fromEulerDegrees(0, 1, 0), 60)
+  let shown = -1
+  engine.addSystem(() => {
+    const t = equipped()
+    if (t !== shown) {
+      shown = t
+      GltfContainer.createOrReplace(show, { src: ARMORY[t].model })
+    }
+  })
+  const armHit = hitbox(V(ax, 1.3, az), V(2.4, 2.6, 2.4))
+  pointerEventsSystem.onPointerDown({ entity: armHit, opts: { button: InputAction.IA_POINTER, hoverText: 'Armory — your own weapons', maxDistance: 8 } }, () => {
+    G.armoryOpen = true
+  })
+  text(V(ax, 3.1, az), 'ARMORY', 3.2, '#FFB84A', { billboard: true, outline: '#2A1400' })
+  text(V(ax, 2.7, az), 'fists → pan → hammer → swords → minigun → ☢', 1.6, '#FFFFFF', { billboard: true })
 
   // gate signs
   const lg = LAYOUT.lobby

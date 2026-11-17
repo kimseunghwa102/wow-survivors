@@ -1,6 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express'
 import { verify } from '@dcl/platform-crypto-middleware'
-import { Sql, getOrCreate, toProfile, startRun, getOpenRun, finishRun, buy, leaderboard, rankOf } from './db'
+import { Sql, getOrCreate, toProfile, startRun, getOpenRun, finishRun, buy, leaderboard, rankOf, buyArmory, claimDaily } from './db'
 import { META_KEYS, META_MAX, MetaKey, metaCost, clampRun, LIMITS } from './rules'
 
 export type Auth = { address: string; guest: boolean; meta: Record<string, any> }
@@ -65,7 +65,7 @@ export function createApp(db: Sql, auth: Authenticator) {
 
   const nameOf = (req: Request) => String((req.body && req.body.name) || req.query.name || '').replace(/[^\w .\-#]/g, '').slice(0, 32)
 
-  app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'wow-survivors', time: Date.now() }))
+  app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'wow-nightswarm', time: Date.now() }))
 
   app.get('/api/leaderboard', async (_req, res, next) => {
     try {
@@ -108,9 +108,9 @@ export function createApp(db: Sql, auth: Authenticator) {
         { time: num(b.time), level: num(b.level), kills: num(b.kills), gold: num(b.gold), pvpKills: num(b.pvpKills), killedByPlayer: !!killer },
         elapsed
       )
-      const newBest = await finishRun(db, run, a.address, result, Math.floor(num(b.gold)), killer)
+      const fin = await finishRun(db, run, a.address, result, Math.floor(num(b.gold)), killer)
       const p = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
-      res.json({ ok: true, granted: result.gold, newBest, rank: await rankOf(db, p.best_time), profile: toProfile(p) })
+      res.json({ ok: true, granted: result.gold + fin.bonus, bonus: fin.bonus, newBest: fin.newBest, rank: await rankOf(db, p.best_time), profile: toProfile(p) })
     })
   )
 
@@ -125,6 +125,27 @@ export function createApp(db: Sql, auth: Authenticator) {
       const ok = await buy(db, a.address, key, metaCost(lvl))
       const after = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
       res.status(ok ? 200 : 400).json({ ok, error: ok ? undefined : 'not enough gold', profile: toProfile(after) })
+    })
+  )
+
+  app.post(
+    '/api/armory/buy',
+    authed(async (req, res, a) => {
+      const tier = Math.floor(Number(req.body?.tier))
+      await getOrCreate(db, a.address, '', a.guest)
+      const ok = await buyArmory(db, a.address, tier)
+      const after = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
+      res.status(ok ? 200 : 400).json({ ok, error: ok ? undefined : 'not enough gold or wrong order', profile: toProfile(after) })
+    })
+  )
+
+  app.post(
+    '/api/daily/claim',
+    authed(async (req, res, a) => {
+      await getOrCreate(db, a.address, nameOf(req), a.guest)
+      const reward = await claimDaily(db, a.address)
+      const after = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
+      res.status(reward ? 200 : 400).json({ ok: reward > 0, reward, error: reward ? undefined : 'already claimed today', profile: toProfile(after) })
     })
   )
 

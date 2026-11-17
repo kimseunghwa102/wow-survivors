@@ -2,14 +2,15 @@
 import LAYOUT from '../../layout.json'
 import {
   WeaponId, PassiveId, EnemyKind, WEAPONS, PASSIVES, ENEMIES, MAX_WEAPON_LVL, MAX_PASSIVE_LVL,
-  MAX_WEAPONS, MAX_PASSIVES, waveMix, xpNeed
+  MAX_WEAPONS, MAX_PASSIVES, waveMix, xpNeed, ARMORY, NUKE, NUKE_TIER, manualLevelScale, bossFor, BossDef,
+  BOOSTS, BoostId
 } from './defs'
 
 export type Rect = { x0: number; z0: number; x1: number; z1: number }
 export const ARENA: Rect[] = LAYOUT.arena
 
 export const TUNING = {
-  maxEnemies: 150,
+  maxEnemies: 140,
   pvpScale: 0.35, // weapon damage dealt to other players is scaled down
   pvpHitInterval: 0.4,
   baseMagnet: 2.4,
@@ -35,9 +36,13 @@ export type Enemy = {
   kx: number
   kz: number
   lastHit: Record<string, number>
+  sc: number // visual scale multiplier
+  boss?: number // index into the boss ladder
+  slamCd?: number
+  wind?: number // slam wind-up timer
 }
 export type PickKind = 'gem' | 'coin' | 'chest' | 'heal'
-export type Pickup = { id: number; kind: PickKind; x: number; z: number; value: number; alive: boolean; flying: boolean; big?: boolean }
+export type Pickup = { id: number; kind: PickKind; x: number; z: number; value: number; alive: boolean; flying: boolean; big?: boolean; born: number }
 export type Proj = { id: number; x: number; z: number; vx: number; vz: number; dmg: number; pierce: number; life: number; hit: number[] }
 export type Remote = { id: string; x: number; z: number; attackable: boolean }
 
@@ -59,6 +64,15 @@ export type Ev =
   | { t: 'nova'; x: number; z: number; r: number }
   | { t: 'strike'; x: number; z: number; r: number }
   | { t: 'shoot' }
+  | { t: 'swing'; x: number; z: number; yaw: number; range: number; arc: number; tier: number }
+  | { t: 'quake'; x: number; z: number; r: number }
+  | { t: 'tracer'; x: number; z: number; yaw: number; len: number }
+  | { t: 'nukeLaunch'; x: number; z: number; tx: number; tz: number; delay: number }
+  | { t: 'nuke'; x: number; z: number; r: number }
+  | { t: 'bossSpawn'; boss: number }
+  | { t: 'bossDown'; boss: number }
+  | { t: 'slamWarn'; x: number; z: number; r: number; dur: number }
+  | { t: 'slam'; x: number; z: number; r: number }
 
 export type Option =
   | { kind: 'weapon'; id: WeaponId; to: number }
@@ -66,6 +80,7 @@ export type Option =
   | { kind: 'evolve'; id: WeaponId }
   | { kind: 'gold'; amount: number }
   | { kind: 'heal'; amount: number }
+  | { kind: 'boost'; id: BoostId }
 
 let rand = Math.random
 export function setRandom(fn: () => number) {
@@ -97,6 +112,21 @@ export class Run {
   meta = { might: 0, hp: 0, magnet: 0, xp: 0 }
   lastAttacker = ''
   pvpKills = 0
+  // armory (manual attacks)
+  armory = 0 // highest tier owned
+  equip = 0 // tier in hand
+  manualCd = 0
+  nukeCd = 0
+  pendingNuke: { x: number; z: number; t: number } | null = null
+  // boss ladder
+  bossIndex = 0 // next boss to come
+  bossQueue = 0 // bosses earned but not yet spawned
+  bossId = 0 // enemy id of the boss on the field (0 = none)
+  bossesSlain = 0
+  // endless boosts
+  boostDmg = 0
+  boostArea = 0
+  boostRegen = 0
 
   enemies: Enemy[] = []
   pickups: Pickup[] = []
@@ -104,15 +134,16 @@ export class Run {
   private nextId = 1
   private spawnAcc = 0
   private nextElite = TUNING.eliteEvery
-  private nextBoss = TUNING.bossEvery
   private nextRing = TUNING.ringEvery
   private pvpAcc = new Map<string, number>()
   private pvpLast = new Map<string, number>()
   events: Ev[] = []
 
-  constructor(start: WeaponId, meta?: { might: number; hp: number; magnet: number; xp: number }) {
+  constructor(start: WeaponId, meta?: { might: number; hp: number; magnet: number; xp: number }, armory = 0, equip?: number) {
     this.weapons.set(start, 1)
     if (meta) this.meta = meta
+    this.armory = Math.max(0, Math.min(NUKE_TIER, armory))
+    this.equip = Math.min(equip ?? this.armory, this.armory, NUKE_TIER - 1)
     this.maxHp = this.hp = TUNING.baseHp + this.meta.hp * 10
   }
 
@@ -121,13 +152,13 @@ export class Run {
     return this.passives.get(id) ?? 0
   }
   get might() {
-    return 1 + 0.12 * this.p('might') + 0.05 * this.meta.might
+    return 1 + 0.12 * this.p('might') + 0.05 * this.meta.might + this.boostDmg
   }
   get cdMul() {
     return Math.max(0.4, 1 - 0.07 * this.p('haste'))
   }
   get area() {
-    return 1 + 0.1 * this.p('expanse')
+    return 1 + 0.1 * this.p('expanse') + this.boostArea
   }
   get amount() {
     return Math.floor((this.p('duplicator') + 1) / 2)
@@ -136,7 +167,7 @@ export class Run {
     return this.p('plating')
   }
   get regen() {
-    return 0.25 + 0.4 * this.p('bloodstone')
+    return 0.25 + 0.4 * this.p('bloodstone') + this.boostRegen
   }
   get magnet() {
     return TUNING.baseMagnet * (1 + 0.35 * this.p('magnet') + 0.1 * this.meta.magnet)
@@ -174,6 +205,8 @@ export class Run {
     this.fire(dt, remotes)
     this.moveProjs(dt, remotes)
     this.collect(dt)
+    this.bossStep(dt)
+    this.manualStep(dt)
     this.flushPvp(dt)
     return this.events
   }
@@ -181,7 +214,8 @@ export class Run {
   // ───────── spawning ─────────
   private spawn(dt: number) {
     const t = this.time
-    const rate = Math.min(12, 0.7 + t / 25)
+    // ramps to 12/s by ~5 min, then keeps creeping up to 17/s for the deep game
+    const rate = Math.min(12, 0.7 + t / 25) + Math.min(5, Math.max(0, t - 600) / 300)
     this.spawnAcc += rate * dt
     let alive = this.enemies.filter((e) => e.alive).length
     while (this.spawnAcc >= 1) {
@@ -195,11 +229,7 @@ export class Run {
       this.spawnEnemy('elite')
       this.events.push({ t: 'elite' })
     }
-    if (t >= this.nextBoss) {
-      this.nextBoss += TUNING.bossEvery
-      this.spawnEnemy('lich')
-      this.events.push({ t: 'boss' })
-    }
+    if (this.bossQueue > 0 && !this.bossId) this.spawnBoss()
     if (t >= this.nextRing) {
       this.nextRing += TUNING.ringEvery
       const n = 26
@@ -230,11 +260,12 @@ export class Run {
       }
     }
     const scale = 1 + this.time / 150
-    const hp = d.hp * (kind === 'lich' ? 1 + this.time / 600 : scale)
+    const hp = d.hp * scale
     const e: Enemy = {
       id: this.nextId++, kind, x: x!, z: z!, hp, maxHp: hp,
       speed: d.speed * (1 + Math.min(0.25, this.time / 1200)), dmg: d.dmg * (1 + this.time / 400),
-      r: d.r, xp: d.xp, alive: true, wob: rand() * 6.28, kx: 0, kz: 0, lastHit: {}
+      r: d.r, xp: d.xp, alive: true, wob: rand() * 6.28, kx: 0, kz: 0, lastHit: {},
+      sc: 1 + Math.min(0.5, this.time / 2400)
     }
     const slot = this.enemies.findIndex((q) => !q.alive)
     if (slot >= 0) this.enemies[slot] = e
@@ -260,6 +291,10 @@ export class Run {
       const stepLen = Math.min(e.speed * dt, Math.max(0, dist - reach))
       e.x += (mx / ml) * stepLen + e.kx * dt
       e.z += (mz / ml) * stepLen + e.kz * dt
+      if (e.boss !== undefined) {
+        e.kx = 0
+        e.kz = 0
+      }
       e.kx *= Math.max(0, 1 - dt * 6)
       e.kz *= Math.max(0, 1 - dt * 6)
       const c = clampArena(e.x, e.z, 0.5)
@@ -317,16 +352,21 @@ export class Run {
     e.alive = false
     this.kills++
     this.events.push({ t: 'kill', kind: e.kind, x: e.x, z: e.z })
-    if (e.kind === 'lich') {
+    if (e.kind === 'boss') {
+      const bi = e.boss ?? 0
+      this.bossId = 0
+      this.bossesSlain++
       this.drop('chest', e.x, e.z, 1, true)
-      this.drop('gem', e.x + 0.6, e.z, 60)
+      this.drop('gem', e.x + 0.8, e.z, Math.round(this.need * 1.2))
+      for (let i = 0; i < 6 + Math.min(14, bi * 2); i++) this.drop('coin', e.x + (rand() - 0.5) * 3, e.z + (rand() - 0.5) * 3, 1)
+      this.events.push({ t: 'bossDown', boss: bi })
     } else if (e.kind === 'elite') {
       this.drop('chest', e.x, e.z, 1, false)
       this.drop('gem', e.x + 0.5, e.z, e.xp)
     } else {
       this.drop('gem', e.x, e.z, e.xp)
       const r = rand()
-      if (r < 0.035 * (1 + 0.2 * this.p('fortune'))) this.drop('coin', e.x + 0.3, e.z, 1)
+      if (r < 0.028 * (1 + 0.2 * this.p('fortune'))) this.drop('coin', e.x + 0.3, e.z, 1)
       else if (r > 0.996) this.drop('heal', e.x, e.z + 0.3, 30)
     }
   }
@@ -549,12 +589,18 @@ export class Run {
     if (kind === 'gem') {
       const gems = this.pickups.filter((p) => p.alive && p.kind === 'gem')
       if (gems.length > 110) {
-        const g = gems[Math.floor(rand() * gems.length)]
+        // merge into the nearest gem so XP stays where the kill happened
+        let g = gems[0]
+        let bd = Infinity
+        for (const q of gems) {
+          const d = Math.abs(q.x - x) + Math.abs(q.z - z)
+          if (d < bd) (bd = d), (g = q)
+        }
         g.value += value
         return
       }
     }
-    const pk: Pickup = { id: this.nextId++, kind, x, z, value, alive: true, flying: false, big }
+    const pk: Pickup = { id: this.nextId++, kind, x, z, value, alive: true, flying: false, big, born: this.time }
     const slot = this.pickups.findIndex((p) => !p.alive)
     if (slot >= 0) this.pickups[slot] = pk
     else this.pickups.push(pk)
@@ -565,19 +611,20 @@ export class Run {
     for (const p of this.pickups) {
       if (!p.alive) continue
       const d = Math.hypot(p.x - this.x, p.z - this.z)
-      if (!p.flying && d < (p.kind === 'chest' ? 1.3 : mag)) p.flying = true
+      // gems left on the floor for 18 s drift to the player on their own
+      if (!p.flying && (d < (p.kind === 'chest' ? 1.3 : mag) || (p.kind === 'gem' && this.time - p.born > 18))) p.flying = true
       if (p.flying) {
-        const sp = 9 + (mag - d) * 2
+        const sp = 10 + Math.max(0, mag - d) * 2 + Math.min(14, Math.max(0, d - mag))
         p.x += ((this.x - p.x) / (d || 1)) * Math.min(d, sp * dt)
         p.z += ((this.z - p.z) / (d || 1)) * Math.min(d, sp * dt)
       }
-      if (d < 0.5) {
+      if (Math.hypot(p.x - this.x, p.z - this.z) < 0.5) {
         p.alive = false
         if (p.kind === 'gem') {
           this.gainXp(p.value)
           this.events.push({ t: 'gem' })
         } else if (p.kind === 'coin') {
-          this.gold += Math.round(5 * this.goldMul)
+          this.gold += Math.round(5 * this.goldMul * (1 + this.time / 1200))
           this.events.push({ t: 'coin' })
         } else if (p.kind === 'heal') {
           this.hp = Math.min(this.maxHp, this.hp + p.value)
@@ -594,6 +641,7 @@ export class Run {
       this.level++
       this.pendingLevels++
       this.events.push({ t: 'levelup' })
+      while (this.level >= bossFor(this.bossIndex + this.bossQueue).lvl) this.bossQueue++
     }
   }
 
@@ -622,7 +670,12 @@ export class Run {
   levelChoices(): Option[] {
     const all = this.allUpgrades()
     const n = 3 + (this.p('fortune') >= 3 ? 1 : 0)
-    if (!all.length) return [{ kind: 'gold', amount: 25 }, { kind: 'heal', amount: 30 }]
+    if (!all.length) {
+      const ids = (Object.keys(BOOSTS) as BoostId[]).filter((b) => !(b === 'area' && this.boostArea >= 0.6))
+      const out: Option[] = []
+      while (out.length < 3 && ids.length) out.push({ kind: 'boost', id: ids.splice(Math.floor(rand() * ids.length), 1)[0] })
+      return out
+    }
     // owned items are twice as likely, so builds snowball
     const weighted = all.map((o) => ({ o, w: (o.kind === 'weapon' ? this.w(o.id) : o.kind === 'passive' ? this.p(o.id) : 0) > 0 ? 2.2 : 1 }))
     const out: Option[] = []
@@ -648,6 +701,185 @@ export class Run {
     } else if (o.kind === 'evolve') this.evolved.add(o.id)
     else if (o.kind === 'gold') this.gold += o.amount
     else if (o.kind === 'heal') this.hp = Math.min(this.maxHp, this.hp + o.amount)
+    else if (o.kind === 'boost') {
+      if (o.id === 'dmg') this.boostDmg += 0.08
+      else if (o.id === 'hp') {
+        this.maxHp += 25
+        this.hp = Math.min(this.maxHp, this.hp + 25)
+      } else if (o.id === 'area') this.boostArea = Math.min(0.6, this.boostArea + 0.04)
+      else if (o.id === 'regen') this.boostRegen += 0.5
+      else if (o.id === 'gold') this.gold += 30
+    }
+  }
+
+  // ───────── boss ladder ─────────
+  get boss(): Enemy | undefined {
+    return this.bossId ? this.enemies.find((e) => e.id === this.bossId && e.alive) : undefined
+  }
+  bossDef(): BossDef | undefined {
+    const b = this.boss
+    return b ? bossFor(b.boss!) : undefined
+  }
+
+  private spawnBoss() {
+    const idx = this.bossIndex++
+    this.bossQueue--
+    const d = bossFor(idx)
+    const e = this.spawnEnemy('boss')
+    e.boss = idx
+    e.hp = e.maxHp = d.hp
+    e.dmg = d.dmg
+    e.speed = d.speed
+    e.r = d.r
+    e.sc = d.scale
+    e.xp = 0
+    e.slamCd = 3
+    this.bossId = e.id
+    this.events.push({ t: 'bossSpawn', boss: idx })
+  }
+
+  private bossStep(dt: number) {
+    const b = this.boss
+    if (!b) {
+      if (this.bossId) this.bossId = 0
+      return
+    }
+    const d = bossFor(b.boss!)
+    if (b.wind !== undefined) {
+      b.wind -= dt
+      if (b.wind <= 0) {
+        b.wind = undefined
+        const r = d.slam
+        this.events.push({ t: 'slam', x: b.x, z: b.z, r })
+        if (Math.hypot(this.x - b.x, this.z - b.z) < r && this.invuln <= 0) {
+          const dmg = d.dmg * 1.6 * Math.max(0.3, 1 - this.armor * 0.08)
+          this.hp -= dmg
+          this.lastAttacker = ''
+          this.events.push({ t: 'hurt', dmg })
+          if (this.hp <= 0) this.die('')
+        }
+        for (let i = 0; i < 4 + Math.min(6, b.boss!); i++) {
+          const a = (i / 6) * Math.PI * 2
+          const c = clampArena(b.x + Math.sin(a) * (r + 1), b.z + Math.cos(a) * (r + 1), 0.8)
+          this.spawnEnemy(d.adds, c.x, c.z)
+        }
+      }
+      return
+    }
+    b.slamCd = (b.slamCd ?? 4) - dt
+    if (b.slamCd <= 0 && Math.hypot(this.x - b.x, this.z - b.z) < d.slam * 1.6) {
+      b.slamCd = b.boss! >= 3 ? 4.2 : 5.5
+      b.wind = 1.1
+      this.events.push({ t: 'slamWarn', x: b.x, z: b.z, r: d.slam, dur: 1.1 })
+    }
+  }
+
+  // ───────── armory: manual attacks ─────────
+  private manualStep(dt: number) {
+    if (this.manualCd > 0) this.manualCd -= dt
+    if (this.nukeCd > 0) this.nukeCd -= dt
+    const pn = this.pendingNuke
+    if (pn) {
+      pn.t -= dt
+      if (pn.t <= 0) {
+        this.pendingNuke = null
+        const R = NUKE.radius * this.area
+        this.events.push({ t: 'nuke', x: pn.x, z: pn.z, r: R })
+        const dmg = NUKE.dmg * manualLevelScale(this.level)
+        for (const e of this.enemies) {
+          if (!e.alive) continue
+          const dd = Math.hypot(e.x - pn.x, e.z - pn.z)
+          if (dd > R + e.r) continue
+          const hit = e.kind === 'boss' ? Math.min(dmg, e.maxHp * NUKE.bossCap) / this.might : dmg
+          const ux = (e.x - pn.x) / (dd || 1)
+          const uz = (e.z - pn.z) / (dd || 1)
+          this.hitEnemy(e, hit, ux * 12, uz * 12)
+        }
+      }
+    }
+  }
+
+  get canNuke() {
+    return this.armory >= NUKE_TIER && this.nukeCd <= 0 && !this.pendingNuke
+  }
+
+  /** F key: drop the Doomsday Nuke ahead of the player */
+  nuke(yaw: number) {
+    if (!this.alive || !this.canNuke) return false
+    this.nukeCd = NUKE.cd
+    const a = (yaw * Math.PI) / 180
+    const c = clampArena(this.x + Math.sin(a) * NUKE.ahead, this.z + Math.cos(a) * NUKE.ahead, 1)
+    this.pendingNuke = { x: c.x, z: c.z, t: NUKE.delay }
+    this.events.push({ t: 'nukeLaunch', x: this.x, z: this.z, tx: c.x, tz: c.z, delay: NUKE.delay })
+    return true
+  }
+
+  /** left click (held): attack with the equipped armory weapon toward yaw (degrees, 0 = +z) */
+  manualAttack(yaw: number, remotes: Remote[] = []) {
+    if (!this.alive || this.manualCd > 0) return false
+    const w = ARMORY[this.equip]
+    this.manualCd = w.cd * (0.5 + 0.5 * this.cdMul)
+    const a = (yaw * Math.PI) / 180
+    const fx = Math.sin(a)
+    const fz = Math.cos(a)
+    const dmg = w.dmg * manualLevelScale(this.level)
+    if (w.gun) {
+      const spread = ((rand() - 0.5) * 7 * Math.PI) / 180
+      const gx = Math.sin(a + spread)
+      const gz = Math.cos(a + spread)
+      let len = w.range
+      let pierce = 2
+      const hits = this.enemies
+        .filter((e) => e.alive)
+        .map((e) => {
+          const t = (e.x - this.x) * gx + (e.z - this.z) * gz
+          const perp = Math.abs((e.x - this.x) * gz - (e.z - this.z) * gx)
+          return { e, t, perp }
+        })
+        .filter((h) => h.t > 0 && h.t < w.range && h.perp < h.e.r + 0.35)
+        .sort((p, q) => p.t - q.t)
+      for (const h of hits) {
+        if (pierce-- <= 0) break
+        this.hitEnemy(h.e, dmg, gx * w.knock, gz * w.knock)
+        len = h.t
+      }
+      for (const r of remotes) {
+        const t = (r.x - this.x) * gx + (r.z - this.z) * gz
+        const perp = Math.abs((r.x - this.x) * gz - (r.z - this.z) * gx)
+        if (t > 0 && t < w.range && perp < 0.6) this.pvpDamage(r, dmg)
+      }
+      this.events.push({ t: 'tracer', x: this.x, z: this.z, yaw: yaw + (spread * 180) / Math.PI, len: Math.max(2, len) })
+      return true
+    }
+    const range = w.range * this.area
+    const half = w.arc / 2
+    for (const e of this.enemies) {
+      if (!e.alive) continue
+      const dx = e.x - this.x
+      const dz = e.z - this.z
+      const d = Math.hypot(dx, dz)
+      if (d > range + e.r) continue
+      const ang = Math.abs(((((Math.atan2(dx, dz) * 180) / Math.PI - yaw) % 360) + 540) % 360 - 180)
+      if (d > 1.0 && ang > half) continue
+      this.hitEnemy(e, dmg, (dx / (d || 1)) * w.knock, (dz / (d || 1)) * w.knock)
+      if (w.leech) this.hp = Math.min(this.maxHp, this.hp + w.leech)
+    }
+    for (const r of remotes) {
+      const dx = r.x - this.x
+      const dz = r.z - this.z
+      const d = Math.hypot(dx, dz)
+      const ang = Math.abs(((((Math.atan2(dx, dz) * 180) / Math.PI - yaw) % 360) + 540) % 360 - 180)
+      if (d < range && ang <= half) this.pvpDamage(r, dmg)
+    }
+    this.events.push({ t: 'swing', x: this.x + fx * range * 0.5, z: this.z + fz * range * 0.5, yaw, range, arc: w.arc, tier: this.equip })
+    if (w.quake) {
+      const qx = this.x + fx * range * 0.8
+      const qz = this.z + fz * range * 0.8
+      const qr = w.quake * this.area
+      for (const e of this.enemies) if (e.alive && Math.hypot(e.x - qx, e.z - qz) < qr + e.r) this.hitEnemy(e, dmg * 0.5, 0, 0)
+      this.events.push({ t: 'quake', x: qx, z: qz, r: qr })
+    }
+    return true
   }
 
   /** open a treasure chest: evolution if possible, else 1/3/5 random upgrades (slot-machine) */
@@ -662,7 +894,10 @@ export class Run {
       const owned = this.allUpgrades().filter((o) => (o.kind === 'weapon' ? this.w(o.id) : o.kind === 'passive' ? this.p(o.id) : 0) > 0)
       const pool = owned.length ? owned : this.allUpgrades()
       if (!pool.length) {
-        rolls.push({ kind: 'gold', amount: 40 })
+        const ids = Object.keys(BOOSTS) as BoostId[]
+        const o: Option = { kind: 'boost', id: ids[Math.floor(rand() * ids.length)] }
+        this.apply(o)
+        rolls.push(o)
         continue
       }
       const o = pool[Math.floor(rand() * pool.length)]
@@ -717,5 +952,9 @@ export function optionLabel(o: Option): { title: string; sub: string; desc: stri
     return { title: w.evo, sub: 'ASCENSION!', desc: `${w.name} ascends`, color: '#FFD86A', isNew: true }
   }
   if (o.kind === 'gold') return { title: `+${o.amount} Gold`, sub: 'VAULT', desc: 'Spend it at the Arcane Forge', color: '#FFD86A', isNew: false }
+  if (o.kind === 'boost') {
+    const b = BOOSTS[o.id]
+    return { title: b.name, sub: 'RIFT BOOST', desc: b.desc, color: b.color, isNew: false }
+  }
   return { title: `+${o.amount} HP`, sub: 'HEAL', desc: 'Restore health', color: '#3DFF8E', isNew: false }
 }

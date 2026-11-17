@@ -394,6 +394,111 @@ def s_click():
     return osc(sweep(2400, 1200, d), d) * expdec(n, 70) * 0.6 + bp(noise(d), 3000, 8000) * expdec(n, 140) * 0.3
 
 
+# ───────────── armory ─────────────
+def s_punch():
+    d = 0.2
+    n = int(SR * d)
+    return softclip(lp(noise(d, 'pink'), 1400) * expdec(n, 35) * 1.3 + osc(sweep(160, 60, d), d) * expdec(n, 30), 1.8)
+
+
+def s_bonk():
+    d = 0.6
+    n = int(SR * d)
+    ring = sum(osc(f, d) * expdec(n, k) * a for f, a, k in [(520, 1, 9), (1310, 0.6, 12), (2230, 0.4, 16), (3480, 0.25, 22)])
+    thud = lp(noise(0.1), 900) * expdec(int(0.1 * SR), 40)
+    boing = osc(sweep(300, 900, 0.25) * (1 + 0.08 * np.sin(2 * np.pi * 18 * T(0.25))), 0.25, 'tri') * expdec(int(0.25 * SR), 8) * 0.3
+    return reverb(mix(ring * 0.45, thud, boing), 0.6, 0.15)
+
+
+def s_smash():
+    d = 0.9
+    n = int(SR * d)
+    boom = osc(sweep(90, 35, d), d) * expdec(n, 6) * 1.2
+    crunch = bp(noise(d), 300, 3500) * expdec(n, 14) * 1.2
+    debris = hp(noise(d), 3000) * (rng.random(n) > 0.97) * expdec(n, 5) * 1.5
+    return reverb(softclip(mix(boom, crunch, debris), 2.0), 1.2, 0.25, 3000)
+
+
+def s_flameslash():
+    d = 0.45
+    n = int(SR * d)
+    wh = sweep_filter(noise(d), 500, 4000, q=2) * np.sin(np.linspace(0, np.pi, n)) ** 1.2 * 1.4
+    roar = lp(noise(d, 'pink'), 1200) * adsr(n, 0.03, 0.1, 0.5, 0.25) * 0.8
+    crackle = bp(noise(d), 2500, 9000) * (rng.random(n) > 0.98) * 1.6 * expdec(n, 4)
+    return reverb(mix(wh, roar, crackle), 0.8, 0.2)
+
+
+def s_reaper():
+    d = 0.6
+    n = int(SR * d)
+    wh = sweep_filter(noise(d), 300, 2400, q=3) * np.sin(np.linspace(0, np.pi, n)) ** 1.5 * 1.3
+    ghost = sum(osc(sweep(f, f * 0.7, d), d, 'saw') for f in (220, 233, 330)) * adsr(n, 0.05, 0.2, 0.3, 0.3) * 0.08
+    return reverb(mix(wh, lp(ghost, 2000)), 1.5, 0.35, 4000)
+
+
+def s_gun():
+    d = 0.12
+    n = int(SR * d)
+    crack = hp(noise(d), 1200) * expdec(n, 70) * 1.2
+    body = osc(sweep(220, 70, d), d) * expdec(n, 45) * 0.8
+    zap = osc(sweep(3000, 900, 0.05), 0.05) * expdec(int(0.05 * SR), 80) * 0.2
+    return softclip(mix(crack, body, zap), 2.2)
+
+
+def s_nukelaunch():
+    d = 1.4
+    n = int(SR * d)
+    rocket = sweep_filter(noise(d, 'pink'), 400, 2500, q=1.5, kind='lp') * adsr(n, 0.05, 0.3, 0.8, 0.4) * 1.3
+    whistle = osc(sweep(1800, 600, d), d) * adsr(n, 0.3, 0.2, 0.7, 0.3) * 0.15
+    siren = osc(700 + 250 * np.sin(2 * np.pi * 2.2 * T(d)), d, 'saw') * 0.06
+    return reverb(mix(rocket, whistle, lp(siren, 2500)), 1.5, 0.25)
+
+
+def s_nuke():
+    d = 5.0
+    n = int(SR * d)
+    flash = hp(noise(0.15), 800) * expdec(int(0.15 * SR), 20) * 1.5
+    boom = lp(noise(d, 'brown'), 120, 4) * adsr(n, 0.01, 0.8, 0.5, 3.5) * 3.0
+    sub = osc(sweep(55, 22, 3.0), 3.0) * expdec(int(3 * SR), 1.2) * 1.6
+    roar = lp(noise(d, 'pink'), 700) * adsr(n, 0.2, 1.0, 0.4, 3.0) * 0.8
+    return reverb(softclip(mix(flash, boom, sub, roar), 1.8), 3.5, 0.4, 1500)
+
+
+def s_roar():
+    d = 3.0
+    n = int(SR * d)
+    f0 = 70 + 25 * np.sin(np.linspace(0, np.pi, n))
+    growl = sum(osc(f0 * h * (1 + 0.02 * np.sin(2 * np.pi * 23 * T(d))), d, 'saw') / h for h in (1, 2, 3, 5))
+    growl = sweep_filter(growl, 300, 1600, q=1.5, kind='lp') * adsr(n, 0.15, 0.4, 0.8, 1.0) * 0.5
+    breath = bp(noise(d), 400, 3000) * adsr(n, 0.2, 0.5, 0.6, 1.0) * 0.6
+    return reverb(softclip(mix(growl, breath), 2.5), 2.5, 0.35, 2500)
+
+
+def s_slam():
+    d = 1.6
+    n = int(SR * d)
+    boom = osc(sweep(70, 28, d), d) * expdec(n, 3) * 1.4
+    crack = bp(noise(d), 200, 2500) * expdec(n, 9) * 1.3
+    return reverb(softclip(mix(boom, crack), 2.0), 1.8, 0.3, 2000)
+
+
+def s_warn():
+    d = 1.0
+    n = int(SR * d)
+    rise = osc(sweep(200, 520, d), d, 'saw') * adsr(n, 0.05, 0.1, 0.8, 0.1) * 0.25
+    return lp(rise, 2200) + bp(noise(d), 1500, 4000) * np.linspace(0, 1, n) * 0.15
+
+
+def s_buy():
+    d = 1.2
+    x = np.zeros(int(SR * d))
+    for i, m in enumerate([76, 79, 84, 88]):
+        k = bell(note(m), d - i * 0.06, 1.2) * 0.4
+        seg = x[int(i * 0.06 * SR):]
+        seg[:len(k)] += k[:len(seg)]
+    return reverb(mix(x, s_coin() * 0.6), 1.2, 0.25, 8000)
+
+
 # ───────────── ambient music loop (seamless) ─────────────
 def music(bars=16, bpm=84):
     beat = 60 / bpm
@@ -455,6 +560,8 @@ if __name__ == '__main__':
     for name, fn in [('hit', s_hit), ('kill', s_kill), ('gem', s_gem), ('coin', s_coin), ('hurt', s_hurt),
                      ('slash', s_slash), ('shard', s_shard), ('sigil', s_sigil), ('pulse', s_pulse),
                      ('levelup', s_levelup), ('evolve', s_evolve), ('jackpot', s_jackpot),
-                     ('boss', s_boss), ('elite', s_elite), ('ring', s_ring), ('death', s_death), ('pvp', s_pvp), ('click', s_click)]:
+                     ('boss', s_boss), ('elite', s_elite), ('ring', s_ring), ('death', s_death), ('pvp', s_pvp), ('click', s_click),
+                     ('punch', s_punch), ('bonk', s_bonk), ('smash', s_smash), ('flameslash', s_flameslash), ('reaper', s_reaper),
+                     ('gun', s_gun), ('nukelaunch', s_nukelaunch), ('nuke', s_nuke), ('roar', s_roar), ('slam', s_slam), ('warn', s_warn), ('buy', s_buy)]:
         save(name, fn())
     music()
