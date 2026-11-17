@@ -1,4 +1,4 @@
-// WOW SURVIVORS — pure game simulation (no Decentraland imports, runs headless for balance tests).
+// WOW NIGHTSWARM — pure game simulation (no Decentraland imports, runs headless for balance tests).
 import LAYOUT from '../../layout.json'
 import {
   WeaponId, PassiveId, EnemyKind, WEAPONS, PASSIVES, ENEMIES, MAX_WEAPON_LVL, MAX_PASSIVE_LVL,
@@ -58,6 +58,7 @@ export type Ev =
   | { t: 'slash'; x: number; z: number; yaw: number; w: number; l: number }
   | { t: 'nova'; x: number; z: number; r: number }
   | { t: 'strike'; x: number; z: number; r: number }
+  | { t: 'shoot' }
 
 export type Option =
   | { kind: 'weapon'; id: WeaponId; to: number }
@@ -421,6 +422,7 @@ export class Run {
         }
         this.projs.push({ id: this.nextId++, x: this.x, z: this.z, vx: vx * 14, vz: vz * 14, dmg, pierce, life: 1.4, hit: [] })
       }
+      this.events.push({ t: 'shoot' })
     }
     // ORBIT — blades circling the player
     const ov = this.w('orbit')
@@ -712,8 +714,8 @@ export function optionLabel(o: Option): { title: string; sub: string; desc: stri
   }
   if (o.kind === 'evolve') {
     const w = WEAPONS[o.id]
-    return { title: w.evo, sub: 'EVOLUTION!', desc: `${w.name} evolved`, color: '#FFD86A', isNew: true }
+    return { title: w.evo, sub: 'ASCENSION!', desc: `${w.name} ascends`, color: '#FFD86A', isNew: true }
   }
-  if (o.kind === 'gold') return { title: `+${o.amount} Gold`, sub: 'TREASURE', desc: 'Spend it at the Shrine', color: '#FFD86A', isNew: false }
+  if (o.kind === 'gold') return { title: `+${o.amount} Gold`, sub: 'VAULT', desc: 'Spend it at the Arcane Forge', color: '#FFD86A', isNew: false }
   return { title: `+${o.amount} HP`, sub: 'HEAL', desc: 'Restore health', color: '#3DFF8E', isNew: false }
 }

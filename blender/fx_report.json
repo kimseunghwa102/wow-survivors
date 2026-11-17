@@ -1,0 +1,58 @@
+{
+ "fx_slash": {
+  "tris": 4,
+  "kb": 68
+ },
+ "fx_shard": {
+  "tris": 22,
+  "kb": 23
+ },
+ "fx_glaive": {
+  "tris": 30,
+  "kb": 91
+ },
+ "fx_bloom": {
+  "tris": 58,
+  "kb": 279
+ },
+ "fx_sigil": {
+  "tris": 8,
+  "kb": 154
+ },
+ "fx_pulse": {
+  "tris": 66,
+  "kb": 132
+ },
+ "fx_slash_asc": {
+  "tris": 6,
+  "kb": 103
+ },
+ "fx_shard_asc": {
+  "tris": 22,
+  "kb": 25
+ },
+ "fx_glaive_asc": {
+  "tris": 30,
+  "kb": 97
+ },
+ "fx_bloom_asc": {
+  "tris": 58,
+  "kb": 252
+ },
+ "fx_sigil_asc": {
+  "tris": 8,
+  "kb": 185
+ },
+ "fx_pulse_asc": {
+  "tris": 66,
+  "kb": 153
+ },
+ "fx_heal": {
+  "tris": 86,
+  "kb": 24
+ },
+ "fx_levelup": {
+  "tris": 50,
+  "kb": 130
+ }
+}

@@ -6,7 +6,7 @@ import LAYOUT from '../../layout.json'
 import { Run, Option, Ev, inArena } from './core'
 import { WeaponId, WEAPONS } from './defs'
 import { renderRun, clearView, setupView } from './view'
-import { play, setupSfx } from './sfx'
+import { play, setupSfx, musicLevel } from './sfx'
 import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf } from './net'
 import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile } from './persist'
 
@@ -58,14 +58,15 @@ export function startRun(w: WeaponId) {
   G.pvpKills = 0
   G.phase = 'running'
   G.lastAttackerId = ''
-  banner(`SURVIVE! ${WEAPONS[w].name} equipped`, 3)
+  banner(`HOLD THE RIFT! ${WEAPONS[w].name} equipped`, 3)
+  musicLevel(0.16)
 }
 
 export function choose(o: Option) {
   const r = G.run
   if (!r || G.phase !== 'levelup') return
   r.apply(o)
-  if (o.kind === 'weapon' && o.to === 8) banner(`${WEAPONS[o.id].name} MAXED — find a chest to evolve!`, 4)
+  if (o.kind === 'weapon' && o.to === 8) banner(`${WEAPONS[o.id].name} MAXED — open a vault to ascend it!`, 4)
   r.pendingLevels = Math.max(0, r.pendingLevels - 1)
   nextModal()
 }
@@ -146,6 +147,7 @@ export function playAgain() {
 }
 
 function endRun(killer?: string) {
+  musicLevel(0.28)
   const r = G.run!
   const t = Math.floor(r.time)
   const newBest = t > G.best.t
@@ -188,7 +190,7 @@ function handle(evs: Ev[]) {
         break
       case 'kill':
         play('kill', 0.9 + Math.random() * 0.25)
-        if (e.kind === 'lich') banner('THE LICH KING HAS FALLEN!', 4)
+        if (e.kind === 'lich') banner('THE HOLLOW KING HAS FALLEN!', 4)
         break
       case 'gem':
         play('gem', 1 + Math.min(0.5, (r.xp / r.need) * 0.5))
@@ -211,13 +213,27 @@ function handle(evs: Ev[]) {
         break
       case 'boss':
         play('boss')
-        banner('THE LICH KING RISES!', 5)
+        banner('THE HOLLOW KING RISES!', 5)
+        break
+      case 'slash':
+        play('slash', 0.9 + Math.random() * 0.2)
+        break
+      case 'shoot':
+        play('shard', 0.92 + Math.random() * 0.16)
+        break
+      case 'strike':
+        play('sigil', 0.85 + Math.random() * 0.3)
+        break
+      case 'nova':
+        play('pulse', 0.95 + Math.random() * 0.1)
         break
       case 'elite':
-        banner('An ELITE GHOUL appears — it carries a chest!', 4)
+        play('elite')
+        banner('A BRUTE appears — it carries a vault!', 4)
         break
       case 'ring':
-        banner('THE SWARM SURROUNDS YOU!', 3)
+        play('ring')
+        banner('THE NIGHTSWARM CLOSES IN!', 3)
         break
       case 'pvpHit':
         sendHit(e.to, e.dmg)

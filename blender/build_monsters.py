@@ -1,5 +1,5 @@
 """
-WOW SURVIVORS — monsters & pickups (Blender / bpy). Original low-poly designs.
+WOW NIGHTSWARM — monsters & pickups (Blender / bpy). Original low-poly designs.
 Each model: origin at the feet, facing +z (Decentraland forward), looping animation clip "Idle".
 Run: python3 blender/build_monsters.py  →  models/<name>.glb
 """
@@ -82,23 +82,69 @@ def finish(name, animated=True):
     REPORT[name] = {'tris': tri_count(), 'kb': os.path.getsize(out) // 1024}
 
 
+# ─────────── shared upgrades: textured skins + contact shadow ───────────
+import numpy as np
+from textures_hd import _rgba
+
+_TEX = {}
+
+
+def skin(M, name, color, rough=0.8, metal=0.0, seed=1, scale=0.6, emit=None, strength=0.0, contrast=0.45):
+    """material with a tinted fbm grunge texture (subtle mottling reads much richer than flat colour)"""
+    key = (color, seed, contrast)
+    if key not in _TEX:
+        n = 256
+        f = fbm(n, 5, seed)
+        g = fbm(n, 6, seed + 50)
+        c = np.array(lin(color)) ** (1 / 2.2)
+        col = c * (1 - contrast / 2 + contrast * f[..., None]) * (0.85 + 0.3 * g[..., None])
+        _TEX[key] = save_img(f'skin_{name}_{seed}.jpg', col)
+    return M.add(name, color, metal, rough, emit, strength, tex=_TEX[key], tile=scale)
+
+
+def shadow(M, r=0.5):
+    """soft dark blob under the feet (static, not animated)"""
+    if 'shadow' not in M.m:
+        n = 128
+        yy, xx = (np.mgrid[0:n, 0:n] + 0.5) / n * 2 - 1
+        a = np.clip(1 - np.hypot(xx, yy), 0, 1) ** 1.5 * 0.75
+        M.add('shadow', tex=_rgba('shadow.png', np.concatenate([np.zeros((n, n, 3)), a[..., None]], -1)), tile=None, rough=1.0)
+    b = Builder(M)
+    b.decal(0, 0.03, 0, r * 2, r * 2, 'shadow')
+    b.emit('shadow')
+
+
+def glowmat(M, name, col, strength=6.0):
+    return M.add(name, col, 0.0, 0.3, col, strength)
+
+
 # ─────────── BAT ───────────
 M = new_scene()
-BODY = M.add('bat_fur', '#2B1B3A', 0.0, 0.8)
-WING = M.add('bat_wing', '#4A2560', 0.0, 0.7)
-EYE = M.add('eye_red', '#FF2A3D', 0.0, 0.3, '#FF1030', 6.0)
+BODY = skin(M, 'bat_fur', '#3A2350', 0.85, seed=3, scale=0.3)
+WING = M.add('bat_wing', '#5A2A78', 0.0, 0.6, '#3A0A50', 0.6)
+EYE = glowmat(M, 'eye_red', '#FF1030', 8.0)
+FANG = M.add('fang', '#F2EEDC', 0.0, 0.4)
+CORE = glowmat(M, 'bat_core', '#FF2A6A', 3.0)
+shadow(M, 0.35)
 b = Builder(M)
-b.sphere(0, 0.0, 0, 0.2, BODY, 8, 5, ry=0.24, rz=0.26)
-b.sphere(0, 0.2, 0.18, 0.14, BODY, 8, 5)
+b.sphere(0, 0.0, 0, 0.2, BODY, 10, 6, ry=0.24, rz=0.26)
+b.sphere(0, 0.2, 0.18, 0.15, BODY, 10, 6)
+b.sphere(0, 0.02, 0.2, 0.07, CORE, 6, 4)
 for s in (-1, 1):
-    b.prism_xy([(s * 0.06, 0.3), (s * 0.12, 0.45), (s * 0.15, 0.28)], 0.12, 0.2, BODY)
-    b.sphere(s * 0.06, 0.23, 0.3, 0.035, EYE, 6, 4)
+    b.prism_xy([(s * 0.05, 0.3), (s * 0.15, 0.55), (s * 0.17, 0.28)], 0.12, 0.2, BODY)
+    b.sphere(s * 0.065, 0.24, 0.31, 0.04, EYE, 6, 4)
+    b.octa(s * 0.04, 0.1, 0.3, 0.018, 0.05, FANG)
+    b.box(s * 0.1, -0.24, 0.02, 0.04, 0.14, 0.04, BODY)
+    b.octa(s * 0.1, -0.33, 0.06, 0.03, 0.05, FANG)
 body = b.emit('bat_body')
 wings = []
 for s in (-1, 1):
     w = Builder(M)
-    pts = [(s * 0.15, 0.05), (s * 0.75, 0.25), (s * 0.95, -0.05), (s * 0.7, -0.08), (s * 0.55, -0.22), (s * 0.35, -0.1), (s * 0.15, -0.12)]
-    w.prism_xy(pts, -0.02, 0.02, WING)
+    pts = [(s * 0.15, 0.05), (s * 0.55, 0.3), (s * 0.85, 0.32), (s * 1.05, -0.02), (s * 0.8, -0.1), (s * 0.66, -0.26), (s * 0.45, -0.12), (s * 0.3, -0.24), (s * 0.15, -0.12)]
+    w.prism_xy(pts, -0.015, 0.015, WING)
+    for (x0, y0, x1, y1) in [(0.15, 0.05, 0.85, 0.32), (0.5, 0.25, 0.66, -0.26), (0.85, 0.32, 1.05, -0.02)]:
+        ln = math.hypot(x1 - x0, y1 - y0)
+        w.box(s * (x0 + x1) / 2, (y0 + y1) / 2, 0, ln, 0.03, 0.04, BODY, roll=math.degrees(math.atan2(y1 - y0, (x1 - x0) * s)))
     objs = w.emit(f'bat_wing{s}')
     pv = pivot(f'wing_pivot{s}', (s * 0.15, 0, 0), objs)
     key_rot(pv, 'z', [(1, 35 * s), (7, -40 * s), (13, 35 * s), (19, -40 * s), (25, 35 * s)])
@@ -112,11 +158,27 @@ finish('bat')
 for variant in ('ghoul', 'ghoul_elite'):
     M = new_scene()
     elite = variant == 'ghoul_elite'
-    SKIN = M.add('skin', '#7A1E1E' if elite else '#5E7A55', 0.0, 0.85)
-    RAGS = M.add('rags', '#2A2430' if not elite else '#160A0A', 0.0, 0.9)
-    EYE = M.add('eyes', '#FFE24A' if not elite else '#FF2A3D', 0.0, 0.3, '#FFC000' if not elite else '#FF1030', 6.0)
+    SKIN = skin(M, 'skin', '#8A2A22' if elite else '#5E7A55', 0.75, seed=5 if elite else 6, scale=0.5, contrast=0.6)
+    RAGS = skin(M, 'rags', '#2A2430' if not elite else '#1A0E0E', 0.95, seed=8, scale=0.4)
+    EYE = glowmat(M, 'eyes', '#FFC000' if not elite else '#FF1030', 8.0)
     HORN = M.add('horn', '#E8DCC0', 0.0, 0.5)
+    RUNE = glowmat(M, 'rune', '#7CFF4A' if not elite else '#FF5A10', 4.0)
+    IRONM = M.add('iron', '#2A2830', 0.85, 0.35)
+    shadow(M, 0.55 if not elite else 0.6)
     b = Builder(M)
+    # hunched spine spikes + glowing belly rune
+    for k in range(4):
+        b.cyl(0, 1.05 + k * 0.13, -0.2 + k * 0.01, 0.05, 0.16 + (0.08 if elite else 0), HORN, seg=4, r_top=0.0)
+    b.octa(0, 1.05, 0.17, 0.11, 0.13, RUNE)
+    for k in range(5):
+        b.box(-0.2 + k * 0.1, 0.7, 0.13, 0.08, 0.22 + (k % 2) * 0.1, 0.03, RAGS, roll=(k - 2) * 6)
+    if elite:
+        for sx in (-1, 1):
+            b.box(sx * 0.33, 1.42, -0.02, 0.3, 0.16, 0.36, IRONM)
+            for k in range(3):
+                b.cyl(sx * (0.25 + k * 0.08), 1.5, -0.02, 0.04, 0.22, HORN, seg=4, r_top=0.0)
+        for k in range(6):
+            b.box(-0.25 + k * 0.1, 1.2 - abs(k - 2.5) * 0.04, 0.18, 0.06, 0.04, 0.03, IRONM)
     for s in (-1, 1):
         b.cyl(s * 0.14, 0, 0, 0.09, 0.8, RAGS, seg=6, r_top=0.11)
         b.box(s * 0.14, 0.04, 0.06, 0.16, 0.08, 0.28, SKIN)
@@ -134,6 +196,8 @@ for variant in ('ghoul', 'ghoul_elite'):
         a = Builder(M)
         a.box(s * 0.3, 1.3, 0.25, 0.11, 0.11, 0.6, SKIN)
         a.box(s * 0.3, 1.3, 0.58, 0.14, 0.05, 0.12, SKIN)
+        for k in (-1, 0, 1):
+            a.box(s * 0.3 + k * 0.045, 1.28, 0.7, 0.02, 0.03, 0.12, HORN, pitch=20)
         objs = a.emit(f'arm{s}')
         pv = pivot(f'arm_pivot{s}', (s * 0.3, 1.3, 0.0), objs)
         ph = 0 if s > 0 else 12
@@ -145,10 +209,18 @@ for variant in ('ghoul', 'ghoul_elite'):
 
 # ─────────── SKELETON ───────────
 M = new_scene()
-BONE = M.add('bone', '#E8E2D0', 0.0, 0.6)
-EYE = M.add('eyes', '#5EF2FF', 0.0, 0.3, '#20D8FF', 6.0)
+BONE = skin(M, 'bone', '#E8E2D0', 0.55, seed=11, scale=0.3, contrast=0.35)
+EYE = glowmat(M, 'eyes', '#20D8FF', 8.0)
 DARK = M.add('dark', '#151018', 0.0, 0.8)
+STEEL = M.add('steel', '#3A3F4A', 0.9, 0.3)
+SOULF = glowmat(M, 'soul', '#3FE6FF', 4.0)
+shadow(M, 0.45)
 b = Builder(M)
+b.octa(0, 1.22, 0.02, 0.09, 0.13, SOULF)                                          # soul flame in the ribcage
+b.cyl(0, 1.74, 0.02, 0.2, 0.16, STEEL, seg=10)                                    # helmet
+b.cyl(0, 1.9, 0.02, 0.2, 0.12, STEEL, seg=10, r_top=0.06)
+b.box(0, 1.98, -0.02, 0.04, 0.18, 0.34, EYE)                                      # crest
+b.box(0, 1.66, 0.2, 0.04, 0.16, 0.03, STEEL)                                      # nasal guard
 for s in (-1, 1):
     b.box(s * 0.12, 0.42, 0, 0.07, 0.84, 0.07, BONE)
     b.box(s * 0.12, 0.03, 0.06, 0.12, 0.06, 0.22, BONE)
@@ -168,9 +240,16 @@ for s in (-1, 1):
     a = Builder(M)
     a.box(s * 0.28, 1.15, 0.0, 0.06, 0.6, 0.06, BONE)
     a.box(s * 0.28, 0.82, 0.04, 0.1, 0.12, 0.06, BONE)
-    if s > 0:  # rusty sword
-        a.box(s * 0.28, 0.82, 0.3, 0.04, 0.08, 0.6, DARK)
-    objs = a.emit(f'skarm{s}')
+    if s > 0:  # runed sword
+        a.box(s * 0.28, 0.82, 0.12, 0.2, 0.04, 0.05, STEEL)
+        a.box(s * 0.28, 0.82, 0.48, 0.03, 0.09, 0.7, STEEL)
+        a.box(s * 0.28, 0.82, 0.5, 0.012, 0.04, 0.6, EYE)
+    else:      # round shield
+        sh = Builder(M)
+        sh.sphere(s * 0.36, 1.0, 0.12, 0.28, STEEL, 12, 4, rz=0.06)
+        sh.sphere(s * 0.39, 1.0, 0.14, 0.08, SOULF, 6, 4, rz=0.03)
+        objs_extra = sh.emit('shield')
+    objs = a.emit(f'skarm{s}') + (objs_extra if s < 0 else [])
     pv = pivot(f'skarm_pivot{s}', (s * 0.28, 1.45, 0.0), objs)
     key_rot(pv, 'x', [(1, 25 * s), (13, -25 * s), (25, 25 * s)])
     arms.append(pv)
@@ -180,10 +259,22 @@ finish('skeleton')
 
 # ─────────── WRAITH ───────────
 M = new_scene()
-ROBE = M.add('robe', '#122A33', 0.0, 0.8, '#062028', 0.6)
-TRIM = M.add('trim', '#5EF2FF', 0.0, 0.3, '#20D8FF', 4.0)
+ROBE = skin(M, 'robe', '#163240', 0.85, seed=21, scale=0.5, emit='#062028', strength=0.6, contrast=0.6)
+TRIM = glowmat(M, 'trim', '#20D8FF', 5.0)
 VOID = M.add('void', '#020203', 0.0, 1.0)
+STEEL = M.add('blade', '#9AB8C8', 0.95, 0.2, '#3FE6FF', 0.8)
+WOODW = M.add('haft', '#1A1410', 0.0, 0.9)
+shadow(M, 0.5)
 b = Builder(M)
+for k in range(7):     # tattered hem
+    a = 2 * math.pi * k / 7
+    b.box(math.sin(a) * 0.2, 0.05, math.cos(a) * 0.2, 0.12, 0.5, 0.03, ROBE, yaw=math.degrees(a), pitch=-12)
+for k in range(5):     # spectral flames above the hood
+    a = 2 * math.pi * k / 5
+    b.cyl(math.sin(a) * 0.14, 2.28, math.cos(a) * 0.14 - 0.04, 0.05, 0.22, TRIM, seg=4, r_top=0.0)
+# scythe
+b.cyl(0.5, 0.4, 0.45, 0.03, 2.1, WOODW, seg=6)
+b.prism_xy([(0.5, 2.45), (1.25, 2.25), (1.45, 1.95), (1.15, 2.2), (0.5, 2.32)], 0.43, 0.47, STEEL)
 b.cyl(0, 0.0, 0, 0.12, 1.5, ROBE, seg=8, r_top=0.42)
 b.cyl(0, 1.5, 0, 0.42, 0.5, ROBE, seg=8, r_top=0.25)
 b.sphere(0, 2.05, 0.0, 0.28, ROBE, 8, 5, ry=0.32)
@@ -202,12 +293,21 @@ finish('wraith')
 
 # ─────────── LICH (boss) ───────────
 M = new_scene()
-ROBE = M.add('lich_robe', '#2A0F3A', 0.0, 0.8)
-TRIM = M.add('lich_trim', '#E9B949', 0.6, 0.3, '#7A5200', 0.6)
-BONE = M.add('lich_bone', '#DCD3BC', 0.0, 0.6)
-SOULM = M.add('lich_soul', '#A26BFF', 0.0, 0.3, '#7B3BFF', 8.0)
-EYE = M.add('lich_eye', '#FF2A3D', 0.0, 0.3, '#FF1030', 8.0)
+ROBE = skin(M, 'lich_robe', '#3A1250', 0.8, seed=31, scale=0.8, contrast=0.55)
+TRIM = M.add('lich_trim', '#E9B949', 0.85, 0.25, '#7A5200', 0.6)
+BONE = skin(M, 'lich_bone', '#DCD3BC', 0.6, seed=33, scale=0.4, contrast=0.35)
+SOULM = glowmat(M, 'lich_soul', '#8A3BFF', 8.0)
+EYE = glowmat(M, 'lich_eye', '#FF1030', 9.0)
+CAPE = M.add('lich_cape', '#12040E', 0.0, 0.9, '#2A0020', 0.4)
+shadow(M, 1.2)
 b = Builder(M)
+# cape and spectral wing-blades
+b.prism_xy([(-0.7, 2.6), (0.7, 2.6), (1.3, 0.1), (0.4, 0.3), (0.0, 0.05), (-0.4, 0.3), (-1.3, 0.1)], -0.62, -0.56, CAPE)
+for sx in (-1, 1):
+    for k in range(4):
+        ang = 25 + k * 16
+        ln = 1.6 - k * 0.2
+        b.box(sx * (0.9 + math.cos(math.radians(ang)) * ln / 2), 2.9 + math.sin(math.radians(ang)) * ln / 2, -0.5, ln, 0.1, 0.05, SOULM, roll=sx * ang)
 b.cyl(0, 0, 0, 0.9, 2.2, ROBE, seg=10, r_top=0.55)
 b.ring(0, 0.05, 0, 0.88, 0.95, 0.12, TRIM, seg=10)
 b.cyl(0, 2.2, 0, 0.55, 0.6, ROBE, seg=10, r_top=0.7)
@@ -231,7 +331,16 @@ a.ring(0.8, 3.75, 0.6, 0.25, 0.3, 0.06, TRIM, seg=10)
 staff = a.emit('lich_staff')
 pv = pivot('staff_pivot', (0.78, 2.4, 0.0), staff)
 key_rot(pv, 'x', [(1, 0), (13, -10), (25, 0)])
-root = pivot('lich', (0, 0, 0), body + [pv])
+orbs = Builder(M)
+for k in range(3):
+    a = 2 * math.pi * k / 3
+    orbs.sphere(math.cos(a) * 1.4, 2.2, math.sin(a) * 1.4, 0.16, SOULM, 8, 5)
+    orbs.sphere(math.cos(a) * 1.4, 2.2, math.sin(a) * 1.4, 0.07, EYE, 6, 4)
+ob = orbs.emit('lich_orbs')
+opv = pivot('orb_pivot', (0, 2.2, 0), ob)
+key_rot(opv, 'y', [(1, 0), (13, 180), (25, 360)])
+linear(opv)
+root = pivot('lich', (0, 0, 0), body + [pv, opv])
 key_loc(root, [(1, 0.15), (13, 0.35), (25, 0.15)])
 finish('lich')
 
@@ -254,9 +363,9 @@ bpy.context.view_layer.update()
 finish('coin', animated=False)
 
 M = new_scene()
-WOODM = M.add('chest_wood', '#5A2A12', 0.0, 0.7)
+WOODM = skin(M, 'vault_body', '#3A1050', 0.5, seed=41, scale=0.4)
 GOLDM = M.add('chest_gold', '#FFD45A', 0.7, 0.25, '#B07800', 1.5)
-GLOW = M.add('chest_glow', '#FFF0A0', 0.0, 0.3, '#FFD040', 6.0)
+GLOW = glowmat(M, 'vault_glow', '#FFD040', 6.0)
 b = Builder(M)
 b.box(0, 0.3, 0, 0.9, 0.6, 0.6, WOODM)
 b.box(0, 0.68, 0, 0.92, 0.18, 0.62, WOODM)

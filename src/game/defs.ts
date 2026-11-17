@@ -11,60 +11,60 @@ export const MAX_PASSIVES = 6
 
 export const WEAPONS: Record<WeaponId, { name: string; evo: string; evoWith: PassiveId; color: string; desc: string[] }> = {
   lash: {
-    name: 'Crimson Lash',
-    evo: 'Blood Reaper',
+    name: 'Rift Scythe',
+    evo: 'Eclipse Scythe',
     evoWith: 'might',
     color: '#FF3B4E',
-    desc: ['Slashes in front of you', 'Also slashes behind', '+6 damage', '+20% width', '+6 damage', '+6 damage', '+20% width', '+10 damage']
+    desc: ['Rends the rift in front of you', 'Also rends behind', '+6 damage', '+20% width', '+6 damage', '+6 damage', '+20% width', '+10 damage']
   },
   bolt: {
-    name: 'Arcane Bolt',
-    evo: 'Arcane Storm',
+    name: 'Star Shard',
+    evo: 'Starfall Volley',
     evoWith: 'duplicator',
     color: '#A26BFF',
-    desc: ['Fires at the nearest foe', '+1 bolt', '+4 damage', '+1 bolt', '+4 damage', 'Bolts pierce', '+1 bolt', '+8 damage']
+    desc: ['Shoots star shards at the nearest foe', '+1 shard', '+4 damage', '+1 shard', '+4 damage', 'Shards pierce', '+1 shard', '+8 damage']
   },
   orbit: {
-    name: 'Spirit Blades',
-    evo: 'Blade Cyclone',
+    name: 'Halo Glaives',
+    evo: 'Glaive Tempest',
     evoWith: 'haste',
     color: '#5EF2FF',
-    desc: ['A blade circles you', '+1 blade', '+4 damage', '+1 blade', '+25% speed', '+1 blade', '+4 damage', '+1 blade']
+    desc: ['A glaive orbits you', '+1 glaive', '+4 damage', '+1 glaive', '+25% speed', '+1 glaive', '+4 damage', '+1 glaive']
   },
   aura: {
-    name: 'Holy Aura',
-    evo: 'Soul Siphon',
+    name: 'Void Bloom',
+    evo: 'Abyssal Maw',
     evoWith: 'vitality',
-    color: '#FFD86A',
-    desc: ['Damages foes around you', '+radius', '+2.5 damage', '+radius', '+2.5 damage', '+radius', '+2.5 damage', '+radius']
+    color: '#FF4FD2',
+    desc: ['A void field burns nearby foes', '+radius', '+2.5 damage', '+radius', '+2.5 damage', '+radius', '+2.5 damage', '+radius']
   },
   thunder: {
-    name: 'Thunder Strike',
-    evo: 'Wrath of Heaven',
+    name: 'Storm Sigil',
+    evo: 'Skybreaker',
     evoWith: 'expanse',
     color: '#9FE8FF',
-    desc: ['Lightning hits random foes', '+1 strike', '+10 damage', '+1 strike', '+10 damage', '+1 strike', '+10 damage', '+1 strike']
+    desc: ['Sigils call lightning on foes', '+1 strike', '+10 damage', '+1 strike', '+10 damage', '+1 strike', '+10 damage', '+1 strike']
   },
   nova: {
-    name: 'Fire Nova',
-    evo: 'Solar Flare',
+    name: 'Ember Pulse',
+    evo: 'Sunforge Burst',
     evoWith: 'plating',
     color: '#FF8A1E',
-    desc: ['Explodes around you', '+radius', '+9 damage', '-10% cooldown', '+9 damage', '+radius', '+9 damage', '+radius']
+    desc: ['Pulses fire around you', '+radius', '+9 damage', '-10% cooldown', '+9 damage', '+radius', '+9 damage', '+radius']
   }
 }
 
 export const PASSIVES: Record<PassiveId, { name: string; desc: string; color: string }> = {
-  might: { name: 'Might', desc: '+12% damage', color: '#FF5468' },
-  haste: { name: 'Haste', desc: '-7% cooldowns', color: '#5EF2FF' },
-  expanse: { name: 'Expanse', desc: '+10% area', color: '#9FE8FF' },
-  duplicator: { name: 'Duplicator', desc: '+1 projectile / blade / strike (odd levels)', color: '#A26BFF' },
-  plating: { name: 'Plating', desc: '+1 armor (less contact damage)', color: '#C9CFDA' },
-  vitality: { name: 'Vitality', desc: '+20 max HP', color: '#3DFF8E' },
-  bloodstone: { name: 'Bloodstone', desc: '+0.4 HP regen / sec', color: '#FF2A3D' },
-  magnet: { name: 'Magnet', desc: '+35% pickup range', color: '#4AA8FF' },
-  swiftness: { name: 'Swiftness', desc: '+8% move speed', color: '#FFFFFF' },
-  fortune: { name: 'Fortune', desc: '+20% gold, luckier chests', color: '#FFD86A' }
+  might: { name: 'Fury Core', desc: '+12% damage', color: '#FF5468' },
+  haste: { name: 'Chrono Gear', desc: '-7% cooldowns', color: '#5EF2FF' },
+  expanse: { name: 'Prism Lens', desc: '+10% area', color: '#9FE8FF' },
+  duplicator: { name: 'Echo Rune', desc: '+1 shard / glaive / sigil (odd levels)', color: '#A26BFF' },
+  plating: { name: 'Obsidian Shell', desc: '+1 armor (less contact damage)', color: '#C9CFDA' },
+  vitality: { name: 'Heartstone', desc: '+20 max HP', color: '#3DFF8E' },
+  bloodstone: { name: 'Lifebloom', desc: '+0.4 HP regen / sec', color: '#FF2A3D' },
+  magnet: { name: 'Lodestar', desc: '+35% pickup range', color: '#4AA8FF' },
+  swiftness: { name: 'Wind Treads', desc: '+8% move speed', color: '#FFFFFF' },
+  fortune: { name: 'Lucky Chip', desc: '+20% gold, luckier vaults', color: '#FFD86A' }
 }
 
 export type EnemyDef = { hp: number; speed: number; dmg: number; xp: number; r: number; model: string; scale: number; hover: number }

@@ -1,6 +1,6 @@
 // Renders the pure simulation (core.ts) with pooled Decentraland entities.
 import {
-  engine, Entity, Transform, GltfContainer, Animator, MeshRenderer, Material, MaterialTransparencyMode,
+  engine, Entity, Transform, GltfContainer, Animator,
   TextShape, TextAlignMode, Font, Billboard, BillboardMode, Tween
 } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
@@ -16,16 +16,6 @@ function ent(): Entity {
   Transform.create(e, { position: HIDE })
   return e
 }
-function glow(e: Entity, hex: string, alpha = 1, strength = 3) {
-  const c = Color4.fromHexString(hex)
-  Material.setPbrMaterial(e, {
-    albedoColor: Color4.create(c.r, c.g, c.b, alpha),
-    emissiveColor: Color3.create(c.r, c.g, c.b),
-    emissiveIntensity: strength,
-    transparencyMode: alpha < 1 ? MaterialTransparencyMode.MTM_ALPHA_BLEND : undefined
-  })
-}
-
 class Pool {
   free: Entity[] = []
   constructor(make: () => Entity, n: number) {
@@ -41,7 +31,7 @@ class Pool {
 }
 
 // ─────────────── pools ───────────────
-const ENEMY_POOL: Record<EnemyKind, number> = { bat: 70, ghoul: 45, skeleton: 40, wraith: 30, elite: 3, lich: 2 }
+const ENEMY_POOL: Record<EnemyKind, number> = { bat: 55, ghoul: 40, skeleton: 35, wraith: 25, elite: 3, lich: 2 }
 const enemyPools = {} as Record<EnemyKind, Pool>
 const enemyEnt = new Map<number, { e: Entity; kind: EnemyKind }>()
 
@@ -49,16 +39,33 @@ type PickVisual = 'gem_blue' | 'gem_green' | 'gem_red' | 'coin' | 'chest' | 'hea
 const pickPools = {} as Record<PickVisual, Pool>
 const pickEnt = new Map<number, { e: Entity; v: PickVisual }>()
 
-let boltPool: Pool
-const boltEnt = new Map<number, Entity>()
+// skill FX (Blender GLBs, base + ascended look)
+type FxKind = 'slash' | 'shard' | 'glaive' | 'bloom' | 'sigil' | 'pulse'
+const fxSrc = (k: FxKind, asc: boolean) => `models/fx_${k}${asc ? '_asc' : ''}.glb`
+let boltPool: [Pool, Pool]
+const boltEnt = new Map<number, { e: Entity; asc: boolean }>()
 let blades: Entity[] = []
+let bladesAsc = false
 let aura: Entity
-type Timed = { e: Entity; life: number; max: number; kind: 'slash' | 'nova' | 'strike' | 'dmg'; r?: number; y?: number }
+let auraAsc = false
+type Timed = { e: Entity; life: number; max: number; kind: 'slash' | 'nova' | 'strike' | 'dmg' | 'lvl'; r?: number; y?: number; asc: boolean; s?: number }
 const active: Timed[] = []
-let slashPool: Pool
-let novaPool: Pool
-let strikePool: Pool
+let slashPool: [Pool, Pool]
+let novaPool: [Pool, Pool]
+let strikePool: [Pool, Pool]
+let lvlPool: Pool
 let dmgPool: Pool
+
+function fxPool(k: FxKind, n: number, spin = 0): [Pool, Pool] {
+  const make = (asc: boolean) =>
+    new Pool(() => {
+      const e = ent()
+      GltfContainer.create(e, { src: fxSrc(k, asc) })
+      if (spin) Tween.setRotateContinuous(e, Quaternion.fromEulerDegrees(0, 1, 0), spin)
+      return e
+    }, n)
+  return [make(false), make(true)]
+}
 
 export function setupView() {
   for (const k of Object.keys(ENEMY_POOL) as EnemyKind[]) {
@@ -83,49 +90,21 @@ export function setupView() {
   pickPools.gem_red = pick('models/gem_red.glb', 6)
   pickPools.coin = pick('models/coin.glb', 20, 200)
   pickPools.chest = pick('models/chest.glb', 4, 30)
-  pickPools.heal = new Pool(() => {
-    const e = ent()
-    MeshRenderer.setSphere(e)
-    glow(e, '#FF3B5C', 1, 2)
-    Transform.getMutable(e).scale = V(0.4, 0.4, 0.4)
-    return e
-  }, 4)
+  pickPools.heal = pick('models/fx_heal.glb', 4, 90)
 
-  boltPool = new Pool(() => {
-    const e = ent()
-    MeshRenderer.setSphere(e)
-    glow(e, '#B98CFF', 1, 5)
-    Transform.getMutable(e).scale = V(0.28, 0.28, 0.28)
-    return e
-  }, 50)
+  boltPool = fxPool('shard', 40, 540)
   for (let i = 0; i < 12; i++) {
     const e = ent()
-    MeshRenderer.setBox(e)
-    glow(e, '#5EF2FF', 1, 4)
-    Transform.getMutable(e).scale = V(0.12, 0.08, 0.75)
+    GltfContainer.create(e, { src: fxSrc('glaive', false) })
     blades.push(e)
   }
   aura = ent()
-  MeshRenderer.setCylinder(aura)
-  glow(aura, '#FFD86A', 0.18, 2)
-  slashPool = new Pool(() => {
-    const e = ent()
-    MeshRenderer.setBox(e)
-    glow(e, '#FF3B4E', 0.55, 4)
-    return e
-  }, 4)
-  novaPool = new Pool(() => {
-    const e = ent()
-    MeshRenderer.setCylinder(e)
-    glow(e, '#FF8A1E', 0.35, 4)
-    return e
-  }, 4)
-  strikePool = new Pool(() => {
-    const e = ent()
-    MeshRenderer.setBox(e)
-    glow(e, '#BFF4FF', 0.8, 6)
-    return e
-  }, 12)
+  GltfContainer.create(aura, { src: fxSrc('bloom', false) })
+  Tween.setRotateContinuous(aura, Quaternion.fromEulerDegrees(0, -1, 0), 40)
+  slashPool = fxPool('slash', 4)
+  novaPool = fxPool('pulse', 4)
+  strikePool = fxPool('sigil', 10)
+  lvlPool = pick('models/fx_levelup.glb', 2, 90)
   dmgPool = new Pool(() => {
     const e = ent()
     TextShape.create(e, { text: '', fontSize: 3, textColor: Color4.White(), font: Font.F_SANS_SERIF, textAlign: TextAlignMode.TAM_MIDDLE_CENTER, outlineWidth: 0.2, outlineColor: Color3.Black() })
@@ -200,23 +179,35 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
   if (run)
     for (const b of run.projs) {
       seenB.add(b.id)
-      let e = boltEnt.get(b.id)
-      if (!e) {
-        e = boltPool.take()
+      let v = boltEnt.get(b.id)
+      if (!v) {
+        const asc = run.evo('bolt')
+        const e = boltPool[asc ? 1 : 0].take()
         if (!e) continue
-        boltEnt.set(b.id, e)
+        v = { e, asc }
+        boltEnt.set(b.id, v)
       }
-      Transform.getMutable(e).position = V(b.x, 1.1, b.z)
+      Transform.getMutable(v.e).position = V(b.x, 1.1, b.z)
     }
-  for (const [id, e] of boltEnt)
+  for (const [id, v] of boltEnt)
     if (!seenB.has(id)) {
-      boltPool.give(e)
+      boltPool[v.asc ? 1 : 0].give(v.e)
       boltEnt.delete(id)
     }
 
   // orbit blades + aura around the local player
   const n = run && run.alive ? run.orbitCount() : 0
   const R = run ? run.orbitRadius() : 0
+  const bAsc = !!run && run.evo('orbit')
+  if (bAsc !== bladesAsc) {
+    bladesAsc = bAsc
+    for (const b of blades) GltfContainer.getMutable(b).src = fxSrc('glaive', bAsc)
+  }
+  const aAsc = !!run && run.evo('aura')
+  if (aAsc !== auraAsc) {
+    auraAsc = aAsc
+    GltfContainer.getMutable(aura).src = fxSrc('bloom', aAsc)
+  }
   blades.forEach((b, i) => {
     const t = Transform.getMutable(b)
     if (i >= n || !run) {
@@ -226,37 +217,46 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
     const a = run.orbitAngle + (i * 360) / n
     const rad = (a * Math.PI) / 180
     t.position = V(run.x + Math.sin(rad) * R, 1.0, run.z + Math.cos(rad) * R)
-    t.rotation = yawQ(a + 90)
+    t.rotation = yawQ(a * 4)
   })
   const ar = run && run.alive ? run.auraRadius() : 0
   const at = Transform.getMutable(aura)
   if (ar > 0 && run) {
-    at.position = V(run.x, 0.08, run.z)
-    at.scale = V(ar * 2, 0.02, ar * 2)
+    at.position = V(run.x, 0.06, run.z)
+    at.scale = V(ar * 2, 1 + ar * 0.25, ar * 2)
   } else at.position = HIDE
 
   // one-shot effects
   for (const ev of events) {
     if (ev.t === 'slash') {
-      const e = slashPool.take()
+      const asc = !!run && run.evo('lash')
+      const e = slashPool[asc ? 1 : 0].take()
       if (!e) continue
       const t = Transform.getMutable(e)
-      t.position = V(ev.x, 1.0, ev.z)
-      t.rotation = yawQ(ev.yaw)
-      t.scale = V(ev.w, 0.05, ev.l)
-      active.push({ e, life: 0.16, max: 0.16, kind: 'slash' })
+      t.position = V(ev.x, 0.9, ev.z)
+      t.rotation = yawQ(ev.yaw + 90)
+      t.scale = V(ev.l, 1, ev.w * 1.8)
+      active.push({ e, life: 0.2, max: 0.2, kind: 'slash', asc, s: ev.l })
     } else if (ev.t === 'nova') {
-      const e = novaPool.take()
+      const asc = !!run && run.evo('nova')
+      const e = novaPool[asc ? 1 : 0].take()
       if (!e) continue
-      Transform.getMutable(e).position = V(ev.x, 0.4, ev.z)
-      active.push({ e, life: 0.35, max: 0.35, kind: 'nova', r: ev.r })
+      Transform.getMutable(e).position = V(ev.x, 0.05, ev.z)
+      active.push({ e, life: 0.4, max: 0.4, kind: 'nova', r: ev.r, asc })
     } else if (ev.t === 'strike') {
-      const e = strikePool.take()
+      const asc = !!run && run.evo('thunder')
+      const e = strikePool[asc ? 1 : 0].take()
       if (!e) continue
       const t = Transform.getMutable(e)
-      t.position = V(ev.x, 6, ev.z)
-      t.scale = V(0.25, 12, 0.25)
-      active.push({ e, life: 0.22, max: 0.22, kind: 'strike' })
+      t.position = V(ev.x, 0, ev.z)
+      t.rotation = yawQ(Math.random() * 360)
+      t.scale = V(ev.r * 2, 1, ev.r * 2)
+      active.push({ e, life: 0.28, max: 0.28, kind: 'strike', r: ev.r, asc })
+    } else if (ev.t === 'levelup' && run) {
+      const e = lvlPool.take()
+      if (!e) continue
+      Transform.getMutable(e).position = V(run.x, 0.05, run.z)
+      active.push({ e, life: 0.9, max: 0.9, kind: 'lvl', asc: false })
     } else if (ev.t === 'hit' && (ev.crit || dmgCount++ % 3 === 0)) {
       const e = dmgPool.take()
       if (!e) continue
@@ -265,20 +265,36 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
       ts.textColor = ev.crit ? Color4.create(1, 0.85, 0.2, 1) : Color4.White()
       ts.fontSize = ev.crit ? 4.5 : 3
       Transform.getMutable(e).position = V(ev.x + (Math.random() - 0.5) * 0.4, 1.8, ev.z)
-      active.push({ e, life: 0.6, max: 0.6, kind: 'dmg', y: 1.8 })
+      active.push({ e, life: 0.6, max: 0.6, kind: 'dmg', y: 1.8, asc: false })
     }
   }
   for (let i = active.length - 1; i >= 0; i--) {
     const a = active[i]
     a.life -= dt
     const k = 1 - a.life / a.max
-    if (a.kind === 'nova') Transform.getMutable(a.e).scale = V(a.r! * 2 * (0.3 + 0.7 * k), 0.05, a.r! * 2 * (0.3 + 0.7 * k))
+    if (a.kind === 'nova') {
+      const d = a.r! * 2 * (0.25 + 0.75 * Math.sqrt(k))
+      Transform.getMutable(a.e).scale = V(d, 1 + (1 - k) * 2, d)
+    }
+    if (a.kind === 'strike') {
+      const w = a.r! * 2 * (1 - k * 0.7)
+      Transform.getMutable(a.e).scale = V(w, 1, w)
+    }
+    if (a.kind === 'slash') {
+      const t = Transform.getMutable(a.e)
+      t.scale = V(a.s! * (0.85 + 0.25 * k), 1, t.scale.z)
+    }
+    if (a.kind === 'lvl') {
+      const d = 1.6 + k * 2.5
+      Transform.getMutable(a.e).scale = V(d, 1 - k * 0.8, d)
+    }
     if (a.kind === 'dmg') {
       const t = Transform.getMutable(a.e)
       t.position = V(t.position.x, a.y! + k * 0.8, t.position.z)
     }
     if (a.life <= 0) {
-      const pool = a.kind === 'slash' ? slashPool : a.kind === 'nova' ? novaPool : a.kind === 'strike' ? strikePool : dmgPool
+      const ai = a.asc ? 1 : 0
+      const pool = a.kind === 'slash' ? slashPool[ai] : a.kind === 'nova' ? novaPool[ai] : a.kind === 'strike' ? strikePool[ai] : a.kind === 'lvl' ? lvlPool : dmgPool
       pool.give(a.e)
       active.splice(i, 1)
     }

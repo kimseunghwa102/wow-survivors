@@ -1,4 +1,4 @@
-# WOW Survivors — Decentraland 씬
+# WOW Nightswarm — Decentraland 씬
 
 Wow Casino 에스테이트(#6532, 기준 -106,76, 12파셀)용 서바이버즈 장르 호드 게임 + PvP. 씬 안 텍스트는 전부 영어.
 (장르 메커닉만 차용한 오리지널 게임 — 이름·캐릭터·에셋은 전부 자체 제작)

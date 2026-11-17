@@ -1,9 +1,9 @@
 {
-  "name": "wow-survivors",
+  "name": "wow-nightswarm",
   "version": "1.0.0",
-  "description": "WOW Survivors — survivors-like horde game with PvP, Decentraland (Wow Casino estate -106,76)",
+  "description": "WOW Nightswarm — horde arena game with PvP, Decentraland (Wow Casino estate -106,76)",
   "scripts": {
-    "models": "python3 blender/build_arena.py && python3 blender/build_monsters.py && python3 blender/make_sfx.py",
+    "models": "python3 blender/build_arena.py && python3 blender/build_monsters.py && python3 blender/build_fx.py && python3 blender/make_sfx.py",
     "start": "sdk-commands start",
     "build": "sdk-commands build",
     "deploy": "sdk-commands deploy",

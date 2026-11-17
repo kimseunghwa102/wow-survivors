@@ -44,6 +44,30 @@ def save_img(name, rgb):
     return path
 
 
+def save_normal(name, h, strength=6.0):
+    """tangent-space normal map (OpenGL / glTF convention) from a 0..1 height field"""
+    n = h.shape[0]
+    dx = (np.roll(h, -1, 1) - np.roll(h, 1, 1)) * 0.5 * n / 256
+    dr = (np.roll(h, -1, 0) - np.roll(h, 1, 0)) * 0.5 * n / 256
+    nx, ny, nz = -dx * strength, dr * strength, np.ones_like(h)
+    ln = np.sqrt(nx * nx + ny * ny + nz * nz)
+    return save_img(name, np.stack([nx / ln, ny / ln, nz / ln], -1) * 0.5 + 0.5)
+
+
+def tex_radial(name, color, n=256, power=2.0):
+    """soft round blob with alpha (fog / glow decals) -> PNG"""
+    from PIL import Image
+    yy, xx = (np.mgrid[0:n, 0:n] + 0.5) / n * 2 - 1
+    d = np.clip(1 - np.hypot(xx, yy), 0, 1) ** power
+    d = d * (0.75 + 0.25 * fbm(n, 4, 77))
+    rgba = np.zeros((n, n, 4))
+    rgba[..., :3] = np.array(color)[None, None, :]
+    rgba[..., 3] = d
+    path = os.path.join(TEX_DIR, name)
+    Image.fromarray((np.clip(rgba, 0, 1) * 255).astype(np.uint8), 'RGBA').save(path)
+    return path
+
+
 def tex_cobble(name, n=1024, base=(0.30, 0.29, 0.31), seed=3, cells=8):
     """irregular cobblestones via jittered voronoi"""
     rng = np.random.default_rng(seed)
@@ -67,7 +91,8 @@ def tex_cobble(name, n=1024, base=(0.30, 0.29, 0.31), seed=3, cells=8):
     col = col * (0.25 + 0.75 * edge[..., None])
     moss = (fbm(n, 4, seed + 5) > 0.62) * (1 - edge) * 0.5
     col = col * (1 - moss[..., None]) + np.array([0.12, 0.2, 0.1])[None, None, :] * moss[..., None]
-    return save_img(name, col)
+    height = np.sqrt(edge) * 0.8 + noise * 0.2
+    return save_img(name, col), save_normal(name.replace('.jpg', '_n.jpg'), height, 5.0)
 
 
 def tex_stone(name, n=1024, base=(0.36, 0.35, 0.38), seed=21, rows=4):
@@ -76,8 +101,12 @@ def tex_stone(name, n=1024, base=(0.36, 0.35, 0.38), seed=21, rows=4):
     yy, xx = np.mgrid[0:n, 0:n] / n
     row = (yy * rows).astype(int)
     xs = (xx * 2 + 0.5 * (row % 2)) % 1
-    joint = ((np.abs(((yy * rows) % 1)) < 0.015) | (xs < 0.008)).astype(float)[..., None]
-    return save_img(name, col * (1 - joint * 0.6))
+    jy = np.clip(np.minimum((yy * rows) % 1, 1 - (yy * rows) % 1) / 0.03, 0, 1)
+    jx = np.clip(np.minimum(xs, 1 - xs) / 0.012, 0, 1)
+    face = jy * jx
+    col = col * (0.4 + 0.6 * face[..., None])
+    height = face * 0.75 + t[..., 0] * 0.25
+    return save_img(name, col), save_normal(name.replace('.jpg', '_n.jpg'), height, 7.0)
 
 
 def tex_marble(name, base, vein, seed, n=1024, sharp=6.0):
@@ -100,7 +129,7 @@ class Mats:
         self.m = {}
         self.tile = {}
 
-    def add(self, name, color='#ffffff', metal=0.0, rough=0.5, emit=None, strength=0.0, alpha=1.0, tex=None, tile=4.0):
+    def add(self, name, color='#ffffff', metal=0.0, rough=0.5, emit=None, strength=0.0, alpha=1.0, tex=None, tile=4.0, emit_tex=False, clip=False):
         m = bpy.data.materials.new(name)
         m.use_nodes = True
         nt = m.node_tree
@@ -117,11 +146,36 @@ class Mats:
                 m.surface_render_method = 'BLENDED'
             except Exception:
                 pass
+        nrm = None
+        if isinstance(tex, tuple):
+            tex, nrm = tex
         if tex:
             img = bpy.data.images.load(tex)
             tn = nt.nodes.new('ShaderNodeTexImage')
             tn.image = img
             nt.links.new(tn.outputs['Color'], bsdf.inputs['Base Color'])
+            if emit_tex:
+                nt.links.new(tn.outputs['Color'], bsdf.inputs['Emission Color'])
+                bsdf.inputs['Emission Strength'].default_value = strength or 1.0
+            if tex.endswith('.png'):
+                nt.links.new(tn.outputs['Alpha'], bsdf.inputs['Alpha'])
+                try:
+                    m.surface_render_method = 'DITHERED' if clip else 'BLENDED'
+                except Exception:
+                    pass
+                if clip:
+                    try:
+                        m.blend_method = 'CLIP'
+                    except Exception:
+                        pass
+        if nrm:
+            ni = bpy.data.images.load(nrm)
+            ni.colorspace_settings.name = 'Non-Color'
+            nn = nt.nodes.new('ShaderNodeTexImage')
+            nn.image = ni
+            nm = nt.nodes.new('ShaderNodeNormalMap')
+            nt.links.new(nn.outputs['Color'], nm.inputs['Color'])
+            nt.links.new(nm.outputs['Normal'], bsdf.inputs['Normal'])
         m.use_backface_culling = False
         self.m[name] = m
         self.tile[name] = tile if tex else None
@@ -146,11 +200,11 @@ class Builder:
             self.acc[m] = Acc()
         return self.acc[m]
 
-    def faces(self, a, verts, faces, smooth=False):
+    def faces(self, a, verts, faces, smooth=False, uvs=None):
         base = len(a.v)
         a.v.extend(verts)
-        for f in faces:
-            a.f.append(([base + i for i in f], smooth))
+        for k, f in enumerate(faces):
+            a.f.append(([base + i for i in f], smooth, uvs[k] if uvs else None))
 
     def box(self, cx, cy, cz, sx, sy, sz, m, yaw=0.0, collide=False, pitch=0.0, roll=0.0):
         hx, hy, hz = sx / 2, sy / 2, sz / 2
@@ -230,6 +284,38 @@ class Builder:
         fs = [[0, 2, 3], [0, 3, 4], [0, 4, 5], [0, 5, 2], [1, 3, 2], [1, 4, 3], [1, 5, 4], [1, 2, 5]]
         self.faces(self.a(m), vs, fs)
 
+    def quad(self, p0, p1, p2, p3, m, uv=((0, 0), (1, 0), (1, 1), (0, 1))):
+        """single quad with explicit UVs (decals, banners, flames). points in DCL coords, CCW seen from the front"""
+        self.faces(self.a(m), [p0, p1, p2, p3], [[0, 1, 2, 3]], uvs=[list(uv)])
+
+    def decal(self, cx, y, cz, w, d, m, yaw=0.0):
+        hw, hd = w / 2, d / 2
+        pts = []
+        for (x, z) in [(-hw, -hd), (hw, -hd), (hw, hd), (-hw, hd)]:
+            x2, _, z2 = rot(x, 0, z, yaw, 0, 0)
+            pts.append((cx + x2, y, cz + z2))
+        self.quad(*pts, m)
+
+    def billboard_cross(self, cx, y0, cz, w, h, m, n=2, yaw0=0.0):
+        """n crossed vertical quads (flames, foliage)"""
+        for k in range(n):
+            a = math.radians(yaw0 + k * 180 / n)
+            dx, dz = math.cos(a) * w / 2, -math.sin(a) * w / 2
+            self.quad((cx - dx, y0, cz - dz), (cx + dx, y0, cz + dz), (cx + dx, y0 + h, cz + dz), (cx - dx, y0 + h, cz - dz), m)
+
+    def vpanel(self, cx, cy, cz, w, h, m, face='south', off=0.0):
+        """vertical textured panel facing a cardinal direction"""
+        hw, hh = w / 2, h / 2
+        if face == 'south':   # visible from -z
+            pts = [(cx + hw, cy - hh, cz - off), (cx - hw, cy - hh, cz - off), (cx - hw, cy + hh, cz - off), (cx + hw, cy + hh, cz - off)]
+        elif face == 'north':
+            pts = [(cx - hw, cy - hh, cz + off), (cx + hw, cy - hh, cz + off), (cx + hw, cy + hh, cz + off), (cx - hw, cy + hh, cz + off)]
+        elif face == 'east':  # visible from +x
+            pts = [(cx + off, cy - hh, cz + hw), (cx + off, cy - hh, cz - hw), (cx + off, cy + hh, cz - hw), (cx + off, cy + hh, cz + hw)]
+        else:                 # west
+            pts = [(cx - off, cy - hh, cz - hw), (cx - off, cy - hh, cz + hw), (cx - off, cy + hh, cz + hw), (cx - off, cy + hh, cz - hw)]
+        self.quad(*pts, m)
+
     def emit(self, prefix, collection=None):
         objs = []
         for m, a in self.acc.items():
@@ -256,15 +342,23 @@ def rot(x, y, z, yaw, pitch, roll):
 
 def make_obj(name, a, mats, m, collection=None):
     me = bpy.data.meshes.new(name)
-    me.from_pydata([to_b(v) for v in a.v], [], [f for f, _ in a.f])
+    me.from_pydata([to_b(v) for v in a.v], [], [f for f, _, _ in a.f])
     me.update()
-    for poly, (_, sm) in zip(me.polygons, a.f):
+    for poly, (_, sm, _) in zip(me.polygons, a.f):
         poly.use_smooth = sm
+    explicit = any(u is not None for _, _, u in a.f)
     bm = bmesh.new()
     bm.from_mesh(me)
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    if not explicit:
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     t = mats.tile.get(m) if m else None
-    if t:
+    if explicit:
+        uv = bm.loops.layers.uv.new('UVMap')
+        bm.faces.ensure_lookup_table()
+        for f, (_, _, uvs) in zip(bm.faces, a.f):
+            for lo, u in zip(f.loops, uvs or [(0, 0)] * len(f.loops)):
+                lo[uv].uv = u
+    elif t:
         uv = bm.loops.layers.uv.new('UVMap')
         for f in bm.faces:
             n = f.normal
@@ -288,7 +382,7 @@ def tri_count(objs=None):
 
 def export(path, animation=False):
     kw = dict(filepath=path, export_format='GLB', export_yup=True, export_apply=True,
-              export_image_format='JPEG', export_jpeg_quality=85, export_cameras=False)
+              export_image_format='AUTO', export_jpeg_quality=85, export_cameras=False)
     if animation:
         kw.update(export_animations=True, export_animation_mode='NLA_TRACKS', export_force_sampling=True)
     else:

@@ -1,27 +1,27 @@
 {
  "bat": {
-  "tris": 264,
-  "kb": 12
+  "tris": 518,
+  "kb": 41
  },
  "ghoul": {
-  "tris": 284,
-  "kb": 15
+  "tris": 466,
+  "kb": 45
  },
  "ghoul_elite": {
-  "tris": 310,
-  "kb": 16
+  "tris": 648,
+  "kb": 53
  },
  "skeleton": {
-  "tris": 412,
-  "kb": 21
+  "tris": 650,
+  "kb": 47
  },
  "wraith": {
-  "tris": 368,
-  "kb": 14
+  "tris": 540,
+  "kb": 36
  },
  "lich": {
-  "tris": 664,
-  "kb": 31
+  "tris": 1086,
+  "kb": 65
  },
  "gem_blue": {
   "tris": 8,
@@ -41,6 +41,6 @@
  },
  "chest": {
   "tris": 232,
-  "kb": 13
+  "kb": 16
  }
 }
