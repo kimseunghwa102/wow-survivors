@@ -1,0 +1,19 @@
+# Render Blueprint — New → Blueprint → pick this repo. Only DATABASE_URL (Neon) must be filled in.
+services:
+  - type: web
+    name: wow-survivors-api
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: ALLOWED_PARCELS
+        value: "-106,76;-105,76;-104,76;-105,77;-104,77;-105,78;-104,78;-103,78;-106,79;-105,79;-106,80;-105,80"
+      - key: ALLOW_GUESTS
+        value: "1"

@@ -1,0 +1,8 @@
+node_modules
+.git
+src
+blender
+tsconfig.json
+README.md
+*.zip
+layout.json

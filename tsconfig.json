@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "resolveJsonModule": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "layout.json"
+  ],
+  "extends": "@dcl/sdk/types/tsconfig.ecs7.json"
+}

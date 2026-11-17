@@ -1,0 +1,67 @@
+{
+  "ecs7": true,
+  "runtimeVersion": "7",
+  "display": {
+    "title": "WOW Survivors",
+    "description": "A survivors-like horde game: auto-attacking weapons, endless monsters, level-ups, evolutions, jackpot chests and a Lich King boss — and other players can fight you in the arena. Free to play."
+  },
+  "owner": "",
+  "contact": {
+    "name": "WOW Automation",
+    "email": ""
+  },
+  "main": "bin/index.js",
+  "tags": [
+    "game",
+    "pvp",
+    "survival",
+    "roguelike",
+    "social"
+  ],
+  "scene": {
+    "parcels": [
+      "-106,76",
+      "-105,76",
+      "-104,76",
+      "-105,77",
+      "-104,77",
+      "-105,78",
+      "-104,78",
+      "-103,78",
+      "-106,79",
+      "-105,79",
+      "-106,80",
+      "-105,80"
+    ],
+    "base": "-106,76"
+  },
+  "spawnPoints": [
+    {
+      "name": "sanctuary",
+      "default": true,
+      "position": {
+        "x": [
+          5,
+          9
+        ],
+        "y": [
+          0,
+          0
+        ],
+        "z": [
+          2,
+          4
+        ]
+      },
+      "cameraTarget": {
+        "x": 16,
+        "y": 2,
+        "z": 8
+      }
+    }
+  ],
+  "requiredPermissions": [
+    "ALLOW_TO_MOVE_PLAYER_INSIDE_SCENE"
+  ],
+  "featureToggles": {}
+}
