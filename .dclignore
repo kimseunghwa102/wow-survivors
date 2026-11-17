@@ -2,7 +2,10 @@ node_modules
 .git
 src
 blender
+server
 tsconfig.json
 README.md
 *.zip
 layout.json
+render.yaml
+*.bat
