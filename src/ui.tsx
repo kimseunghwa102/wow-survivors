@@ -378,19 +378,20 @@ function ArmoryModal() {
               )
             ) : (
               <Button
-                value={G.armoryBusy && next ? '…' : `● ${w.cost.toLocaleString()}`}
+                value={G.armoryBusy && next ? '…' : next ? (G.bank >= w.cost ? `BUY ● ${w.cost.toLocaleString()}` : `NEED ● ${w.cost.toLocaleString()}`) : `🔒 ● ${w.cost.toLocaleString()}`}
                 fontSize={13}
                 color={WHITE}
                 uiTransform={{ width: 150, height: 32 }}
-                uiBackground={{ color: next ? (G.bank >= w.cost ? C('#C08A00') : C('#3A2A4A')) : C('#222222') }}
+                uiBackground={{ color: next ? (G.bank >= w.cost ? C('#1FA85A') : C('#6A2A2A')) : C('#222222') }}
                 onMouseDown={tap(() => buyArmory(i))}
               />
             )}
           </UiEntity>
         )
       })}
+      {G.armoryMsg ? <Label value={`<b>${G.armoryMsg}</b>`} fontSize={15} color={G.armoryMsg.startsWith('✓') ? C('#3DFF8E') : C('#FFB84A')} uiTransform={{ height: 24, margin: { top: 6 } }} /> : null}
       <Label value="Unlock in order. Damage grows with your level during a run." fontSize={12} color={DIM} uiTransform={{ height: 20, margin: { top: 6 } }} />
-      <Button value="CLOSE" fontSize={15} color={WHITE} uiTransform={{ width: 160, height: 38, margin: { top: 8 } }} uiBackground={{ color: C('#2A2A3A') }} onMouseDown={tap(() => (G.armoryOpen = false))} />
+      <Button value="CLOSE" fontSize={15} color={WHITE} uiTransform={{ width: 160, height: 38, margin: { top: 8 } }} uiBackground={{ color: C('#2A2A3A') }} onMouseDown={tap(() => ((G.armoryOpen = false), (G.armoryMsg = '')))} />
     </Modal>
   )
 }
@@ -410,7 +411,6 @@ const Root = () => (
     <NextBoss />
     <SidePanel />
     <HpBar />
-    <Banner />
     <LobbyHint />
     {G.phase === 'start' ? <StartModal /> : null}
     {G.phase === 'levelup' && G.run ? <LevelModal /> : null}
@@ -418,6 +418,7 @@ const Root = () => (
     {G.phase === 'dead' ? <DeadModal /> : null}
     {G.shopOpen && G.phase !== 'levelup' && G.phase !== 'chest' ? <ShopModal /> : null}
     {G.armoryOpen && !G.shopOpen && (G.phase === 'idle' || G.phase === 'dead' || G.phase === 'start') ? <ArmoryModal /> : null}
+    <Banner />
   </UiEntity>
 )
 

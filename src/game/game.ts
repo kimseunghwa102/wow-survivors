@@ -43,6 +43,7 @@ export const G = {
   equip: -1, // -1 = best owned
   armoryOpen: false,
   armoryBusy: false,
+  armoryMsg: '' as string,
   daily: null as null | { streak: number; claimable: boolean; next: number; doubleReady: boolean },
   dailyBusy: false,
   flash: 0, // white screen flash (nuke)
@@ -69,22 +70,34 @@ export function applyProfile(p: ServerProfile | null) {
 }
 
 export function buyArmory(tier: number) {
-  if (G.armoryBusy || tier !== G.armory + 1 || tier >= ARMORY.length) return
+  if (G.armoryBusy) return
+  if (tier <= G.armory) return
+  if (tier !== G.armory + 1) {
+    G.armoryMsg = `Unlock ${ARMORY[G.armory + 1].name} first (weapons unlock in order)`
+    return
+  }
   const cost = ARMORY[tier].cost
-  if (G.bank < cost) return banner(`Need ● ${cost.toLocaleString()} gold`, 2)
+  if (G.bank < cost) {
+    G.armoryMsg = `Not enough gold: need ● ${cost.toLocaleString()}, you have ● ${G.bank.toLocaleString()}`
+    play('hurt', 1.6)
+    return
+  }
   const done = () => {
     G.equip = -1
+    G.armoryMsg = `✓ ${ARMORY[tier].name} unlocked and equipped!`
     play('buy')
     banner(`${ARMORY[tier].name.toUpperCase()} UNLOCKED!`, 3)
   }
   if (save.online) {
     G.armoryBusy = true
+    G.armoryMsg = 'Buying…'
     serverArmoryBuy(tier)
       .then((p) => {
         applyProfile(p)
         if ((p.armory ?? 0) >= tier) done()
+        else G.armoryMsg = 'Purchase was not accepted — try again'
       })
-      .catch((e) => banner(`Purchase failed: ${String(e?.message ?? e)}`, 3))
+      .catch((e) => (G.armoryMsg = `Purchase failed: ${String(e?.message ?? e)}`))
       .finally(() => (G.armoryBusy = false))
     return
   }
