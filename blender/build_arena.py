@@ -50,6 +50,7 @@ LANCET = M.add('lancet_glass', tex=tex_lancet('lancet.png'), emit_tex=True, stre
 B = Builder(M)
 LB, LG = L['lobby'], L['legends']
 WALL_H, COL_H, T = 7.5, 14.0, 1.2
+CURTAIN_H = 24.0  # tall outer curtain wall: nothing outside the castle is visible
 
 # ═══════════ GROUND ═══════════
 B.box2(16.0, -0.3, 0.0, 48.0, 0.0, 48.0, FLAG)
@@ -182,6 +183,70 @@ wall('z', 64 - T - E, 64 - E, 32 + E, 48 - E, 'w', h=6.0, trim=GOLD, deco=False,
 wall('x', 48 - T - E, 48 - E, 48 - E, 64 - E, 's', h=6.0, trim=GOLD, deco=False, mat=BLOCK_D)
 
 
+
+# ═══════════ OUTER CURTAIN — a 24 m fortress wall around the whole estate (hides the world outside) ═══════════
+def curtain():
+    P = {tuple(p) for p in L['parcels']}
+    segs = []  # (axis, line, a, b, inner_sign)
+    for (px, pz) in P:
+        x0, z0 = px * 16, pz * 16
+        if (px, pz - 1) not in P: segs.append(('x', z0, x0, x0 + 16, 1))
+        if (px, pz + 1) not in P: segs.append(('x', z0 + 16, x0, x0 + 16, -1))
+        if (px - 1, pz) not in P: segs.append(('z', x0, z0, z0 + 16, 1))
+        if (px + 1, pz) not in P: segs.append(('z', x0 + 16, z0, z0 + 16, -1))
+    # merge collinear neighbours
+    segs.sort()
+    merged = []
+    for sg in segs:
+        if merged and merged[-1][0] == sg[0] and merged[-1][1] == sg[1] and merged[-1][4] == sg[4] and abs(merged[-1][3] - sg[2]) < 1e-6:
+            merged[-1] = (sg[0], sg[1], merged[-1][2], sg[3], sg[4])
+        else:
+            merged.append(sg)
+    TH, Y0, H = 0.9, 5.9, CURTAIN_H
+    inside = lambda x, z: (math.floor(x / 16), math.floor(z / 16)) in P
+    for (ax, ln, a, b, si) in merged:
+        mid = ln + si * (E + TH / 2)
+        # concave corner → extend into the corner; convex → stop short of the parcel edge
+        def end(v, d):
+            probe = v + d * 0.5
+            ok = inside(probe, mid) if ax == 'x' else inside(mid, probe)
+            return v + d * (E + TH) if ok else v - d * E
+        a2, b2 = end(a, -1), end(b, 1)
+        c0, c1 = sorted((ln + si * E, ln + si * (E + TH)))
+        fi = c1 if si > 0 else c0           # inner face
+        o = si                                # inward direction
+        if ax == 'x':
+            box = lambda u0, y0, u1, y1, w0, w1, m, col=False: B.box2(u0, y0, w0, u1, y1, w1, m, collide=col)
+        else:
+            box = lambda u0, y0, u1, y1, w0, w1, m, col=False: B.box2(w0, y0, u0, w1, y1, u1, m, collide=col)
+        box(a2, Y0, b2, H, c0, c1, BLOCK)
+        box(a2, 0, b2, H + 2.0, c0, c1, None, True)                       # collider (god-flight proof)
+        # string courses + gold trim on the inner face
+        for (y, hgt, m, d) in [(12.0, 0.45, BLOCK_D, 0.22), (18.0, 0.45, BLOCK_D, 0.22), (H - 0.6, 0.18, GOLD, 0.06)]:
+            box(a2, y, b2, y + hgt, min(fi, fi + o * d), max(fi, fi + o * d), m)
+        box(a2 - 0.1, H, b2 + 0.1, H + 0.35, c0 - 0.1, c1 + 0.1, BLOCK_D)  # coping
+        n = int((b2 - a2) / 1.7)
+        for i in range(n):
+            t = a2 + (i + 0.5) * (b2 - a2) / n
+            box(t - 0.45, H + 0.35, t + 0.45, H + 1.4, c0, c1, BLOCK)       # battlements
+        # glowing arrow slits + giant banners on the inner face
+        k = 0
+        t = a2 + 4.0
+        while t < b2 - 3.0:
+            if k % 3 == 2:
+                if ax == 'x':
+                    banner_on(t, 15.0, fi, 'n' if o > 0 else 's', BANNER if k % 2 else BANNER_B, w=2.6, h=5.4)
+                else:
+                    banner_on(fi, 15.0, t, 'e' if o > 0 else 'w', BANNER if k % 2 else BANNER_B, w=2.6, h=5.4)
+            else:
+                box(t - 0.12, 14.0, t + 0.12, 16.2, min(fi, fi + o * 0.04), max(fi, fi + o * 0.04), SOUL)
+                box(t - 0.12, 20.0, t + 0.12, 21.4, min(fi, fi + o * 0.04), max(fi, fi + o * 0.04), SOUL)
+            k += 1
+            t += 5.2
+
+
+curtain()
+
 # ═══════════ TOWERS ═══════════
 def tower(x, z, r=1.7, h=11.0, flame=SFLAME):
     B.cyl(x, 0, z, r, h, BLOCK, seg=14, collide=True, caps=False)
@@ -200,7 +265,8 @@ def tower(x, z, r=1.7, h=11.0, flame=SFLAME):
 
 
 for (x, z) in [(18.4, 2.4), (45.6, 2.4), (45.6, 45.6), (2.3, 50.3), (2.3, 2.3), (2.3, 13.7), (61.7, 34.3), (61.7, 45.7)]:
-    tower(x, z, r=1.6 if x < 3 or x > 60 else 1.7, h=9.0 if x < 3 or x > 60 else 11.0, flame=FLAME if x < 3 or x > 60 else SFLAME)
+    # towers crown the tall outer curtain
+    tower(x, z, r=1.9 if x < 3 or x > 60 else 2.0, h=CURTAIN_H + 1.5 if x < 3 or x > 60 else CURTAIN_H + 3.0, flame=FLAME if x < 3 or x > 60 else SFLAME)
 
 
 # ═══════════ GATEHOUSES ═══════════
