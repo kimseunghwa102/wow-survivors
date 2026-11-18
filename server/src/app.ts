@@ -184,6 +184,8 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     console.error(err)
+    const code = Number(err?.statusCode)
+    if (code >= 400 && code < 600) return res.status(code).json({ ok: false, error: String(err.message) })
     res.status(500).json({ ok: false, error: 'server error' })
   })
   return app
