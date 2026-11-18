@@ -5,3 +5,6 @@ bin
 main.crdt
 __pycache__/
 *.mp4
+raid/node_modules
+raid/bin
+raid/main.crdt

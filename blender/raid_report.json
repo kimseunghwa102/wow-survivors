@@ -1,0 +1,71 @@
+{
+ "raid_gate": {
+  "tris": 404,
+  "kb": 17
+ },
+ "reaper": {
+  "tris": 4292,
+  "kb": 230
+ },
+ "raid_arena": {
+  "tris": 1936,
+  "kb": 254
+ },
+ "fx_r_warn": {
+  "tris": 64,
+  "kb": 3
+ },
+ "fx_r_cone": {
+  "tris": 80,
+  "kb": 4
+ },
+ "fx_r_sweep": {
+  "tris": 144,
+  "kb": 7
+ },
+ "fx_r_erupt": {
+  "tris": 84,
+  "kb": 7
+ },
+ "fx_r_shock": {
+  "tris": 224,
+  "kb": 10
+ },
+ "fx_r_bolt": {
+  "tris": 122,
+  "kb": 5
+ },
+ "fx_r_hit": {
+  "tris": 16,
+  "kb": 2
+ },
+ "fx_r_dome": {
+  "tris": 224,
+  "kb": 5
+ },
+ "fx_r_portal": {
+  "tris": 130,
+  "kb": 8
+ },
+ "cos_lantern": {
+  "tris": 144,
+  "kb": 6
+ },
+ "cos_crown": {
+  "tris": 256,
+  "kb": 9
+ },
+ "cos_hourglass": {
+  "tris": 148,
+  "kb": 6
+ },
+ "cos_shroud": {
+  "tris": 180,
+  "kb": 10
+ },
+ "cos_scythe": {
+  "tris": 42,
+  "kb": 4
+ },
+ "_total_tris": 8490
+}

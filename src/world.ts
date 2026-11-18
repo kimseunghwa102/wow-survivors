@@ -1,12 +1,12 @@
 import { engine, Transform, GltfContainer, LightSource, SkyboxTime, TextAlignMode, pointerEventsSystem, InputAction, Tween } from '@dcl/sdk/ecs'
-import { openExternalUrl } from '~system/RestrictedActions'
+import { openExternalUrl, teleportTo } from '~system/RestrictedActions'
 import { Color3, Quaternion } from '@dcl/sdk/math'
 import LAYOUT from '../layout.json'
 import { node, text, setText, hitbox, bob, V, FACE } from './helpers'
 import { topRuns, topPvp } from './game/net'
-import { save, loadBoard } from './game/persist'
+import { save, loadBoard, raidPublic } from './game/persist'
 import { G, equipped, openGoldShop } from './game/game'
-import { ARMORY } from './game/defs'
+import { ARMORY, RAID_PARCEL } from './game/defs'
 
 export function buildWorld() {
   // night sky
@@ -70,6 +70,38 @@ export function buildWorld() {
   const xHit = hitbox(V(9.2, 3.0, 12.2), V(3.4, 1.6, 1.0))
   pointerEventsSystem.onPointerDown({ entity: xHit, opts: { button: InputAction.IA_POINTER, hoverText: 'Follow @bitcoinisnotall on X', maxDistance: 12 } }, () => {
     void openExternalUrl({ url: 'https://x.com/bitcoinisnotall' })
+  })
+
+  // GATE TO THE REAPER'S REALM — co-op world boss on parcel -91,71
+  const gate = node(V(6.0, 0, 14.4), Quaternion.fromEulerDegrees(0, 180, 0))
+  GltfContainer.create(gate, { src: 'models/raid_gate.glb' })
+  const swirl = node(V(0, 2.2, 0.05), Quaternion.fromEulerDegrees(0, 180, 0), gate)
+  GltfContainer.create(swirl, { src: 'models/fx_r_portal.glb' })
+  Tween.setRotateContinuous(swirl, Quaternion.fromEulerDegrees(0, 0, 1), 60)
+  text(V(6.0, 6.3, 14.2), "THE REAPER'S REALM", 2.6, '#FF7A4A', { outline: '#2A0006', billboard: true })
+  const raidSign = text(V(6.0, 5.5, 14.2), 'co-op world boss', 1.5, '#E8C8FF', { billboard: true })
+  LightSource.create(node(V(6.0, 2.5, 13.6)), { type: LightSource.Type.Point({}), color: Color3.create(0.7, 0.4, 1), intensity: 3000, range: 8 })
+  const gateHit = hitbox(V(6.0, 2.2, 14.2), V(3.4, 4.2, 1.2))
+  pointerEventsSystem.onPointerDown({ entity: gateHit, opts: { button: InputAction.IA_POINTER, hoverText: "Enter the Reaper's Realm (-91,71)", maxDistance: 12 } }, () => {
+    void teleportTo({ worldCoordinates: { x: RAID_PARCEL.x, y: RAID_PARCEL.y } })
+  })
+  let raidT = 99
+  engine.addSystem((dt) => {
+    raidT += dt
+    if (raidT < 30) return
+    raidT = 0
+    raidPublic()
+      .then((r) => {
+        if (!r) return
+        const left = Math.max(0, r.respawnAt - r.now)
+        setText(
+          raidSign,
+          r.alive
+            ? `THE PALE SOVEREIGN · ${Math.ceil((r.hp / r.maxHp) * 100)}% HP\nhunt him together · relics for every hunter\n<size=70%>click the rift to enter</size>`
+            : `the reaper is slain${r.killer ? ` (by ${r.killer})` : ''}\nrises again in ${Math.floor(left / 3600000)}h ${Math.floor((left % 3600000) / 60000)}m`
+        )
+      })
+      .catch(() => {})
   })
 
   // THE TREASURY (gold shop) — overflowing chest kiosk facing the spawn; click to open

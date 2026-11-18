@@ -5,6 +5,7 @@ import {
 } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { MessageBus } from '@dcl/sdk/message-bus'
+import { attachCosmetic, titleOf } from './cosmetics'
 import { syncEntity } from '@dcl/sdk/network'
 import { getPlayer } from '@dcl/sdk/players'
 import { Remote } from './core'
@@ -27,6 +28,8 @@ export type Status = {
   gd?: boolean
   tb?: number // orbit blade skill tier
   ta?: number // aura skill tier
+  cs?: string | null // raid relic worn
+  ti?: string | null // raid title
 }
 type RemoteInfo = Status & { seen: number; x: number; z: number; entity?: Entity }
 
@@ -169,7 +172,7 @@ export function attackable(myRunActive: boolean, meInArena: boolean): Remote[] {
 }
 
 // ───────────── remote player visuals: level tag, HP bar, their blades & aura ─────────────
-type Vis = { tag: Entity; aura: Entity; blades: Entity[]; god?: Entity; ta: number; tb: number }
+type Vis = { tag: Entity; aura: Entity; blades: Entity[]; god?: Entity; ta: number; tb: number; cos?: Entity; cosId?: string | null }
 const SUF = ['', '_t2', '_t3', '_asc']
 const tierN = (v: number | undefined) => Math.max(0, Math.min(3, Math.round(v ?? 0)))
 const vis = new Map<string, Vis>()
@@ -249,9 +252,13 @@ function setupRemoteVisuals() {
         engine.removeEntity(v.god)
         v.god = undefined
       }
+      if ((r.cs ?? null) !== (v.cosId ?? null)) {
+        v.cosId = r.cs ?? null
+        v.cos = attachCosmetic(id, v.cosId, v.cos)
+      }
       const ts = TextShape.getMutable(v.tag)
       const frac = Math.max(0, Math.min(1, r.hp / Math.max(1, r.mh)))
-      ts.text = `${r.ar ? 'PVP · ' : 'SAFE · '}Lv ${r.l}\nHP ${Math.round(frac * 100)}% · ${r.k} kills`
+      ts.text = `${titleOf(r.ti) ? `« ${titleOf(r.ti)} »\n` : ''}${r.ar ? 'PVP · ' : 'SAFE · '}Lv ${r.l}\nHP ${Math.round(frac * 100)}% · ${r.k} kills`
       ts.textColor = r.ar ? Color4.fromHexString('#FF5468') : Color4.fromHexString('#9AA0AA')
       Transform.getMutable(v.tag).position = Vector3.create(r.x, 2.7, r.z)
       if (tierN(r.ta) !== v.ta) {

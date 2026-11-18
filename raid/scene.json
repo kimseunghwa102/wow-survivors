@@ -1,0 +1,58 @@
+{
+  "ecs7": true,
+  "runtimeVersion": "7",
+  "display": {
+    "title": "WOW Nightswarm \u2014 The Pale Sovereign",
+    "description": "A colossal reaper rises from the burning earth once a day. Hunters of WOW NIGHTSWARM band together to bring him down: dodge his scythe, leaping slams, lava eruptions and soul bolts. Everyone who fights shares the loot \u2014 cosmetic relics worn in the castle and gold for your bank. Gold, weapons and progress are shared with the main castle (-106,76). Created by @bitcoinisnotall on X.",
+    "navmapThumbnail": "images/thumbnail.jpg"
+  },
+  "owner": "",
+  "contact": {
+    "name": "@bitcoinisnotall",
+    "email": ""
+  },
+  "main": "bin/index.js",
+  "tags": [
+    "game",
+    "boss",
+    "raid",
+    "co-op",
+    "horror"
+  ],
+  "scene": {
+    "parcels": [
+      "-91,71"
+    ],
+    "base": "-91,71"
+  },
+  "spawnPoints": [
+    {
+      "name": "portal",
+      "default": true,
+      "position": {
+        "x": [
+          6.5,
+          9.5
+        ],
+        "y": [
+          0,
+          0
+        ],
+        "z": [
+          2.2,
+          3.2
+        ]
+      },
+      "cameraTarget": {
+        "x": 8,
+        "y": 8,
+        "z": 10
+      }
+    }
+  ],
+  "requiredPermissions": [
+    "ALLOW_TO_MOVE_PLAYER_INSIDE_SCENE",
+    "ALLOW_TO_TRIGGER_AVATAR_EMOTE"
+  ],
+  "featureToggles": {}
+}

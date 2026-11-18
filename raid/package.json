@@ -1,0 +1,25 @@
+{
+  "name": "wow-nightswarm-reaper",
+  "version": "1.0.0",
+  "description": "THE PALE SOVEREIGN \u2014 co-op world boss raid for WOW Nightswarm (parcel -91,71)",
+  "scripts": {
+    "start": "sdk-commands start",
+    "build": "sdk-commands build",
+    "deploy": "sdk-commands deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@dcl/js-runtime": "latest",
+    "@dcl/sdk": "latest"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=6.0.0"
+  },
+  "prettier": {
+    "semi": false,
+    "singleQuote": true,
+    "printWidth": 120,
+    "trailingComma": "none"
+  }
+}

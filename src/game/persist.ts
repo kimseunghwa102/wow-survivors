@@ -27,7 +27,9 @@ export const save = {
   board: null as GlobalBoard | null,
   runId: '' as string,
   /** a run the player left mid-way (from /api/profile) */
-  resume: null as null | { runId: string; snap: RunSnap }
+  resume: null as null | { runId: string; snap: RunSnap },
+  /** raid relics (cosmetic + title) */
+  inv: { items: {}, cosmetic: null, title: null } as { items: Record<string, number>; cosmetic: string | null; title: string | null }
 }
 
 async function call(method: 'GET' | 'POST', path: string, body?: unknown): Promise<any> {
@@ -53,6 +55,7 @@ export async function loadProfile(name: string) {
   try {
     const r = await call('POST', '/api/profile', { name })
     save.profile = r.profile
+    if (r.inv) save.inv = r.inv
     save.resume = r.resume && r.resume.snap && r.resume.snap.v === 1 ? r.resume : null
     save.online = true
     save.status = r.profile.guest ? 'guest — connect a wallet to keep progress everywhere' : 'progress saved to your wallet'
@@ -159,4 +162,11 @@ export async function pingServer() {
   try {
     await fetch(API_URL + '/api/health')
   } catch {}
+}
+
+/** public world-boss status for the gate sign */
+export async function raidPublic() {
+  const r = await fetch(API_URL + '/api/raid')
+  const j = await r.json()
+  return j.raid as { hp: number; maxHp: number; alive: boolean; killer: string | null; respawnAt: number; now: number; top: { n: string; d: number }[] }
 }

@@ -188,3 +188,16 @@ export const GOLD_PACKS = [
   { id: 'p100', usd: 100, gold: 130_000, bonus: 30, tag: 'BEST VALUE', img: 'images/pack_5.png' }
 ]
 export const FIRST_BUY_BONUS = 0.5
+
+/** relics dropped by THE PALE SOVEREIGN (raid at -91,71); must match raid/src/defs.ts + server/src/raid.ts */
+export type CosmeticDef = { id: string; name: string; model?: string; anchor?: 'head' | 'hand_l' | 'hand_r' | 'feet' | 'over'; title?: string }
+export const COSMETICS: CosmeticDef[] = [
+  { id: 'title_slayer', name: 'Reaper Slayer', title: 'Reaper Slayer' },
+  { id: 'title_bane', name: "Death's Bane", title: "Death's Bane" },
+  { id: 'lantern', name: 'Soul Lantern', model: 'models/cos_lantern.glb', anchor: 'hand_l' },
+  { id: 'crown', name: 'Bone Crown', model: 'models/cos_crown.glb', anchor: 'head' },
+  { id: 'hourglass', name: 'Hourglass of Ages', model: 'models/cos_hourglass.glb', anchor: 'over' },
+  { id: 'shroud', name: "Reaper's Shroud", model: 'models/cos_shroud.glb', anchor: 'feet' },
+  { id: 'scythe_skin', name: 'Scythe of the Pale Sovereign', model: 'models/cos_scythe.glb', anchor: 'hand_r' }
+]
+export const RAID_PARCEL = { x: -91, y: 71 }

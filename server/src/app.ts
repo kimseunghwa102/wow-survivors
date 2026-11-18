@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express'
 import { verify } from '@dcl/platform-crypto-middleware'
 import { GOLD_PACK, GOLD_PACKS, FIRST_BUY_BONUS, hasBought, createQuote, confirmPurchase, settlePending, Rpc, PriceFeed, coingecko, Currency } from './payments'
 import { Sql, getOrCreate, toProfile, startRun, getOpenRun, finishRun, buy, leaderboard, rankOf, buyArmory, claimDaily, getResume, saveCheckpoint, bankAbandoned } from './db'
+import { raidRoutes, inventory } from './raid'
 import { META_KEYS, META_MAX, MetaKey, metaCost, clampRun, LIMITS } from './rules'
 
 export type Auth = { address: string; guest: boolean; meta: Record<string, any> }
@@ -83,7 +84,7 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
     authed(async (req, res, a) => {
       if (pay.rpc && pay.wallet && !a.guest) await settlePending(db, a.address, pay.rpc).catch(() => 0)
       const p = await getOrCreate(db, a.address, nameOf(req), a.guest)
-      res.json({ ok: true, profile: { ...toProfile(p), firstPurchase: !a.guest && !(await hasBought(db, a.address)) }, resume: await getResume(db, a.address) })
+      res.json({ ok: true, profile: { ...toProfile(p), firstPurchase: !a.guest && !(await hasBought(db, a.address)) }, resume: await getResume(db, a.address), inv: await inventory(db, a.address) })
     })
   )
 
@@ -201,6 +202,8 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
       res.status(r.status === 'invalid' || r.status === 'failed' ? 400 : 200).json({ ...r, profile: p ? toProfile(p) : undefined })
     })
   )
+
+  raidRoutes(app as any, db, authed as any, getOrCreate)
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     console.error(err)

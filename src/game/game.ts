@@ -4,9 +4,11 @@ import { Vector3 } from '@dcl/sdk/math'
 import { movePlayerTo } from '~system/RestrictedActions'
 import LAYOUT from '../../layout.json'
 import { Run, Option, Ev, inArena } from './core'
+import type { Entity } from '@dcl/sdk/ecs'
 import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS } from './defs'
 import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm, queueRemoteFx, fxTiers, haloTiersOf } from './view'
 import { encodeFx, decodeFx } from './fxnet'
+import { attachCosmetic } from './cosmetics'
 import { play, setupSfx, musicLevel } from './sfx'
 import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf, sendFx, pushFeed } from './net'
 import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile, serverArmoryBuy, serverClaimDaily, shopConfig, shopQuote, shopConfirm, serverSaveRun, serverAbandon, pingServer } from './persist'
@@ -84,6 +86,16 @@ export function applyProfile(p: ServerProfile | null) {
   if (p.armory !== undefined) G.armory = Math.max(G.armory, p.armory)
   if (p.daily) G.daily = p.daily
   if (p.firstPurchase !== undefined) G.firstPurchase = p.firstPurchase
+  wearMine()
+}
+
+// raid relic on my own avatar
+let myCos: string | null = null
+let myCosEnt: Entity | undefined
+function wearMine() {
+  if (save.inv.cosmetic === myCos) return
+  myCos = save.inv.cosmetic
+  myCosEnt = attachCosmetic(undefined, myCos, myCosEnt)
 }
 
 export function buyArmory(tier: number) {
@@ -810,7 +822,9 @@ export function setupGame() {
         au: rr?.auraRadius() ?? 0,
         k: rr?.kills ?? 0,
         gd: equipped() === GOD_TIER,
-        ...(rr ? haloTiersOf(rr) : { tb: 0, ta: 0 })
+        ...(rr ? haloTiersOf(rr) : { tb: 0, ta: 0 }),
+        cs: save.inv.cosmetic,
+        ti: save.inv.title
       })
     }
   })

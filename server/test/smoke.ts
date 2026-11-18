@@ -179,11 +179,57 @@ async function main() {
   const stolen = await signed(alice, 'POST', '/api/shop/confirm', { quoteId: qm.json.quote.id, txHash: h4 })
   assert(stolen.status === 400, "someone else can't claim another player's quote / payment")
 
+
   console.log('persistence + leaderboard')
   const again2 = await signed(alice, 'POST', '/api/profile', {})
   assert(again2.json.profile.meta.might === 2 && again2.json.profile.armory === 1, 'upgrades & armory persist across sessions')
   const lb = await (await fetch(base + '/api/leaderboard')).json()
   assert(lb.runs[0].n === 'Alice' && lb.runs[0].t === 590, 'global leaderboard lists best run')
+
+  console.log('raid: the pale sovereign')
+  {
+    const { rollItems, raidToday, RAID } = await import('../src/raid')
+    const aliceAddr = alice.owner.address.toLowerCase()
+    const pub = await (await fetch(base + '/api/raid')).json()
+    assert(pub.raid.alive && pub.raid.hp === RAID.maxHp, 'public raid state: boss alive at full health')
+    await db.query('UPDATE players SET armory = 8, best_level = 100 WHERE address = $1', [aliceAddr])
+    const h1 = await signed(alice, 'POST', '/api/raid/hit', { dmg: 1e9, name: 'Alice' })
+    assert(h1.json.ok && h1.json.accepted > 0 && h1.json.accepted < 2_000_000, `huge claim clamped by armory/level budget (${h1.json.accepted})`)
+    const h2 = await signed(alice, 'POST', '/api/raid/hit', { dmg: 1e9, name: 'Alice' })
+    assert(h2.json.accepted < 30_000, `spam right after is near zero (${h2.json.accepted})`)
+    await db.query(`UPDATE raid_dmg SET last_hit = NOW() - INTERVAL '10 seconds' WHERE address = $1`, [aliceAddr])
+    const h3 = await signed(alice, 'POST', '/api/raid/hit', { dmg: 50_000, name: 'Alice' })
+    assert(h3.json.accepted === 50_000 && h3.json.raid.myDmg >= 50_000, 'honest hit inside the budget is fully accepted')
+    const st = await signed(bob, 'POST', '/api/raid/state', { name: 'Bob' })
+    assert(st.json.raid.top[0].n === 'Alice' && st.json.raid.hp < RAID.maxHp, 'shared health pool + damage ranking visible to others')
+    await signed(bob, 'POST', '/api/profile', { name: 'Bob' })
+    await db.query(`UPDATE raid_dmg SET last_hit = NOW() - INTERVAL '10 seconds' WHERE address = $1`, [aliceAddr])
+    await signed(bob, 'POST', '/api/raid/hit', { dmg: 50, name: 'Bob' })
+    const bank0 = (await signed(alice, 'POST', '/api/profile', {})).json.profile.bank
+    const day = (await raidToday(db)).day
+    await db.query('UPDATE raid_days SET hp = 1000 WHERE day = $1', [day])
+    const k = await signed(alice, 'POST', '/api/raid/hit', { dmg: 5000, name: 'Alice' })
+    assert(k.json.killed && !k.json.raid.alive && k.json.raid.killer === 'Alice', 'killing blow ends the raid for everyone')
+    assert(k.json.raid.myLoot && k.json.raid.myLoot.items.length >= 3 && k.json.raid.myLoot.gold >= RAID.goldMin, `loot: ${k.json.raid.myLoot.items.join(', ')} + ${k.json.raid.myLoot.gold} gold`)
+    const bank1 = (await signed(alice, 'POST', '/api/profile', {})).json.profile.bank
+    assert(bank1 === bank0 + k.json.raid.myLoot.gold, 'loot gold lands in the shared bank (main castle sees it)')
+    const bs = await signed(bob, 'POST', '/api/raid/state', {})
+    assert(!bs.json.raid.myLoot, 'a hunter below the 0.15% damage share gets no loot')
+    const after = await signed(alice, 'POST', '/api/raid/hit', { dmg: 5000, name: 'Alice' })
+    assert(after.json.accepted === 0, 'dead boss takes no more damage until midnight KST')
+    const item = k.json.raid.myLoot.items.find((x: string) => !x.startsWith('title_')) || k.json.raid.myLoot.items[0]
+    const eq = await signed(alice, 'POST', '/api/cosmetic/equip', { item })
+    assert(eq.json.ok && (eq.json.inv.cosmetic === item || eq.json.inv.title === item), `equip owned cosmetic (${item})`)
+    const bad = await signed(bob, 'POST', '/api/cosmetic/equip', { item: 'scythe_skin' })
+    assert(bad.status === 400, 'cannot equip an item you do not own')
+    const prof = await signed(alice, 'POST', '/api/profile', {})
+    assert(prof.json.inv && (prof.json.inv.cosmetic === item || prof.json.inv.title === item), 'profile carries cosmetics to the main castle')
+    const tomorrow = await raidToday(db, Date.now() + 86400e3)
+    assert(Number(tomorrow.hp) === RAID.maxHp && !tomorrow.killed_at, 'next KST day: the reaper rises again at full health')
+    let seq = 0
+    const fixed = rollItems(5, () => [0.01, 0.999, 0.5, 0.75, 0.9][seq++])
+    assert(fixed[0] === 'title_slayer' && fixed[1] === 'scythe_skin', 'loot table weights (legendary at the far tail)')
+  }
 
   server.close()
   console.log('\nALL PASSED')
