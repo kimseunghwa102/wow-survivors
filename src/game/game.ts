@@ -4,8 +4,8 @@ import { Vector3 } from '@dcl/sdk/math'
 import { movePlayerTo } from '~system/RestrictedActions'
 import LAYOUT from '../../layout.json'
 import { Run, Option, Ev, inArena } from './core'
-import { WeaponId, WEAPONS, ARMORY, NUKE_TIER, bossFor } from './defs'
-import { renderRun, clearView, setupView, setAim } from './view'
+import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, bossFor } from './defs'
+import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName } from './view'
 import { play, setupSfx, musicLevel } from './sfx'
 import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf } from './net'
 import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile, serverArmoryBuy, serverClaimDaily } from './persist'
@@ -121,9 +121,30 @@ export function choose(o: Option) {
   const r = G.run
   if (!r || G.phase !== 'levelup') return
   r.apply(o)
+  showUpgrade(o)
   if (o.kind === 'weapon' && o.to === 8) banner(`${WEAPONS[o.id].name} MAXED — open a vault to ascend it!`, 4)
   r.pendingLevels = Math.max(0, r.pendingLevels - 1)
   nextModal()
+}
+
+/** instant visual + audio payoff for every pick */
+export function showUpgrade(o: Option) {
+  const r = G.run
+  if (!r) return
+  if (o.kind === 'weapon') {
+    const w = WEAPONS[o.id]
+    const tierUp = o.to === 4 || o.to === 7
+    upgradeFx(r, 'weapon', o.id, `${w.name.toUpperCase()}  Lv${o.to}${tierUp ? '  ✦ NEW FORM' : ''}`, w.color)
+    play(tierUp ? 'evolve' : 'buy', tierUp ? 1.3 : 1.15)
+  } else if (o.kind === 'passive') {
+    const p = PASSIVES[o.id]
+    upgradeFx(r, 'passive', o.id, `${p.name.toUpperCase()}  Lv${o.to}`, p.color)
+    play('buy', 1.25)
+  } else if (o.kind === 'evolve') {
+    const w = WEAPONS[o.id]
+    upgradeFx(r, 'evolve', o.id, `✦ ${w.evo.toUpperCase()} ✦`, '#FFFFFF')
+    play('evolve')
+  } else if (o.kind === 'boost') upgradeFx(r, 'passive', 'boost', 'RIFT BOOST', '#FFD86A')
 }
 
 export function reroll() {
@@ -143,6 +164,8 @@ export function skipLevel() {
 
 export function collectChest() {
   if (G.phase !== 'chest') return
+  const best = G.chest?.rolls.find((o) => o.kind === 'evolve') ?? G.chest?.rolls.find((o) => o.kind === 'weapon' || o.kind === 'passive')
+  if (best) showUpgrade(best)
   G.chest = null
   nextModal()
 }
@@ -259,9 +282,15 @@ function handle(evs: Ev[]) {
       case 'chest':
         G.chestQueue.push(e.big)
         break
-      case 'levelup':
+      case 'levelup': {
         play('levelup')
+        const rk = rankOf(r.level)
+        if (rk >= 0 && rk !== rankOf(r.level - 1)) {
+          banner(`RANK UP — ${rankName(rk)} AURA (Lv ${r.level})`, 4)
+          play('evolve', 0.9)
+        }
         break
+      }
       case 'hurt':
         play('hurt')
         G.hurtFlash = 0.25

@@ -1,11 +1,11 @@
 // Renders the pure simulation (core.ts) with pooled Decentraland entities.
 import {
   engine, Entity, Transform, GltfContainer, Animator,
-  TextShape, TextAlignMode, Font, Billboard, BillboardMode, Tween
+  TextShape, TextAlignMode, Font, Billboard, BillboardMode, Tween, MeshRenderer, Material, MaterialTransparencyMode
 } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { Run, Ev } from './core'
-import { ENEMIES, EnemyKind, ARMORY, bossFor } from './defs'
+import { ENEMIES, EnemyKind, ARMORY, bossFor, WeaponId, WEAPONS, PASSIVES, PassiveId, MAX_PASSIVE_LVL } from './defs'
 
 const HIDE = Vector3.create(32, -40, 24)
 const V = Vector3.create
@@ -18,10 +18,21 @@ function ent(): Entity {
 }
 class Pool {
   free: Entity[] = []
-  constructor(make: () => Entity, n: number) {
+  made = 0
+  /** pre-creates n entities; grows lazily up to max when they run out */
+  constructor(
+    private make: () => Entity,
+    n: number,
+    private max = n
+  ) {
     for (let i = 0; i < n; i++) this.free.push(make())
+    this.made = n
   }
   take(): Entity | undefined {
+    if (!this.free.length && this.made < this.max) {
+      this.made++
+      return this.make()
+    }
     return this.free.pop()
   }
   give(e: Entity) {
@@ -41,18 +52,23 @@ const pickEnt = new Map<number, { e: Entity; v: PickVisual }>()
 
 // skill FX (Blender GLBs, base + ascended look)
 type FxKind = 'slash' | 'shard' | 'glaive' | 'bloom' | 'sigil' | 'pulse'
-const fxSrc = (k: FxKind, asc: boolean) => `models/fx_${k}${asc ? '_asc' : ''}.glb`
-let boltPool: [Pool, Pool]
-const boltEnt = new Map<number, { e: Entity; asc: boolean }>()
+const TIER_SUFFIX = ['', '_t2', '_t3', '_asc']
+const fxSrc = (k: FxKind, t: number) => `models/fx_${k}${TIER_SUFFIX[t]}.glb`
+/** visual tier of a skill: 0 = Lv1-3, 1 = Lv4-6, 2 = Lv7-8, 3 = ascended */
+const tierOf = (run: Run, id: WeaponId) => (run.evo(id) ? 3 : run.w(id) >= 7 ? 2 : run.w(id) >= 4 ? 1 : 0)
+/** size grows a little with every level so each pick is visible */
+const lvlSize = (run: Run, id: WeaponId) => 1 + 0.07 * Math.max(0, run.w(id) - 1) + (run.evo(id) ? 0.15 : 0)
+let boltPool: Pool[]
+const boltEnt = new Map<number, { e: Entity; t: number }>()
 let blades: Entity[] = []
-let bladesAsc = false
+let bladesTier = 0
 let aura: Entity
-let auraAsc = false
-type Timed = { e: Entity; life: number; max: number; kind: 'slash' | 'nova' | 'strike' | 'dmg' | 'lvl'; r?: number; y?: number; asc: boolean; s?: number }
+let auraTier = 0
+type Timed = { e: Entity; life: number; max: number; kind: 'slash' | 'nova' | 'strike' | 'dmg' | 'lvl' | 'up'; r?: number; y?: number; asc: number; s?: number; pool?: Pool }
 const active: Timed[] = []
-let slashPool: [Pool, Pool]
-let novaPool: [Pool, Pool]
-let strikePool: [Pool, Pool]
+let slashPool: Pool[]
+let novaPool: Pool[]
+let strikePool: Pool[]
 let lvlPool: Pool
 let dmgPool: Pool
 // armory / boss visuals
@@ -75,15 +91,15 @@ let blastR = 0
 type Fx = { e: Entity; life: number; max: number; pool: Pool; kind: 'swing' | 'quake' | 'tracer' | 'warn' | 'slam'; r: number; w?: number }
 const fxs: Fx[] = []
 
-function fxPool(k: FxKind, n: number, spin = 0): [Pool, Pool] {
-  const make = (asc: boolean) =>
+function fxPool(k: FxKind, n: number, spin = 0, max = n): Pool[] {
+  const make = (t: number) =>
     new Pool(() => {
       const e = ent()
-      GltfContainer.create(e, { src: fxSrc(k, asc) })
+      GltfContainer.create(e, { src: fxSrc(k, t) })
       if (spin) Tween.setRotateContinuous(e, Quaternion.fromEulerDegrees(0, 1, 0), spin)
       return e
-    }, n)
-  return [make(false), make(true)]
+    }, t === 0 ? n : Math.min(n, 2), max)
+  return [make(0), make(1), make(2), make(3)]
 }
 
 export function setupView() {
@@ -111,19 +127,21 @@ export function setupView() {
   pickPools.chest = pick('models/chest.glb', 4, 30)
   pickPools.heal = pick('models/fx_heal.glb', 4, 90)
 
-  boltPool = fxPool('shard', 40, 540)
+  boltPool = fxPool('shard', 20, 540, 40)
   for (let i = 0; i < 12; i++) {
     const e = ent()
-    GltfContainer.create(e, { src: fxSrc('glaive', false) })
+    GltfContainer.create(e, { src: fxSrc('glaive', 0) })
     blades.push(e)
   }
   aura = ent()
-  GltfContainer.create(aura, { src: fxSrc('bloom', false) })
+  GltfContainer.create(aura, { src: fxSrc('bloom', 0) })
   Tween.setRotateContinuous(aura, Quaternion.fromEulerDegrees(0, -1, 0), 40)
   slashPool = fxPool('slash', 4)
   novaPool = fxPool('pulse', 4)
   strikePool = fxPool('sigil', 10)
   lvlPool = pick('models/fx_levelup.glb', 2, 90)
+  setupUpgradeFx()
+  setupHalos()
   bossEnt = ent()
   held = ent()
   for (const k of SWING_FX) swingPools[k] = pick(`models/fx_sw_${k}.glb`, 3, 0)
@@ -232,33 +250,36 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
       seenB.add(b.id)
       let v = boltEnt.get(b.id)
       if (!v) {
-        const asc = run.evo('bolt')
-        const e = boltPool[asc ? 1 : 0].take()
+        const t = tierOf(run, 'bolt')
+        const e = boltPool[t].take()
         if (!e) continue
-        v = { e, asc }
+        v = { e, t }
         boltEnt.set(b.id, v)
+        const sz = lvlSize(run, 'bolt')
+        Transform.getMutable(e).scale = V(sz, sz, sz)
       }
       Transform.getMutable(v.e).position = V(b.x, 1.1, b.z)
     }
   for (const [id, v] of boltEnt)
     if (!seenB.has(id)) {
-      boltPool[v.asc ? 1 : 0].give(v.e)
+      boltPool[v.t].give(v.e)
       boltEnt.delete(id)
     }
 
   // orbit blades + aura around the local player
   const n = run && run.alive ? run.orbitCount() : 0
   const R = run ? run.orbitRadius() : 0
-  const bAsc = !!run && run.evo('orbit')
-  if (bAsc !== bladesAsc) {
-    bladesAsc = bAsc
-    for (const b of blades) GltfContainer.getMutable(b).src = fxSrc('glaive', bAsc)
+  const bT = run ? tierOf(run, 'orbit') : 0
+  if (bT !== bladesTier) {
+    bladesTier = bT
+    for (const b of blades) GltfContainer.getMutable(b).src = fxSrc('glaive', bT)
   }
-  const aAsc = !!run && run.evo('aura')
-  if (aAsc !== auraAsc) {
-    auraAsc = aAsc
-    GltfContainer.getMutable(aura).src = fxSrc('bloom', aAsc)
+  const aT = run ? tierOf(run, 'aura') : 0
+  if (aT !== auraTier) {
+    auraTier = aT
+    GltfContainer.getMutable(aura).src = fxSrc('bloom', aT)
   }
+  const bSz = run ? lvlSize(run, 'orbit') : 1
   blades.forEach((b, i) => {
     const t = Transform.getMutable(b)
     if (i >= n || !run) {
@@ -269,6 +290,7 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
     const rad = (a * Math.PI) / 180
     t.position = V(run.x + Math.sin(rad) * R, 1.0, run.z + Math.cos(rad) * R)
     t.rotation = yawQ(a * 4)
+    t.scale = V(bSz, bSz, bSz)
   })
   const ar = run && run.alive ? run.auraRadius() : 0
   const at = Transform.getMutable(aura)
@@ -280,8 +302,8 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
   // one-shot effects
   for (const ev of events) {
     if (ev.t === 'slash') {
-      const asc = !!run && run.evo('lash')
-      const e = slashPool[asc ? 1 : 0].take()
+      const asc = run ? tierOf(run, 'lash') : 0
+      const e = slashPool[asc].take()
       if (!e) continue
       const t = Transform.getMutable(e)
       t.position = V(ev.x, 0.9, ev.z)
@@ -289,14 +311,14 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
       t.scale = V(ev.l, 1, ev.w * 1.8)
       active.push({ e, life: 0.2, max: 0.2, kind: 'slash', asc, s: ev.l })
     } else if (ev.t === 'nova') {
-      const asc = !!run && run.evo('nova')
-      const e = novaPool[asc ? 1 : 0].take()
+      const asc = run ? tierOf(run, 'nova') : 0
+      const e = novaPool[asc].take()
       if (!e) continue
       Transform.getMutable(e).position = V(ev.x, 0.05, ev.z)
       active.push({ e, life: 0.4, max: 0.4, kind: 'nova', r: ev.r, asc })
     } else if (ev.t === 'strike') {
-      const asc = !!run && run.evo('thunder')
-      const e = strikePool[asc ? 1 : 0].take()
+      const asc = run ? tierOf(run, 'thunder') : 0
+      const e = strikePool[asc].take()
       if (!e) continue
       const t = Transform.getMutable(e)
       t.position = V(ev.x, 0, ev.z)
@@ -350,7 +372,7 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
       const e = lvlPool.take()
       if (!e) continue
       Transform.getMutable(e).position = V(run.x, 0.05, run.z)
-      active.push({ e, life: 0.9, max: 0.9, kind: 'lvl', asc: false })
+      active.push({ e, life: 0.9, max: 0.9, kind: 'lvl', asc: 0 })
     } else if (ev.t === 'hit' && (ev.crit || dmgCount++ % 3 === 0)) {
       const e = dmgPool.take()
       if (!e) continue
@@ -359,9 +381,10 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
       ts.textColor = ev.crit ? Color4.create(1, 0.85, 0.2, 1) : Color4.White()
       ts.fontSize = ev.crit ? 4.5 : 3
       Transform.getMutable(e).position = V(ev.x + (Math.random() - 0.5) * 0.4, 1.8, ev.z)
-      active.push({ e, life: 0.6, max: 0.6, kind: 'dmg', y: 1.8, asc: false })
+      active.push({ e, life: 0.6, max: 0.6, kind: 'dmg', y: 1.8, asc: 0 })
     }
   }
+  renderHalos(run, dt)
   for (let i = fxs.length - 1; i >= 0; i--) {
     const f = fxs[i]
     f.life -= dt
@@ -436,6 +459,10 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
       const t = Transform.getMutable(a.e)
       t.scale = V(a.s! * (0.85 + 0.25 * k), 1, t.scale.z)
     }
+    if (a.kind === 'up') {
+      const d = a.r! * 2 * (0.5 + k * 0.9)
+      Transform.getMutable(a.e).scale = V(d, 0.3 + Math.sin(k * Math.PI) * 1.1, d)
+    }
     if (a.kind === 'lvl') {
       const d = 1.6 + k * 2.5
       Transform.getMutable(a.e).scale = V(d, 1 - k * 0.8, d)
@@ -445,11 +472,164 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
       t.position = V(t.position.x, a.y! + k * 0.8, t.position.z)
     }
     if (a.life <= 0) {
-      const ai = a.asc ? 1 : 0
-      const pool = a.kind === 'slash' ? slashPool[ai] : a.kind === 'nova' ? novaPool[ai] : a.kind === 'strike' ? strikePool[ai] : a.kind === 'lvl' ? lvlPool : dmgPool
+      const ai = a.asc
+      const pool = a.pool ?? (a.kind === 'slash' ? slashPool[ai] : a.kind === 'nova' ? novaPool[ai] : a.kind === 'strike' ? strikePool[ai] : a.kind === 'lvl' ? lvlPool : dmgPool)
       pool.give(a.e)
       active.splice(i, 1)
     }
+  }
+}
+
+// ───────── upgrade feedback: burst + big floating title ─────────
+const UP_KEYS = ['lash', 'bolt', 'orbit', 'aura', 'thunder', 'nova', 'passive', 'asc'] as const
+const upPools = {} as Record<(typeof UP_KEYS)[number], Pool>
+let upText: Entity
+let upTextT = 0
+function setupUpgradeFx() {
+  for (const k of UP_KEYS)
+    upPools[k] = new Pool(() => {
+      const e = ent()
+      GltfContainer.create(e, { src: `models/fx_up_${k}.glb` })
+      Tween.setRotateContinuous(e, Quaternion.fromEulerDegrees(0, 1, 0), 180)
+      return e
+    }, 1, 2)
+  upText = ent()
+  TextShape.create(upText, { text: '', fontSize: 5, textColor: Color4.White(), font: Font.F_SANS_SERIF, textAlign: TextAlignMode.TAM_MIDDLE_CENTER, outlineWidth: 0.25, outlineColor: Color3.Black() })
+  Billboard.create(upText, { billboardMode: BillboardMode.BM_Y })
+}
+
+/** call when the player picks an upgrade (level-up card or vault roll) */
+export function upgradeFx(run: Run, kind: 'weapon' | 'passive' | 'evolve', id: string, title: string, color: string) {
+  const key = (kind === 'evolve' ? 'asc' : kind === 'passive' ? 'passive' : id) as (typeof UP_KEYS)[number]
+  const pool = upPools[key]
+  const e = pool?.take()
+  if (e) {
+    Transform.getMutable(e).position = V(run.x, 0.02, run.z)
+    active.push({ e, life: kind === 'evolve' ? 1.6 : 1.0, max: kind === 'evolve' ? 1.6 : 1.0, kind: 'up', asc: 0, pool, r: kind === 'evolve' ? 2.2 : 1.4 })
+  }
+  const tx = TextShape.getMutable(upText)
+  tx.text = title
+  tx.textColor = Color4.fromHexString(color.length === 7 ? color + 'FF' : color)
+  tx.fontSize = kind === 'evolve' ? 7 : 5
+  upTextT = 1.6
+  Transform.getMutable(upText).position = V(run.x, 2.6, run.z)
+}
+
+// ───────── passive orbs (one ring per passive, one orb per level) + level rank aura ─────────
+type Halo = { ring: Entity; orbs: Entity[] }
+const halos: Halo[] = []
+let rankDisc: Entity
+let rankShown = -1
+const RANKS = [
+  { lvl: 50, color: '#CD7F32', name: 'BRONZE' },
+  { lvl: 100, color: '#D8E4F0', name: 'SILVER' },
+  { lvl: 150, color: '#FFD24A', name: 'GOLD' },
+  { lvl: 200, color: '#B04BFF', name: 'VOID' }
+]
+export const rankOf = (lvl: number) => RANKS.filter((r) => lvl >= r.lvl).length - 1
+export const rankName = (i: number) => RANKS[i]?.name ?? ''
+function hex3(h: string) {
+  const c = Color4.fromHexString(h + 'FF')
+  return Color3.create(c.r, c.g, c.b)
+}
+function setupHalos() {
+  for (let i = 0; i < 6; i++) {
+    const ring = ent()
+    MeshRenderer.setPlane(ring)
+    const orbs: Entity[] = []
+    for (let k = 0; k < MAX_PASSIVE_LVL; k++) {
+      const o = ent()
+      MeshRenderer.setSphere(o)
+      orbs.push(o)
+    }
+    halos.push({ ring, orbs })
+  }
+  rankDisc = ent()
+  MeshRenderer.setPlane(rankDisc)
+}
+let haloKey = ''
+let haloSpin = 0
+function renderHalos(run: Run | null, dt: number) {
+  haloSpin += dt * 40
+  const ps = run && run.alive ? ([...run.passives.entries()] as [PassiveId, number][]) : []
+  const key = ps.map(([p, l]) => p + l).join(',')
+  if (key !== haloKey) {
+    haloKey = key
+    halos.forEach((h, i) => {
+      const p = ps[i]
+      if (!p) return
+      const [id, lv] = p
+      const col = PASSIVES[id].color
+      const glow = 0.8 + lv * 0.7 + (lv >= MAX_PASSIVE_LVL ? 2 : 0)
+      Material.setPbrMaterial(h.ring, {
+        texture: Material.Texture.Common({ src: 'images/ring.png' }),
+        emissiveTexture: Material.Texture.Common({ src: 'images/ring.png' }),
+        albedoColor: Color4.fromHexString(col + 'FF'),
+        emissiveColor: hex3(col),
+        emissiveIntensity: glow,
+        transparencyMode: MaterialTransparencyMode.MTM_ALPHA_BLEND,
+        castShadows: false
+      })
+      for (const o of h.orbs)
+        Material.setPbrMaterial(o, { albedoColor: Color4.fromHexString(col + 'FF'), emissiveColor: hex3(col), emissiveIntensity: glow * 1.5, castShadows: false })
+    })
+  }
+  halos.forEach((h, i) => {
+    const p = ps[i]
+    const rt = Transform.getMutable(h.ring)
+    if (!p || !run) {
+      rt.position = HIDE
+      for (const o of h.orbs) Transform.getMutable(o).position = HIDE
+      return
+    }
+    const lv = p[1]
+    const R = 0.75 + i * 0.24
+    const y = 0.05 + i * 0.01
+    rt.position = V(run.x, y, run.z)
+    rt.rotation = Quaternion.multiply(yawQ(haloSpin * (i % 2 ? -1 : 1)), Quaternion.fromEulerDegrees(90, 0, 0))
+    rt.scale = V(R * 2, R * 2, 1)
+    h.orbs.forEach((o, k) => {
+      const ot = Transform.getMutable(o)
+      if (k >= lv) {
+        ot.position = HIDE
+        return
+      }
+      const a = ((haloSpin * (i % 2 ? -1.5 : 1.5) + (k * 360) / lv + i * 30) * Math.PI) / 180
+      const sz = lv >= MAX_PASSIVE_LVL ? 0.16 : 0.11
+      ot.position = V(run.x + Math.sin(a) * R, 0.35 + i * 0.12 + Math.sin(a * 2 + i) * 0.05, run.z + Math.cos(a) * R)
+      ot.scale = V(sz, sz, sz)
+    })
+  })
+  // rank aura (Lv 50 bronze → 100 silver → 150 gold → 200 void)
+  const rk = run && run.alive ? rankOf(run.level) : -1
+  if (rk !== rankShown) {
+    rankShown = rk
+    if (rk >= 0) {
+      const col = RANKS[rk].color
+      Material.setPbrMaterial(rankDisc, {
+        texture: Material.Texture.Common({ src: 'images/rank.png' }),
+        emissiveTexture: Material.Texture.Common({ src: 'images/rank.png' }),
+        albedoColor: Color4.fromHexString(col + 'FF'),
+        emissiveColor: hex3(col),
+        emissiveIntensity: 2 + rk * 1.2,
+        transparencyMode: MaterialTransparencyMode.MTM_ALPHA_BLEND,
+        castShadows: false
+      })
+    }
+  }
+  const dt_ = Transform.getMutable(rankDisc)
+  if (rk >= 0 && run) {
+    const d = 4.2 + rk * 0.5
+    dt_.position = V(run.x, 0.04, run.z)
+    dt_.rotation = Quaternion.multiply(yawQ(-haloSpin * 0.5), Quaternion.fromEulerDegrees(90, 0, 0))
+    dt_.scale = V(d, d, 1)
+  } else dt_.position = HIDE
+  // floating upgrade title
+  if (upTextT > 0) {
+    upTextT -= dt
+    const t = Transform.getMutable(upText)
+    if (upTextT <= 0) t.position = HIDE
+    else if (run) t.position = V(run.x, 2.6 + (1.6 - upTextT) * 0.6, run.z)
   }
 }
 

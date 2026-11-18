@@ -3,11 +3,12 @@
   "runtimeVersion": "7",
   "display": {
     "title": "WOW Nightswarm",
-    "description": "WOW NIGHTSWARM — an auto-battler horde arena: weapons fire on their own, the swarm never stops, level up, ascend your skills, spin the jackpot vault and face the Hollow King. Other hunters can fight you in the rift. Free to play."
+    "description": "WOW NIGHTSWARM — a free horde-survival arena with PvP. Your skills fire on their own; hold LEFT CLICK to swing your own weapon (fists → frying pan → hammer → flame sword → reaper blade → minigun → DOOMSDAY NUKE). Level up to 200+, power up and ascend 6 skills, spin the jackpot vault, and slay a boss every few levels, from the Hollow King to dragons and the 3-headed World Eater. Other hunters can fight you in the rift. Gold and upgrades are saved to your wallet. Daily login rewards, and your first run each day banks double gold. Created by @bitcoinisnotall on X.",
+    "navmapThumbnail": "images/thumbnail.jpg"
   },
   "owner": "",
   "contact": {
-    "name": "WOW Automation",
+    "name": "@bitcoinisnotall",
     "email": ""
   },
   "main": "bin/index.js",
@@ -16,6 +17,8 @@
     "pvp",
     "survival",
     "roguelike",
+    "arcade",
+    "boss",
     "social"
   ],
   "scene": {

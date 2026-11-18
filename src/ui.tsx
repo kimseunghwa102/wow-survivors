@@ -31,8 +31,8 @@ function Bar(props: { frac: number; color: Color4; w: number | string; h: number
   )
 }
 
-// Left-side HUD column (the right edge of the screen is covered by the explorer UI on many setups)
-const LEFT = 76
+// Right-side HUD column (the left edge is covered by the explorer's minimap / chat)
+const RIGHT = 16
 function Stat(props: { k: string; v: string; color?: Color4 }) {
   return (
     <UiEntity uiTransform={{ flexDirection: 'column', alignItems: 'flex-start', margin: { right: 14 } }}>
@@ -59,7 +59,7 @@ function SidePanel() {
   const ps = [...r.passives.entries()] as [PassiveId, number][]
   const hpCol = G.hurtFlash > 0 ? C('#FFFFFF') : r.hp / r.maxHp < 0.3 ? C('#FF2A3D') : C('#E0102A')
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 190, left: LEFT }, width: 250, flexDirection: 'column' }}>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 90, right: RIGHT }, width: 250, flexDirection: 'column' }}>
       {/* stats card */}
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', padding: 10 }} uiBackground={{ color: PANEL }}>
         <UiEntity uiTransform={{ width: '100%', height: 3, margin: { bottom: 6 } }} uiBackground={{ color: C('#7B3BFF') }} />

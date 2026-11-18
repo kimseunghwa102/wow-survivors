@@ -23,29 +23,109 @@
   "tris": 66,
   "kb": 132
  },
+ "fx_slash_t2": {
+  "tris": 6,
+  "kb": 91
+ },
+ "fx_shard_t2": {
+  "tris": 22,
+  "kb": 25
+ },
+ "fx_glaive_t2": {
+  "tris": 32,
+  "kb": 108
+ },
+ "fx_bloom_t2": {
+  "tris": 58,
+  "kb": 278
+ },
+ "fx_sigil_t2": {
+  "tris": 8,
+  "kb": 196
+ },
+ "fx_pulse_t2": {
+  "tris": 66,
+  "kb": 132
+ },
+ "fx_slash_t3": {
+  "tris": 6,
+  "kb": 100
+ },
+ "fx_shard_t3": {
+  "tris": 22,
+  "kb": 26
+ },
+ "fx_glaive_t3": {
+  "tris": 32,
+  "kb": 123
+ },
+ "fx_bloom_t3": {
+  "tris": 98,
+  "kb": 280
+ },
+ "fx_sigil_t3": {
+  "tris": 8,
+  "kb": 202
+ },
+ "fx_pulse_t3": {
+  "tris": 66,
+  "kb": 152
+ },
  "fx_slash_asc": {
   "tris": 6,
   "kb": 103
  },
  "fx_shard_asc": {
   "tris": 22,
-  "kb": 25
+  "kb": 28
  },
  "fx_glaive_asc": {
-  "tris": 30,
-  "kb": 97
+  "tris": 32,
+  "kb": 112
  },
  "fx_bloom_asc": {
-  "tris": 58,
-  "kb": 252
+  "tris": 98,
+  "kb": 244
  },
  "fx_sigil_asc": {
   "tris": 8,
-  "kb": 185
+  "kb": 207
  },
  "fx_pulse_asc": {
   "tris": 66,
-  "kb": 153
+  "kb": 165
+ },
+ "fx_up_lash": {
+  "tris": 92,
+  "kb": 162
+ },
+ "fx_up_bolt": {
+  "tris": 92,
+  "kb": 159
+ },
+ "fx_up_orbit": {
+  "tris": 92,
+  "kb": 158
+ },
+ "fx_up_aura": {
+  "tris": 92,
+  "kb": 159
+ },
+ "fx_up_thunder": {
+  "tris": 92,
+  "kb": 156
+ },
+ "fx_up_nova": {
+  "tris": 92,
+  "kb": 161
+ },
+ "fx_up_passive": {
+  "tris": 92,
+  "kb": 157
+ },
+ "fx_up_asc": {
+  "tris": 92,
+  "kb": 124
  },
  "fx_heal": {
   "tris": 86,

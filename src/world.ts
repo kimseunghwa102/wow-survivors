@@ -1,4 +1,5 @@
 import { engine, Transform, GltfContainer, LightSource, SkyboxTime, TextAlignMode, pointerEventsSystem, InputAction, Tween } from '@dcl/sdk/ecs'
+import { openExternalUrl } from '~system/RestrictedActions'
 import { Color3, Quaternion } from '@dcl/sdk/math'
 import LAYOUT from '../layout.json'
 import { node, text, setText, hitbox, bob, V, FACE } from './helpers'
@@ -56,6 +57,17 @@ export function buildWorld() {
     G.shopOpen = true
   })
   text(V(sx, 3.4, sz), 'ARCANE FORGE', 3.2, '#5EF2FF', { billboard: true, outline: '#001A22' })
+
+  // creator credit at the spawn point — click to open X
+  const xHolder = node(V(10.6, 2.4, 2.2))
+  bob(xHolder, 0.08, 2600)
+  text(V(0, 0.45, 0), 'Created by', 1.6, '#CFC8E8', { billboard: true, parent: xHolder })
+  text(V(0, 0, 0), 'X / Twitter  @bitcoinisnotall', 3.4, '#FFFFFF', { billboard: true, outline: '#1D9BF0', parent: xHolder })
+  text(V(0, -0.45, 0), 'click to follow', 1.4, '#1D9BF0', { billboard: true, parent: xHolder })
+  const xHit = hitbox(V(10.6, 2.4, 2.2), V(3.4, 1.6, 1.0))
+  pointerEventsSystem.onPointerDown({ entity: xHit, opts: { button: InputAction.IA_POINTER, hoverText: 'Follow @bitcoinisnotall on X', maxDistance: 12 } }, () => {
+    void openExternalUrl({ url: 'https://x.com/bitcoinisnotall' })
+  })
 
   // Armory: the weapon you'd swing floats over a pedestal; click to open the shop
   const [ax, , az] = LAYOUT.armory
