@@ -5,9 +5,10 @@ import { movePlayerTo } from '~system/RestrictedActions'
 import LAYOUT from '../../layout.json'
 import { Run, Option, Ev, inArena } from './core'
 import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS } from './defs'
-import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm } from './view'
+import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm, queueRemoteFx, fxTiers, haloTiersOf } from './view'
+import { encodeFx, decodeFx } from './fxnet'
 import { play, setupSfx, musicLevel } from './sfx'
-import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf } from './net'
+import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf, sendFx, pushFeed } from './net'
 import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile, serverArmoryBuy, serverClaimDaily, shopConfig, shopQuote, shopConfirm, serverSaveRun, serverAbandon, pingServer } from './persist'
 import { getUserAccount, sendAsync, requirePayment } from '~system/EthereumController'
 import { getPlayer } from '@dcl/sdk/players'
@@ -630,6 +631,27 @@ export function setupGame() {
   })
   void loadBoard()
   setupNet({
+    onFx: (fromId, tiers, packets) => {
+      const evs: Ev[] = []
+      const t = tiers.map((v) => Math.max(0, Math.min(3, Math.round(v || 0))))
+      for (const p of packets) {
+        const e = decodeFx(p)
+        if (!e) continue
+        if (e.t === 'bossSpawn') {
+          pushFeed(`${nameOf(fromId)} summoned ${bossFor(e.boss).name}!`, bossFor(e.boss).color)
+          continue
+        }
+        if (e.t === 'bossDown') {
+          pushFeed(`${nameOf(fromId)} slew ${bossFor(e.boss).name}!`, '#FFD86A')
+          continue
+        }
+        if (e.t === 'nuke') play('nuke', 0.9)
+        else if (e.t === 'divine') play('pulse', 0.55)
+        else if (e.t === 'zeus') play('sigil', 0.7)
+        evs.push(e)
+      }
+      if (evs.length) queueRemoteFx(evs, t)
+    },
     onHit: (dmg, fromId, fromName) => {
       if (!G.run || G.phase === 'dead') return
       G.lastAttackerId = fromId
@@ -742,6 +764,17 @@ export function setupGame() {
       G.nukeAsk = false
       renderRun(r, evs, dt)
       handle(evs)
+      // share my skill effects so other hunters see the magic
+      if (G.inArena && G.phase !== 'dead' && evs.length) {
+        const tiers = fxTiers(r)
+        for (const e of evs) {
+          const p = encodeFx(e, r.x, r.z)
+          if (p) sendFx(p[0], p[1], tiers)
+        }
+      }
+    } else {
+      // no run of my own: still draw other players' effects
+      renderRun(null, [], dt)
     }
     // swiftness passive → avatar speed; divine form → god flight (huge jumps, double jump, gliding)
     {
@@ -776,7 +809,8 @@ export function setupGame() {
         orr: rr?.orbitRadius() ?? 0,
         au: rr?.auraRadius() ?? 0,
         k: rr?.kills ?? 0,
-        gd: equipped() === GOD_TIER
+        gd: equipped() === GOD_TIER,
+        ...(rr ? haloTiersOf(rr) : { tb: 0, ta: 0 })
       })
     }
   })

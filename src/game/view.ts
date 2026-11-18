@@ -376,115 +376,8 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
     at.scale = V(ar * 2, 1 + ar * 0.25, ar * 2)
   } else at.position = HIDE
 
-  // one-shot effects
-  for (const ev of events) {
-    if (ev.t === 'slash') {
-      const asc = run ? tierOf(run, 'lash') : 0
-      const e = slashPool[asc].take()
-      if (!e) continue
-      const t = Transform.getMutable(e)
-      t.position = V(ev.x, 0.9, ev.z)
-      t.rotation = yawQ(ev.yaw + 90)
-      t.scale = V(ev.l, 1, ev.w * 1.8)
-      active.push({ e, life: 0.2, max: 0.2, kind: 'slash', asc, s: ev.l })
-    } else if (ev.t === 'nova') {
-      const asc = run ? tierOf(run, 'nova') : 0
-      const e = novaPool[asc].take()
-      if (!e) continue
-      Transform.getMutable(e).position = V(ev.x, 0.05, ev.z)
-      active.push({ e, life: 0.4, max: 0.4, kind: 'nova', r: ev.r, asc })
-    } else if (ev.t === 'strike') {
-      const asc = run ? tierOf(run, 'thunder') : 0
-      const e = strikePool[asc].take()
-      if (!e) continue
-      const t = Transform.getMutable(e)
-      t.position = V(ev.x, 0, ev.z)
-      t.rotation = yawQ(Math.random() * 360)
-      t.scale = V(ev.r * 2, 1, ev.r * 2)
-      active.push({ e, life: 0.28, max: 0.28, kind: 'strike', r: ev.r, asc })
-    } else if (ev.t === 'kill') {
-      deathPuff(ev.x, ev.z, ev.kind === 'elite' ? 2.2 : ev.kind === 'boss' ? 4 : 1)
-    } else if (ev.t === 'swing') {
-      const kind = ARMORY[ev.tier].fx as (typeof SWING_FX)[number]
-      const e = swingPools[kind]?.take()
-      swingT = 0.2
-      if (!e) continue
-      const t = Transform.getMutable(e)
-      t.position = V(ev.x, 1.0, ev.z)
-      t.rotation = yawQ(ev.yaw)
-      const w = ev.range * (ev.arc >= 180 ? 2.3 : ev.arc >= 140 ? 1.9 : 1.5)
-      t.scale = V(w, 1, ev.range * 1.1)
-      fxs.push({ e, life: 0.2, max: 0.2, pool: swingPools[kind], kind: 'swing', r: ev.range, w })
-    } else if (ev.t === 'zeus') {
-      swingT = 0.12
-      for (const [x, z] of ev.pts.slice(1)) {
-        const e = zeusPool.take()
-        if (!e) break
-        const t = Transform.getMutable(e)
-        t.position = V(x, 0, z)
-        t.rotation = yawQ(Math.random() * 360)
-        t.scale = V(2.2, 1, 2.2)
-        active.push({ e, life: 0.22, max: 0.22, kind: 'strike', r: 1.1, asc: 3, pool: zeusPool })
-      }
-    } else if (ev.t === 'divine') {
-      const e = divinePool.take()
-      if (!e) continue
-      Transform.getMutable(e).position = V(ev.x, 0.05, ev.z)
-      active.push({ e, life: 0.45, max: 0.45, kind: 'nova', r: ev.r, asc: 3, pool: divinePool })
-    } else if (ev.t === 'quake') {
-      const e = quakePool.take()
-      if (!e) continue
-      Transform.getMutable(e).position = V(ev.x, 0.05, ev.z)
-      fxs.push({ e, life: 0.4, max: 0.4, pool: quakePool, kind: 'quake', r: ev.r })
-    } else if (ev.t === 'tracer') {
-      const e = tracerPool.take()
-      swingT = 0.06
-      if (!e) continue
-      const t = Transform.getMutable(e)
-      t.position = V(ev.x, 1.15, ev.z)
-      t.rotation = yawQ(ev.yaw)
-      t.scale = V(1, 1, ev.len)
-      fxs.push({ e, life: 0.07, max: 0.07, pool: tracerPool, kind: 'tracer', r: ev.len })
-    } else if (ev.t === 'nukeLaunch') {
-      nukeFlight = { x0: ev.x, z0: ev.z, x1: ev.tx, z1: ev.tz, t: 0, d: ev.delay }
-    } else if (ev.t === 'nuke') {
-      nukeFlight = null
-      Transform.getMutable(missile).position = HIDE
-      blastT = 2.2
-      blastR = ev.r
-      Transform.getMutable(blast).position = V(ev.x, 0, ev.z)
-    } else if (ev.t === 'slamWarn') {
-      const e = warnPool.take()
-      if (!e) continue
-      Transform.getMutable(e).position = V(ev.x, 0.05, ev.z)
-      fxs.push({ e, life: ev.dur, max: ev.dur, pool: warnPool, kind: 'warn', r: ev.r })
-    } else if (ev.t === 'slam') {
-      const e = slamPool.take()
-      if (!e) continue
-      Transform.getMutable(e).position = V(ev.x, 0.05, ev.z)
-      fxs.push({ e, life: 0.55, max: 0.55, pool: slamPool, kind: 'slam', r: ev.r })
-    } else if (ev.t === 'levelup' && run) {
-      const e = lvlPool.take()
-      if (!e) continue
-      Transform.getMutable(e).position = V(run.x, 0.05, run.z)
-      active.push({ e, life: 0.9, max: 0.9, kind: 'lvl', asc: 0 })
-    } else if (ev.t === 'hit') {
-      const v = enemyEnt.get(ev.id)
-      if (v && v.squash <= 0) {
-        v.squash = 0.09
-        Transform.getMutable(modelOf.get(v.e)!).scale = V(v.sc * 1.18, v.sc * 0.86, v.sc * 1.18)
-      }
-      if (!(ev.crit || dmgCount++ % 3 === 0)) continue
-      const e = dmgPool.take()
-      if (!e) continue
-      const ts = TextShape.getMutable(e)
-      ts.text = String(Math.round(ev.dmg))
-      ts.textColor = ev.crit ? Color4.create(1, 0.85, 0.2, 1) : Color4.White()
-      ts.fontSize = ev.crit ? 4.5 : 3
-      Transform.getMutable(e).position = V(ev.x + (Math.random() - 0.5) * 0.4, 1.8, ev.z)
-      active.push({ e, life: 0.6, max: 0.6, kind: 'dmg', y: 1.8, asc: 0 })
-    }
-  }
+  playEvents(events, run)
+  for (const q of remoteQ.splice(0)) playEvents(q.evs, null, q.tiers)
   renderHalos(run, dt)
   for (let i = fxs.length - 1; i >= 0; i--) {
     const f = fxs[i]
@@ -577,6 +470,133 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
       const pool = a.pool ?? (a.kind === 'slash' ? slashPool[ai] : a.kind === 'nova' ? novaPool[ai] : a.kind === 'strike' ? strikePool[ai] : a.kind === 'lvl' ? lvlPool : dmgPool)
       pool.give(a.e)
       active.splice(i, 1)
+    }
+  }
+}
+
+
+// ───────── one-shot effects (mine, and other players' via the fx stream) ─────────
+const remoteQ: { evs: Ev[]; tiers: number[] }[] = []
+/** effects another player cast — drawn with their skill tiers */
+export function queueRemoteFx(evs: Ev[], tiers: number[]) {
+  if (remoteQ.length < 12) remoteQ.push({ evs, tiers })
+}
+/** my orbit-blade and aura tiers (shown to other players) */
+export function haloTiersOf(run: Run) {
+  return { tb: tierOf(run, 'orbit'), ta: tierOf(run, 'aura') }
+}
+/** my skill tiers for slash / nova / strike, sent along with my effects */
+export function fxTiers(run: Run) {
+  return [tierOf(run, 'lash'), tierOf(run, 'nova'), tierOf(run, 'thunder')]
+}
+
+function playEvents(events: Ev[], run: Run | null, tiers?: number[]) {
+  for (const ev of events) {
+    if (ev.t === 'slash') {
+      const asc = tiers ? tiers[0] : run ? tierOf(run, 'lash') : 0
+      const e = slashPool[asc].take()
+      if (!e) continue
+      const t = Transform.getMutable(e)
+      t.position = V(ev.x, 0.9, ev.z)
+      t.rotation = yawQ(ev.yaw + 90)
+      t.scale = V(ev.l, 1, ev.w * 1.8)
+      active.push({ e, life: 0.2, max: 0.2, kind: 'slash', asc, s: ev.l })
+    } else if (ev.t === 'nova') {
+      const asc = tiers ? tiers[1] : run ? tierOf(run, 'nova') : 0
+      const e = novaPool[asc].take()
+      if (!e) continue
+      Transform.getMutable(e).position = V(ev.x, 0.05, ev.z)
+      active.push({ e, life: 0.4, max: 0.4, kind: 'nova', r: ev.r, asc })
+    } else if (ev.t === 'strike') {
+      const asc = tiers ? tiers[2] : run ? tierOf(run, 'thunder') : 0
+      const e = strikePool[asc].take()
+      if (!e) continue
+      const t = Transform.getMutable(e)
+      t.position = V(ev.x, 0, ev.z)
+      t.rotation = yawQ(Math.random() * 360)
+      t.scale = V(ev.r * 2, 1, ev.r * 2)
+      active.push({ e, life: 0.28, max: 0.28, kind: 'strike', r: ev.r, asc })
+    } else if (ev.t === 'kill') {
+      deathPuff(ev.x, ev.z, ev.kind === 'elite' ? 2.2 : ev.kind === 'boss' ? 4 : 1)
+    } else if (ev.t === 'swing') {
+      const kind = ARMORY[ev.tier].fx as (typeof SWING_FX)[number]
+      const e = swingPools[kind]?.take()
+      if (!tiers) swingT = 0.2
+      if (!e) continue
+      const t = Transform.getMutable(e)
+      t.position = V(ev.x, 1.0, ev.z)
+      t.rotation = yawQ(ev.yaw)
+      const w = ev.range * (ev.arc >= 180 ? 2.3 : ev.arc >= 140 ? 1.9 : 1.5)
+      t.scale = V(w, 1, ev.range * 1.1)
+      fxs.push({ e, life: 0.2, max: 0.2, pool: swingPools[kind], kind: 'swing', r: ev.range, w })
+    } else if (ev.t === 'zeus') {
+      if (!tiers) swingT = 0.12
+      for (const [x, z] of ev.pts.slice(1)) {
+        const e = zeusPool.take()
+        if (!e) break
+        const t = Transform.getMutable(e)
+        t.position = V(x, 0, z)
+        t.rotation = yawQ(Math.random() * 360)
+        t.scale = V(2.2, 1, 2.2)
+        active.push({ e, life: 0.22, max: 0.22, kind: 'strike', r: 1.1, asc: 3, pool: zeusPool })
+      }
+    } else if (ev.t === 'divine') {
+      const e = divinePool.take()
+      if (!e) continue
+      Transform.getMutable(e).position = V(ev.x, 0.05, ev.z)
+      active.push({ e, life: 0.45, max: 0.45, kind: 'nova', r: ev.r, asc: 3, pool: divinePool })
+    } else if (ev.t === 'quake') {
+      const e = quakePool.take()
+      if (!e) continue
+      Transform.getMutable(e).position = V(ev.x, 0.05, ev.z)
+      fxs.push({ e, life: 0.4, max: 0.4, pool: quakePool, kind: 'quake', r: ev.r })
+    } else if (ev.t === 'tracer') {
+      const e = tracerPool.take()
+      if (!tiers) swingT = 0.06
+      if (!e) continue
+      const t = Transform.getMutable(e)
+      t.position = V(ev.x, 1.15, ev.z)
+      t.rotation = yawQ(ev.yaw)
+      t.scale = V(1, 1, ev.len)
+      fxs.push({ e, life: 0.07, max: 0.07, pool: tracerPool, kind: 'tracer', r: ev.len })
+    } else if (ev.t === 'nukeLaunch') {
+      nukeFlight = { x0: ev.x, z0: ev.z, x1: ev.tx, z1: ev.tz, t: 0, d: ev.delay }
+    } else if (ev.t === 'nuke') {
+      nukeFlight = null
+      Transform.getMutable(missile).position = HIDE
+      blastT = 2.2
+      blastR = ev.r
+      Transform.getMutable(blast).position = V(ev.x, 0, ev.z)
+    } else if (ev.t === 'slamWarn') {
+      const e = warnPool.take()
+      if (!e) continue
+      Transform.getMutable(e).position = V(ev.x, 0.05, ev.z)
+      fxs.push({ e, life: ev.dur, max: ev.dur, pool: warnPool, kind: 'warn', r: ev.r })
+    } else if (ev.t === 'slam') {
+      const e = slamPool.take()
+      if (!e) continue
+      Transform.getMutable(e).position = V(ev.x, 0.05, ev.z)
+      fxs.push({ e, life: 0.55, max: 0.55, pool: slamPool, kind: 'slam', r: ev.r })
+    } else if (ev.t === 'levelup' && (run || (ev as any).x !== undefined)) {
+      const e = lvlPool.take()
+      if (!e) continue
+      Transform.getMutable(e).position = tiers ? V((ev as any).x, 0.05, (ev as any).z) : V(run!.x, 0.05, run!.z)
+      active.push({ e, life: 0.9, max: 0.9, kind: 'lvl', asc: 0 })
+    } else if (ev.t === 'hit') {
+      const v = enemyEnt.get(ev.id)
+      if (v && v.squash <= 0) {
+        v.squash = 0.09
+        Transform.getMutable(modelOf.get(v.e)!).scale = V(v.sc * 1.18, v.sc * 0.86, v.sc * 1.18)
+      }
+      if (!(ev.crit || dmgCount++ % 3 === 0)) continue
+      const e = dmgPool.take()
+      if (!e) continue
+      const ts = TextShape.getMutable(e)
+      ts.text = String(Math.round(ev.dmg))
+      ts.textColor = ev.crit ? Color4.create(1, 0.85, 0.2, 1) : Color4.White()
+      ts.fontSize = ev.crit ? 4.5 : 3
+      Transform.getMutable(e).position = V(ev.x + (Math.random() - 0.5) * 0.4, 1.8, ev.z)
+      active.push({ e, life: 0.6, max: 0.6, kind: 'dmg', y: 1.8, asc: 0 })
     }
   }
 }

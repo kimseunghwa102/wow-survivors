@@ -25,6 +25,8 @@ export type Status = {
   au: number
   k: number
   gd?: boolean
+  tb?: number // orbit blade skill tier
+  ta?: number // aura skill tier
 }
 type RemoteInfo = Status & { seen: number; x: number; z: number; entity?: Entity }
 
@@ -81,6 +83,7 @@ function addPvpKill(name: string) {
 type Handlers = {
   onHit: (dmg: number, fromId: string, fromName: string) => void
   onBounty: (victimName: string, victimLvl: number) => void
+  onFx: (fromId: string, tiers: number[], evs: number[][]) => void
 }
 let H: Handlers
 
@@ -106,7 +109,35 @@ export function setupNet(h: Handlers) {
       addPvpKill(m.kn)
     }
   })
+  bus.on('fx', (m: { id: string; a: number[]; e: number[][] }) => {
+    if (!m || m.id === me().id || !Array.isArray(m.e)) return
+    H.onFx(m.id, m.a || [0, 0, 0], m.e.slice(0, 24))
+  })
   setupRemoteVisuals()
+  // flush my skill effects to everyone ~5x a second
+  let acc = 0
+  engine.addSystem((dt) => {
+    acc += dt
+    if (acc < 0.2 || !fxOut.length) return
+    acc = 0
+    bus.emit('fx', { id: me().id, a: fxTiers, e: fxOut.splice(0, 24) })
+    fxOut.length = 0
+    fxCount.clear()
+  })
+}
+
+// ───────────── shared skill effects (others see my magic circles, slashes, lightning, nukes…) ─────────────
+const fxOut: number[][] = []
+const fxCount = new Map<number, number>()
+let fxTiers: number[] = [0, 0, 0]
+/** per-flush caps so a minigun or a maxed build never floods the channel */
+const FX_CAP: Record<number, number> = { 0: 3, 1: 2, 2: 4, 3: 2, 4: 2, 5: 3, 6: 2, 7: 2, 8: 1, 9: 1, 10: 1, 11: 1, 12: 1, 13: 1, 14: 1 }
+export function sendFx(code: number, nums: number[], tiers: number[]) {
+  const c = fxCount.get(code) ?? 0
+  if (c >= (FX_CAP[code] ?? 1)) return
+  fxCount.set(code, c + 1)
+  fxTiers = tiers
+  fxOut.push([code, ...nums.map((v) => Math.round(v * 10) / 10)])
 }
 
 export function sendStatus(s: Omit<Status, 'id' | 'n'>) {
@@ -138,7 +169,9 @@ export function attackable(myRunActive: boolean, meInArena: boolean): Remote[] {
 }
 
 // ───────────── remote player visuals: level tag, HP bar, their blades & aura ─────────────
-type Vis = { tag: Entity; aura: Entity; blades: Entity[]; god?: Entity }
+type Vis = { tag: Entity; aura: Entity; blades: Entity[]; god?: Entity; ta: number; tb: number }
+const SUF = ['', '_t2', '_t3', '_asc']
+const tierN = (v: number | undefined) => Math.max(0, Math.min(3, Math.round(v ?? 0)))
 const vis = new Map<string, Vis>()
 const HIDE = Vector3.create(32, -40, 24)
 
@@ -164,10 +197,15 @@ function visFor(id: string): Vis {
   Transform.create(tag, { position: HIDE })
   TextShape.create(tag, { text: '', fontSize: 2.4, textColor: Color4.White(), font: Font.F_SANS_SERIF, textAlign: TextAlignMode.TAM_MIDDLE_CENTER, outlineWidth: 0.2, outlineColor: Color3.Black() })
   Billboard.create(tag, { billboardMode: BillboardMode.BM_Y })
-  v = { tag, aura: mk('cyl', '#FFD86A', 0.15, 1.5), blades: [] }
+  // their aura magic circle and orbiting glaives, drawn with the real skill models at their tier
+  const aura = engine.addEntity()
+  Transform.create(aura, { position: HIDE })
+  GltfContainer.create(aura, { src: 'models/fx_bloom.glb' })
+  v = { tag, aura, blades: [], ta: 0, tb: 0 }
   for (let i = 0; i < 8; i++) {
-    const b = mk('box', '#5EF2FF', 1, 3)
-    Transform.getMutable(b).scale = Vector3.create(0.12, 0.08, 0.75)
+    const b = engine.addEntity()
+    Transform.create(b, { position: HIDE })
+    GltfContainer.create(b, { src: 'models/fx_glaive.glb' })
     v.blades.push(b)
   }
   vis.set(id, v)
@@ -216,10 +254,19 @@ function setupRemoteVisuals() {
       ts.text = `${r.ar ? 'PVP · ' : 'SAFE · '}Lv ${r.l}\nHP ${Math.round(frac * 100)}% · ${r.k} kills`
       ts.textColor = r.ar ? Color4.fromHexString('#FF5468') : Color4.fromHexString('#9AA0AA')
       Transform.getMutable(v.tag).position = Vector3.create(r.x, 2.7, r.z)
+      if (tierN(r.ta) !== v.ta) {
+        v.ta = tierN(r.ta)
+        GltfContainer.getMutable(v.aura).src = `models/fx_bloom${SUF[v.ta]}.glb`
+      }
+      if (tierN(r.tb) !== v.tb) {
+        v.tb = tierN(r.tb)
+        for (const b of v.blades) GltfContainer.getMutable(b).src = `models/fx_glaive${SUF[v.tb]}.glb`
+      }
       const at = Transform.getMutable(v.aura)
       if (r.au > 0) {
-        at.position = Vector3.create(r.x, 0.08, r.z)
-        at.scale = Vector3.create(r.au * 2, 0.02, r.au * 2)
+        at.position = Vector3.create(r.x, 0.06, r.z)
+        at.scale = Vector3.create(r.au * 2, 1 + r.au * 0.25, r.au * 2)
+        at.rotation = Quaternion.fromEulerDegrees(0, spin * 0.3, 0)
       } else at.position = HIDE
       v.blades.forEach((b, i) => {
         const t = Transform.getMutable(b)
@@ -230,7 +277,7 @@ function setupRemoteVisuals() {
         const a = spin + (i * 360) / r.ob
         const rad = (a * Math.PI) / 180
         t.position = Vector3.create(r.x + Math.sin(rad) * r.orr, 1.0, r.z + Math.cos(rad) * r.orr)
-        t.rotation = Quaternion.fromEulerDegrees(0, a + 90, 0)
+        t.rotation = Quaternion.fromEulerDegrees(0, a * 4, 0)
       })
     }
   })
