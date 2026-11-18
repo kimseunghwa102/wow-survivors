@@ -17,7 +17,7 @@ def new_scene():
     sc.name = 'Idle'
     sc.render.fps = 24
     sc.frame_start = 1
-    sc.frame_end = 24
+    sc.frame_end = 25  # last key (frame 25) equals frame 1 → seamless loop
     return Mats()
 
 

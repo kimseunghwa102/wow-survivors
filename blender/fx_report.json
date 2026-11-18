@@ -127,6 +127,14 @@
   "tris": 92,
   "kb": 124
  },
+ "fx_spawn": {
+  "tris": 34,
+  "kb": 130
+ },
+ "fx_death": {
+  "tris": 30,
+  "kb": 113
+ },
  "fx_heal": {
   "tris": 86,
   "kb": 24

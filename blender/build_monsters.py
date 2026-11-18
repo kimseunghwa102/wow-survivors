@@ -93,7 +93,8 @@ for variant in ('ghoul', 'ghoul_elite'):
         key_rot(pv, 'x', [(1 + ph % 24, 12), (13 + ph % 24, -8), (25, 12)] if s > 0 else [(1, -8), (13, 12), (25, -8)])
         arms.append(pv)
     root = pivot('ghoul', (0, 0, 0), body + arms)
-    key_rot(root, 'z', [(1, -4), (13, 4), (25, -4)])
+    key_rot(root, 'z', [(1, -5), (13, 5), (25, -5)])
+    key_loc(root, [(1, 0), (7, 0.07), (13, 0), (19, 0.07), (25, 0)])   # lurching steps
     finish(variant)
 
 # ─────────── SKELETON ───────────

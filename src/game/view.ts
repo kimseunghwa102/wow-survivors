@@ -1,7 +1,7 @@
 // Renders the pure simulation (core.ts) with pooled Decentraland entities.
 import {
   engine, Entity, Transform, GltfContainer, Animator,
-  TextShape, TextAlignMode, Font, Billboard, BillboardMode, Tween, MeshRenderer, Material, MaterialTransparencyMode
+  TextShape, TextAlignMode, Font, Billboard, BillboardMode, Tween, MeshRenderer, Material, MaterialTransparencyMode, EasingFunction
 } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { Run, Ev } from './core'
@@ -44,7 +44,12 @@ class Pool {
 // ─────────────── pools ───────────────
 const ENEMY_POOL: Record<EnemyKind, number> = { bat: 52, ghoul: 38, skeleton: 33, wraith: 24, elite: 3, boss: 0 }
 const enemyPools = {} as Record<EnemyKind, Pool>
-const enemyEnt = new Map<number, { e: Entity; kind: EnemyKind }>()
+type EVis = { e: Entity; kind: EnemyKind; px: number; pz: number; tx: number; tz: number; acc: number; yaw: number; sc: number; squash: number }
+const enemyEnt = new Map<number, EVis>()
+const modelOf = new Map<Entity, Entity>()
+const rotOf = new Map<Entity, Entity>()
+/** how often each monster gets a new movement segment; the renderer interpolates in between (smooth at any FPS) */
+const MOVE_STEP = 0.14
 
 type PickVisual = 'gem_blue' | 'gem_green' | 'gem_red' | 'coin' | 'chest' | 'heal'
 const pickPools = {} as Record<PickVisual, Pool>
@@ -80,6 +85,11 @@ let warnPool: Pool
 let slamPool: Pool
 let bossEnt: Entity
 let bossShown = 0
+let bossModel: Entity
+let bossAcc = 0
+let bossLastId = 0
+let bossTx = 0
+let bossTz = 0
 let held: Entity
 let heldTier = -1
 let swingT = 0
@@ -105,11 +115,16 @@ function fxPool(k: FxKind, n: number, spin = 0, max = n): Pool[] {
 export function setupView() {
   for (const k of Object.keys(ENEMY_POOL) as EnemyKind[]) {
     enemyPools[k] = new Pool(() => {
+      // parent = smoothly tweened position, child = model (scale / facing / hit squash)
       const e = ent()
-      GltfContainer.create(e, { src: ENEMIES[k].model })
-      Animator.create(e, { states: [{ clip: 'Idle', playing: true, loop: true, speed: k === 'bat' ? 1.6 : 1 }] })
-      const s = ENEMIES[k].scale
-      Transform.getMutable(e).scale = V(s, s, s)
+      const r = engine.addEntity()
+      Transform.create(r, { parent: e })
+      const m = engine.addEntity()
+      Transform.create(m, { parent: r })
+      GltfContainer.create(m, { src: ENEMIES[k].model })
+      rotOf.set(e, r)
+      Animator.create(m, { states: [{ clip: 'Idle', playing: true, loop: true, speed: k === 'bat' ? 1.6 : 1 }] })
+      modelOf.set(e, m)
       return e
     }, ENEMY_POOL[k])
   }
@@ -127,7 +142,7 @@ export function setupView() {
   pickPools.chest = pick('models/chest.glb', 4, 30)
   pickPools.heal = pick('models/fx_heal.glb', 4, 90)
 
-  boltPool = fxPool('shard', 20, 540, 40)
+  boltPool = fxPool('shard', 20, 0, 40)
   for (let i = 0; i < 12; i++) {
     const e = ent()
     GltfContainer.create(e, { src: fxSrc('glaive', 0) })
@@ -142,7 +157,11 @@ export function setupView() {
   lvlPool = pick('models/fx_levelup.glb', 2, 90)
   setupUpgradeFx()
   setupHalos()
+  spawnPool = pick('models/fx_spawn.glb', 8, 0)
+  deathPool = pick('models/fx_death.glb', 16, 0)
   bossEnt = ent()
+  bossModel = engine.addEntity()
+  Transform.create(bossModel, { parent: bossEnt })
   held = ent()
   for (const k of SWING_FX) swingPools[k] = pick(`models/fx_sw_${k}.glb`, 3, 0)
   quakePool = pick('models/fx_quake.glb', 3, 0)
@@ -178,39 +197,89 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
       if (!e.alive) continue
       if (e.kind === 'boss') {
         bossSeen = true
-        const bt = Transform.getMutable(bossEnt)
         if (bossShown !== e.id) {
           bossShown = e.id
           const d = bossFor(e.boss ?? 0)
-          GltfContainer.createOrReplace(bossEnt, { src: d.model })
-          Animator.createOrReplace(bossEnt, { states: [{ clip: 'Idle', playing: true, loop: true, speed: 0.8 }] })
-          bt.scale = V(d.scale, d.scale, d.scale)
+          GltfContainer.createOrReplace(bossModel, { src: d.model })
+          Animator.createOrReplace(bossModel, { states: [{ clip: 'Idle', playing: true, loop: true, speed: 0.8 }] })
+          Transform.getMutable(bossModel).scale = V(d.scale, d.scale, d.scale)
         }
-        bt.position = V(e.x, 0, e.z)
-        bt.rotation = yawQ((Math.atan2(run.x - e.x, run.z - e.z) * 180) / Math.PI)
+        bossAcc += dt
+        if (bossAcc >= MOVE_STEP || bossShown !== bossLastId) {
+          const start = bossLastId === e.id ? V(bossTx, 0, bossTz) : V(e.x, 0, e.z)
+          bossLastId = e.id
+          Tween.createOrReplace(bossEnt, { mode: Tween.Mode.Move({ start, end: V(e.x, 0, e.z) }), duration: MOVE_STEP * 1000, easingFunction: EasingFunction.EF_LINEAR })
+          bossTx = e.x
+          bossTz = e.z
+          bossAcc = 0
+          Transform.getMutable(bossModel).rotation = yawQ((Math.atan2(run.x - e.x, run.z - e.z) * 180) / Math.PI)
+        }
         continue
       }
       seen.add(e.id)
       let v = enemyEnt.get(e.id)
+      const hy = ENEMIES[e.kind].hover
+      const face = (Math.atan2(run.x - e.x, run.z - e.z) * 180) / Math.PI
       if (!v) {
         const ent_ = enemyPools[e.kind].take()
         if (!ent_) continue
-        v = { e: ent_, kind: e.kind }
-        enemyEnt.set(e.id, v)
         const sc = ENEMIES[e.kind].scale * e.sc
-        Transform.getMutable(ent_).scale = V(sc, sc, sc)
+        v = { e: ent_, kind: e.kind, px: e.x, pz: e.z, tx: e.x, tz: e.z, acc: Math.random() * MOVE_STEP, yaw: face, sc, squash: 0 }
+        enemyEnt.set(e.id, v)
+        Tween.deleteFrom(ent_)
+        Transform.getMutable(ent_).position = V(e.x, hy, e.z)
+        Transform.getMutable(modelOf.get(ent_)!).scale = V(sc, sc, sc)
+        Tween.deleteFrom(rotOf.get(ent_)!)
+        Transform.getMutable(rotOf.get(ent_)!).rotation = yawQ(face)
+        spawnPuff(e.x, e.z, e.kind === 'elite' ? 2 : 1)
       }
-      const t = Transform.getMutable(v.e)
-      t.position = V(e.x, ENEMIES[e.kind].hover, e.z)
-      t.rotation = yawQ((Math.atan2(run.x - e.x, run.z - e.z) * 180) / Math.PI)
+      v.acc += dt
+      if (v.acc >= MOVE_STEP) {
+        // velocity from the simulation since the last segment → extrapolate one step ahead
+        const vx = (e.x - v.px) / v.acc
+        const vz = (e.z - v.pz) / v.acc
+        v.px = e.x
+        v.pz = e.z
+        const nx = e.x + vx * MOVE_STEP
+        const nz = e.z + vz * MOVE_STEP
+        // start from where the renderer currently is (last target) unless the error grew too large
+        const sx = Math.hypot(v.tx - e.x, v.tz - e.z) > 1.5 ? e.x : v.tx
+        const sz = Math.hypot(v.tx - e.x, v.tz - e.z) > 1.5 ? e.z : v.tz
+        Tween.createOrReplace(v.e, {
+          mode: Tween.Mode.Move({ start: V(sx, hy, sz), end: V(nx, hy, nz) }),
+          duration: MOVE_STEP * 1000,
+          easingFunction: EasingFunction.EF_LINEAR
+        })
+        v.tx = nx
+        v.tz = nz
+        v.acc = 0
+        // turn smoothly toward the player only when the heading really changed
+        let dy = ((face - v.yaw + 540) % 360) - 180
+        if (Math.abs(dy) > 6) {
+          const from = v.yaw
+          v.yaw = from + dy
+          Tween.createOrReplace(rotOf.get(v.e)!, {
+            mode: Tween.Mode.Rotate({ start: yawQ(from), end: yawQ(v.yaw) }),
+            duration: MOVE_STEP * 1000,
+            easingFunction: EasingFunction.EF_LINEAR
+          })
+        }
+      }
+      if (v.squash > 0) {
+        v.squash -= dt
+        if (v.squash <= 0) Transform.getMutable(modelOf.get(v.e)!).scale = V(v.sc, v.sc, v.sc)
+      }
     }
   }
   if (!bossSeen && bossShown) {
     bossShown = 0
+    bossLastId = 0
+    Tween.deleteFrom(bossEnt)
     Transform.getMutable(bossEnt).position = HIDE
   }
   for (const [id, v] of enemyEnt)
     if (!seen.has(id)) {
+      Tween.deleteFrom(v.e)
       enemyPools[v.kind].give(v.e)
       enemyEnt.delete(id)
     }
@@ -257,11 +326,16 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
         boltEnt.set(b.id, v)
         const sz = lvlSize(run, 'bolt')
         Transform.getMutable(e).scale = V(sz, sz, sz)
+        Tween.createOrReplace(e, {
+          mode: Tween.Mode.Move({ start: V(b.x, 1.1, b.z), end: V(b.x + b.vx * b.life, 1.1, b.z + b.vz * b.life) }),
+          duration: b.life * 1000,
+          easingFunction: EasingFunction.EF_LINEAR
+        })
       }
-      Transform.getMutable(v.e).position = V(b.x, 1.1, b.z)
     }
   for (const [id, v] of boltEnt)
     if (!seenB.has(id)) {
+      Tween.deleteFrom(v.e)
       boltPool[v.t].give(v.e)
       boltEnt.delete(id)
     }
@@ -325,6 +399,8 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
       t.rotation = yawQ(Math.random() * 360)
       t.scale = V(ev.r * 2, 1, ev.r * 2)
       active.push({ e, life: 0.28, max: 0.28, kind: 'strike', r: ev.r, asc })
+    } else if (ev.t === 'kill') {
+      deathPuff(ev.x, ev.z, ev.kind === 'elite' ? 2.2 : ev.kind === 'boss' ? 4 : 1)
     } else if (ev.t === 'swing') {
       const kind = ARMORY[ev.tier].fx as (typeof SWING_FX)[number]
       const e = swingPools[kind]?.take()
@@ -373,7 +449,13 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
       if (!e) continue
       Transform.getMutable(e).position = V(run.x, 0.05, run.z)
       active.push({ e, life: 0.9, max: 0.9, kind: 'lvl', asc: 0 })
-    } else if (ev.t === 'hit' && (ev.crit || dmgCount++ % 3 === 0)) {
+    } else if (ev.t === 'hit') {
+      const v = enemyEnt.get(ev.id)
+      if (v && v.squash <= 0) {
+        v.squash = 0.09
+        Transform.getMutable(modelOf.get(v.e)!).scale = V(v.sc * 1.18, v.sc * 0.86, v.sc * 1.18)
+      }
+      if (!(ev.crit || dmgCount++ % 3 === 0)) continue
       const e = dmgPool.take()
       if (!e) continue
       const ts = TextShape.getMutable(e)
@@ -631,6 +713,22 @@ function renderHalos(run: Run | null, dt: number) {
     if (upTextT <= 0) t.position = HIDE
     else if (run) t.position = V(run.x, 2.6 + (1.6 - upTextT) * 0.6, run.z)
   }
+}
+
+// ───────── spawn / death / hit juice ─────────
+let spawnPool: Pool
+let deathPool: Pool
+function spawnPuff(x: number, z: number, s: number) {
+  const e = spawnPool.take()
+  if (!e) return
+  Transform.getMutable(e).position = V(x, 0.03, z)
+  active.push({ e, life: 0.45, max: 0.45, kind: 'up', asc: 0, pool: spawnPool, r: 0.7 * s })
+}
+function deathPuff(x: number, z: number, s: number) {
+  const e = deathPool.take()
+  if (!e) return
+  Transform.getMutable(e).position = V(x, 0.05, z)
+  active.push({ e, life: 0.55, max: 0.55, kind: 'up', asc: 0, pool: deathPool, r: 0.75 * s })
 }
 
 let aimYaw = 0

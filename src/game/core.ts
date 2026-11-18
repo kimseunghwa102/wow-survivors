@@ -47,7 +47,7 @@ export type Proj = { id: number; x: number; z: number; vx: number; vz: number; d
 export type Remote = { id: string; x: number; z: number; attackable: boolean }
 
 export type Ev =
-  | { t: 'hit'; x: number; z: number; dmg: number; crit?: boolean }
+  | { t: 'hit'; id: number; x: number; z: number; dmg: number; crit?: boolean }
   | { t: 'kill'; kind: EnemyKind; x: number; z: number }
   | { t: 'gem' }
   | { t: 'coin' }
@@ -339,7 +339,7 @@ export class Run {
     e.hp -= d
     e.kx += kx
     e.kz += kz
-    this.events.push({ t: 'hit', x: e.x, z: e.z, dmg: d, crit })
+    this.events.push({ t: 'hit', id: e.id, x: e.x, z: e.z, dmg: d, crit })
     if (this.evo('lash') && this.lashHealBudget > 0) {
       this.hp = Math.min(this.maxHp, this.hp + 1)
       this.lashHealBudget -= 1

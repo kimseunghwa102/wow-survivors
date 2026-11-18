@@ -130,6 +130,28 @@ for name, col in [('lash', '#FF2E4A'), ('bolt', '#A26BFF'), ('orbit', '#3FE6FF')
     B.emit('fx')
     finish(f'fx_up_{name}')
 
+# ── monster spawn (rift tear on the ground) + death (soul burst) ──
+M = scene()
+r1 = tmat(M, 'spawn_ring', t_shock('fx_spawn_ring.png', '#7A2BFF', (0.9, 0.7, 1), rings=2), 3)
+w1 = tmat(M, 'spawn_wisp', t_band('fx_spawn_wisp.png', '#5A1AAA', (0.8, 0.6, 1)), 2)
+B = Builder(M)
+flat(B, 1.0, 1.0, r1, y=0.03)
+open_cyl(B, 0.35, 0.9, w1, seg=16)
+B.emit('fx')
+finish('fx_spawn')
+
+M = scene()
+g1 = tmat(M, 'death_glow', t_radial('fx_death_glow.png', '#B98CFF', (1, 1, 1), spikes=6, power=2.2), 4)
+r2 = tmat(M, 'death_ring', t_shock('fx_death_ring.png', '#C9A8FF', (1, 1, 1), rings=1), 3)
+w2 = tmat(M, 'death_wisp', t_band('fx_death_wisp.png', '#9A6BFF', (1, 1, 1)), 3)
+B = Builder(M)
+flat(B, 1.0, 1.0, r2, y=0.04)
+open_cyl(B, 0.22, 1.4, w2, seg=12)
+B.quad((-0.4, 0.5, 0), (0.4, 0.5, 0), (0.4, 1.3, 0), (-0.4, 1.3, 0), g1)
+B.quad((0, 0.5, -0.4), (0, 0.5, 0.4), (0, 1.3, 0.4), (0, 1.3, -0.4), g1)
+B.emit('fx')
+finish('fx_death')
+
 # ── heal orb + level-up burst ──
 M = scene()
 hm = tmat(M, 'heal', t_radial('fx_heal.png', '#FF3B6B', (1, 0.9, 0.95), spikes=4), 4)
