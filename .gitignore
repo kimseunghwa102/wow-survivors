@@ -4,3 +4,4 @@ bin
 *.blend1
 main.crdt
 __pycache__/
+*.mp4

@@ -10,3 +10,5 @@ layout.json
 render.yaml
 *.bat
 tools
+
+*.mp4
