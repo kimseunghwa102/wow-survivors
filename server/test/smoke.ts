@@ -115,7 +115,7 @@ async function main() {
   const bob = await identity()
   await signed(bob, 'POST', '/api/profile', {})
   const qe = await signed(bob, 'POST', '/api/shop/quote', { currency: 'ETH' })
-  assert(qe.json.ok && qe.json.quote.amount === 0.004 && qe.json.quote.to === OWNER, 'ETH quote: $10 @ $2500 = 0.004 ETH')
+  assert(qe.json.ok && qe.json.quote.amount === 0.004 && qe.json.quote.to === OWNER && qe.json.quote.gold === 15000 && qe.json.quote.firstBonus, 'ETH quote: $10 @ $2500 = 0.004 ETH, first purchase +50% → 15,000 gold')
   const bobAddr = bob.owner.address.toLowerCase()
   const h1 = '0x' + '11'.repeat(32)
   const pend = await signed(bob, 'POST', '/api/shop/confirm', { quoteId: qe.json.quote.id, txHash: h1 })
@@ -123,9 +123,9 @@ async function main() {
   chain[h1] = { tx: { from: bobAddr, to: OWNER, value: '0x' + BigInt(qe.json.quote.amountWei).toString(16) }, receipt: { blockNumber: '0x10', status: '0x1', logs: [] } }
   const pb0 = pend.json.profile.bank
   const ok1 = await signed(bob, 'POST', '/api/shop/confirm', { quoteId: qe.json.quote.id, txHash: h1 })
-  assert(ok1.json.ok && ok1.json.profile.bank === pb0 + 10000, 'ETH payment verified on-chain → +10,000 gold')
+  assert(ok1.json.ok && ok1.json.profile.bank === pb0 + 15000, 'ETH payment verified on-chain → +15,000 gold (first-buy bonus)')
   const again9 = await signed(bob, 'POST', '/api/shop/confirm', { quoteId: qe.json.quote.id, txHash: h1 })
-  assert(again9.json.profile.bank === pb0 + 10000, 'confirming twice does not double-credit')
+  assert(again9.json.profile.bank === pb0 + 15000, 'confirming twice does not double-credit')
   const qe2 = await signed(bob, 'POST', '/api/shop/quote', { currency: 'ETH' })
   const reuse = await signed(bob, 'POST', '/api/shop/confirm', { quoteId: qe2.json.quote.id, txHash: h1 })
   assert(reuse.status === 400, 'same tx cannot pay for a second pack')
@@ -137,8 +137,8 @@ async function main() {
   chain[h3] = { tx: { from: bobAddr, to: OWNER, value: '0x1' }, receipt: { blockNumber: '0x12', status: '0x1', logs: [] } }
   const small = await signed(bob, 'POST', '/api/shop/confirm', { quoteId: qe2.json.quote.id, txHash: h3 })
   assert(small.status === 400, 'underpayment is rejected')
-  const qm = await signed(bob, 'POST', '/api/shop/quote', { currency: 'MANA' })
-  assert(qm.json.quote.amount === 40 && qm.json.quote.token === '0x0f5d2fb29fb7d3cfee444a200298f468908cc942', 'MANA quote: $10 @ $0.25 = 40 MANA')
+  const qm = await signed(bob, 'POST', '/api/shop/quote', { currency: 'MANA', pack: 'p100' })
+  assert(qm.json.quote.amount === 400 && qm.json.quote.gold === 130000 && !qm.json.quote.firstBonus && qm.json.quote.token === '0x0f5d2fb29fb7d3cfee444a200298f468908cc942', 'MANA quote: $100 pack @ $0.25 = 400 MANA → 130,000 gold (no repeat first-buy bonus)')
   const h4 = '0x' + '44'.repeat(32)
   const pad = (a: string) => '0x' + a.replace(/^0x/, '').padStart(64, '0')
   chain[h4] = {
@@ -146,7 +146,7 @@ async function main() {
     receipt: { blockNumber: '0x13', status: '0x1', logs: [{ address: '0x0f5d2fb29fb7d3cfee444a200298f468908cc942', topics: ['0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef', pad(bobAddr), pad(OWNER)], data: pad(BigInt(qm.json.quote.amountWei).toString(16)) }] }
   }
   const okm = await signed(bob, 'POST', '/api/shop/confirm', { quoteId: qm.json.quote.id, txHash: h4 })
-  assert(okm.json.ok && okm.json.profile.bank === pb0 + 20000, 'MANA transfer verified from token logs → +10,000 gold')
+  assert(okm.json.ok && okm.json.profile.bank === pb0 + 145000, 'MANA transfer verified from token logs → +130,000 gold')
   const stolen = await signed(alice, 'POST', '/api/shop/confirm', { quoteId: qm.json.quote.id, txHash: h4 })
   assert(stolen.status === 400, "someone else can't claim another player's quote / payment")
 

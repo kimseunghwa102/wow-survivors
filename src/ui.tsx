@@ -2,7 +2,7 @@ import ReactEcs, { ReactEcsRenderer, UiEntity, Label, Button } from '@dcl/sdk/re
 import { Color4 } from '@dcl/sdk/math'
 import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold } from './game/game'
 import { optionLabel, Option } from './game/core'
-import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor } from './game/defs'
+import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS } from './game/defs'
 import { feed, topRuns } from './game/net'
 import { save } from './game/persist'
 import { play } from './game/sfx'
@@ -155,7 +155,7 @@ function Dock() {
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: 24, right: 16 }, flexDirection: 'column', alignItems: 'flex-end' }}>
       <Button
-        value="💎 BUY GOLD [4]"
+        value={G.firstPurchase ? '💎 TREASURY [4] · +50%' : '💎 TREASURY [4]'}
         fontSize={15}
         color={WHITE}
         uiTransform={{ width: 210, height: 40, margin: { bottom: 6 } }}
@@ -185,25 +185,72 @@ function Dock() {
   )
 }
 
+function PackCard(props: { i: number; key?: string }) {
+  const k = GOLD_PACKS[props.i]
+  const sel = G.packSel === props.i
+  const gold = Math.round(k.gold * (G.firstPurchase ? 1 + FIRST_BUY_BONUS : 1))
+  const best = k.tag === 'BEST VALUE'
+  return (
+    <UiEntity
+      uiTransform={{ width: 150, height: 250, margin: 6, flexDirection: 'column', alignItems: 'center', padding: 4 }}
+      uiBackground={{ color: sel ? C('#FFD24A') : best ? C('#B07BFF', 0.8) : C('#5A3A10', 0.9) }}
+      onMouseDown={tap(() => (G.packSel = props.i))}
+    >
+      <UiEntity uiTransform={{ width: '100%', height: '100%', flexDirection: 'column', alignItems: 'center' }} uiBackground={{ color: sel ? C('#2A1A08') : C('#160C1E') }}>
+        <UiEntity uiTransform={{ width: '100%', height: 22, justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: k.tag ? (best ? C('#9A3BFF') : k.tag === 'POPULAR' ? C('#1FA85A') : C('#C04B2A')) : C('#000000', 0) }}>
+          <Label value={k.tag ? `<b>${k.tag}</b>` : ''} fontSize={12} color={WHITE} />
+        </UiEntity>
+        <UiEntity uiTransform={{ width: 130, height: 120, margin: { top: 2 } }} uiBackground={{ textureMode: 'stretch', texture: { src: k.img } }} />
+        <Label value={`<b>${gold.toLocaleString()}</b>`} fontSize={22} color={GOLD} uiTransform={{ height: 28 }} />
+        <Label value={G.firstPurchase ? `${k.gold.toLocaleString()} +50% first buy` : k.bonus ? `includes +${k.bonus}% bonus` : 'gold'} fontSize={11} color={G.firstPurchase ? C('#3DFF8E') : DIM} uiTransform={{ height: 16 }} />
+        <UiEntity uiTransform={{ width: 120, height: 34, margin: { top: 8 }, justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: sel ? C('#FFD24A') : C('#3A2A10') }}>
+          <Label value={`<b>$${k.usd}</b>`} fontSize={20} color={sel ? C('#1A0E00') : WHITE} />
+        </UiEntity>
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
 function GoldShop() {
   if (!G.goldShopOpen) return null
   const gs = G.goldShop
+  const k = GOLD_PACKS[G.packSel]
+  const gold = Math.round(k.gold * (G.firstPurchase ? 1 + FIRST_BUY_BONUS : 1))
+  const after = G.bank + gold
+  const unlocks = ARMORY.filter((w, i) => i > G.armory && w.cost <= after)
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 90, right: 282 }, width: 380, flexDirection: 'column', alignItems: 'center', padding: 14 }} uiBackground={{ color: C('#140C06', 0.95) }}>
-      <Label value="<b>💎 GOLD SHOP</b>" fontSize={22} color={GOLD} uiTransform={{ height: 30 }} />
-      <Label value={`<b>${gs.gold.toLocaleString()} GOLD</b>  =  $${gs.usd}`} fontSize={18} color={WHITE} uiTransform={{ height: 26 }} />
-      <Label value="paid in ETH or MANA (Ethereum) · gas fee extra · goes to your bank" fontSize={11} color={DIM} uiTransform={{ height: 16, margin: { bottom: 8 } }} />
-      {gs.enabled ? (
-        <UiEntity uiTransform={{ flexDirection: 'row' }}>
-          <Button value={G.payBusy ? '…' : 'PAY WITH ETH [2]'} fontSize={14} color={WHITE} uiTransform={{ width: 165, height: 40, margin: 4 }} uiBackground={{ color: C('#4A5BD8') }} onMouseDown={tap(() => void buyGold('ETH'))} />
-          <Button value={G.payBusy ? '…' : 'PAY WITH MANA [3]'} fontSize={14} color={WHITE} uiTransform={{ width: 165, height: 40, margin: 4 }} uiBackground={{ color: C('#FF2D55') }} onMouseDown={tap(() => void buyGold('MANA'))} />
+    <UiEntity uiTransform={{ positionType: 'absolute', width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: C('#000000', 0.55) }}>
+      <UiEntity uiTransform={{ width: 880, height: 600, flexDirection: 'column', alignItems: 'center', padding: 22 }} uiBackground={{ textureMode: 'stretch', texture: { src: 'images/shop_bg.jpg' } }}>
+        <Label value="<b>◆  THE TREASURY  ◆</b>" fontSize={34} color={GOLD} uiTransform={{ height: 42 }} />
+        <Label value={`Gold for the Armory & Arcane Forge · your bank ● ${G.bank.toLocaleString()}`} fontSize={14} color={C('#E8D8FF')} uiTransform={{ height: 20 }} />
+        {G.firstPurchase ? (
+          <UiEntity uiTransform={{ width: 520, height: 30, margin: { top: 6 }, justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: C('#1FA85A') }}>
+            <Label value="<b>★ FIRST PURCHASE BONUS: +50% GOLD ON ANY PACK ★</b>" fontSize={14} color={WHITE} />
+          </UiEntity>
+        ) : null}
+        <UiEntity uiTransform={{ flexDirection: 'row', margin: { top: 6 } }}>
+          {GOLD_PACKS.map((_, i) => (
+            <PackCard key={`pk${i}`} i={i} />
+          ))}
         </UiEntity>
-      ) : (
-        <Label value="Gold shop opens soon" fontSize={14} color={DIM} uiTransform={{ height: 22 }} />
-      )}
-      {G.payMsg ? <Label value={G.payMsg} fontSize={12} color={G.payMsg.startsWith('✓') ? C('#3DFF8E') : C('#FFB84A')} uiTransform={{ height: 34, width: 350 }} /> : null}
-      <Label value="Your wallet asks you to confirm. Gold is added after the payment is on-chain." fontSize={10} color={DIM} uiTransform={{ height: 28, width: 350 }} />
-      <Button value="CLOSE [4]" fontSize={13} color={WHITE} uiTransform={{ width: 120, height: 30, margin: { top: 4 } }} uiBackground={{ color: C('#2A2A3A') }} onMouseDown={tap(() => (G.goldShopOpen = false))} />
+        <Label
+          value={unlocks.length ? `→ with this pack you can unlock: <b>${unlocks.map((w) => w.name).join(', ')}</b>` : `→ ${after.toLocaleString()} gold in your bank after this pack`}
+          fontSize={13}
+          color={C('#FFB84A')}
+          uiTransform={{ height: 20, margin: { top: 2 } }}
+        />
+        {gs.enabled ? (
+          <UiEntity uiTransform={{ flexDirection: 'row', margin: { top: 6 } }}>
+            <Button value={G.payBusy ? 'WAITING…' : `PAY $${k.usd} WITH ETH  [2]`} fontSize={16} color={WHITE} uiTransform={{ width: 270, height: 48, margin: 6 }} uiBackground={{ color: C('#4A5BD8') }} onMouseDown={tap(() => void buyGold('ETH'))} />
+            <Button value={G.payBusy ? 'WAITING…' : `PAY $${k.usd} WITH MANA  [3]`} fontSize={16} color={WHITE} uiTransform={{ width: 270, height: 48, margin: 6 }} uiBackground={{ color: C('#FF2D55') }} onMouseDown={tap(() => void buyGold('MANA'))} />
+          </UiEntity>
+        ) : (
+          <Label value="The Treasury opens soon" fontSize={16} color={DIM} uiTransform={{ height: 48 }} />
+        )}
+        {G.payMsg ? <Label value={`<b>${G.payMsg}</b>`} fontSize={13} color={G.payMsg.startsWith('✓') ? C('#3DFF8E') : C('#FFD24A')} uiTransform={{ height: 20 }} /> : null}
+        <Label value="🔒 verified on-chain · paid to the creator's wallet · gas fee extra · 1 = next pack · 4 = close" fontSize={11} color={C('#BFAEDF')} uiTransform={{ height: 18, margin: { top: 2 } }} />
+        <Button value="CLOSE" fontSize={13} color={WHITE} uiTransform={{ width: 120, height: 30, margin: { top: 4 } }} uiBackground={{ color: C('#2A2A3A') }} onMouseDown={tap(() => (G.goldShopOpen = false))} />
+      </UiEntity>
     </UiEntity>
   )
 }
@@ -511,7 +558,7 @@ const Root = () => (
     <TopHud />
     <BossBar />
     <Dock />
-    {G.goldShopOpen ? <GoldShop /> : <InfoPanel />}
+    <InfoPanel />
     <NextBoss />
     <SidePanel />
     <HpBar />
@@ -522,6 +569,7 @@ const Root = () => (
     {G.phase === 'dead' ? <DeadModal /> : null}
     {G.shopOpen && G.phase !== 'levelup' && G.phase !== 'chest' ? <ShopModal /> : null}
     {G.armoryOpen && !G.shopOpen && (G.phase === 'idle' || G.phase === 'dead' || G.phase === 'start') ? <ArmoryModal /> : null}
+    <GoldShop />
     <Banner />
   </UiEntity>
 )

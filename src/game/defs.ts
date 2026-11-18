@@ -171,3 +171,13 @@ export const BOOSTS: Record<BoostId, { name: string; desc: string; color: string
   regen: { name: 'Rift Bloom', desc: '+0.5 HP regen / sec', color: '#FF7AC8' },
   gold: { name: 'Rift Tithe', desc: '+30 gold now', color: '#FFD86A' }
 }
+
+// ───────────── TREASURY: real-money gold packs (must match server/src/payments.ts) ─────────────
+export const GOLD_PACKS = [
+  { id: 'p5', usd: 5, gold: 5_000, bonus: 0, tag: '', img: 'images/pack_1.png' },
+  { id: 'p10', usd: 10, gold: 10_000, bonus: 0, tag: 'POPULAR', img: 'images/pack_2.png' },
+  { id: 'p25', usd: 25, gold: 27_500, bonus: 10, tag: '+10% BONUS', img: 'images/pack_3.png' },
+  { id: 'p50', usd: 50, gold: 60_000, bonus: 20, tag: '+20% BONUS', img: 'images/pack_4.png' },
+  { id: 'p100', usd: 100, gold: 130_000, bonus: 30, tag: 'BEST VALUE', img: 'images/pack_5.png' }
+]
+export const FIRST_BUY_BONUS = 0.5

@@ -4,7 +4,7 @@ import { Vector3 } from '@dcl/sdk/math'
 import { movePlayerTo } from '~system/RestrictedActions'
 import LAYOUT from '../../layout.json'
 import { Run, Option, Ev, inArena } from './core'
-import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, bossFor } from './defs'
+import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, bossFor, GOLD_PACKS } from './defs'
 import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName } from './view'
 import { play, setupSfx, musicLevel } from './sfx'
 import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf } from './net'
@@ -54,6 +54,8 @@ export const G = {
   infoOpen: false, // upgrades overview panel (key 1)
   goldShopOpen: false,
   goldShop: { enabled: false, gold: 10000, usd: 10 },
+  packSel: 1,
+  firstPurchase: true,
   payBusy: false,
   payMsg: '' as string,
   buyConfirmT: 0,
@@ -74,6 +76,7 @@ export function applyProfile(p: ServerProfile | null) {
   G.best = { t: p.best.time, l: p.best.level, k: p.best.kills }
   if (p.armory !== undefined) G.armory = Math.max(G.armory, p.armory)
   if (p.daily) G.daily = p.daily
+  if (p.firstPurchase !== undefined) G.firstPurchase = p.firstPurchase
 }
 
 export function buyArmory(tier: number) {
@@ -159,7 +162,7 @@ export async function buyGold(currency: 'ETH' | 'MANA') {
     const from = acc.address
     if (!from) throw new Error('connect a wallet to buy gold (guests cannot pay)')
     G.payMsg = 'Getting a price quote…'
-    const q = await shopQuote(currency, me().name)
+    const q = await shopQuote(currency, me().name, GOLD_PACKS[G.packSel].id)
     const amountHex = '0x' + decToHex(q.amountWei)
     const tx =
       currency === 'ETH'
@@ -183,6 +186,7 @@ export async function buyGold(currency: 'ETH' | 'MANA') {
       const r = await shopConfirm(q.id, hash)
       if (r.ok) {
         if (r.profile) applyProfile(r.profile)
+        G.firstPurchase = false
         G.payMsg = `✓ +${(r.gold ?? q.gold).toLocaleString()} gold added. Thank you!`
         play('buy')
         banner(`+${(r.gold ?? q.gold).toLocaleString()} GOLD!`, 4)
@@ -559,7 +563,8 @@ export function setupGame() {
   // hotkeys that work anywhere (lobby or mid-run): 1 = upgrades panel, 2 = switch weapon, 3 = buy next weapon
   engine.addSystem((dt) => {
     if (G.buyConfirmT > 0) G.buyConfirmT -= dt
-    if (inputSystem.isTriggered(InputAction.IA_ACTION_3, PointerEventType.PET_DOWN)) {
+    const k1 = inputSystem.isTriggered(InputAction.IA_ACTION_3, PointerEventType.PET_DOWN)
+    if (k1 && !G.goldShopOpen) {
       G.infoOpen = !G.infoOpen
       play('click')
     }
@@ -571,7 +576,8 @@ export function setupGame() {
       play('click')
     }
     if (G.goldShopOpen) {
-      // while the gold shop is open: 2 = pay with ETH, 3 = pay with MANA
+      // while the gold shop is open: 1 = next pack, 2 = pay with ETH, 3 = pay with MANA
+      if (k1) G.packSel = (G.packSel + 1) % GOLD_PACKS.length
       if (k2) void buyGold('ETH')
       if (k3) void buyGold('MANA')
     } else {

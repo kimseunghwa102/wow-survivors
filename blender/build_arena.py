@@ -420,7 +420,6 @@ for z in (4.0, 12.0):
 for x in (4.0, 12.0):
     banner_on(x, 3.3, T + E, 'n', BANNER, 1.3, 2.6)
 lamp(4.5, 3.0)
-lamp(12.5, 3.0)
 
 # ═══════════ HALL OF LEGENDS (safe, cell -103,78) ═══════════
 lx, _, lz = L['leaderboard']

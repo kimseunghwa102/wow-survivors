@@ -5,7 +5,17 @@
  */
 import { Sql } from './db'
 
-export const GOLD_PACK = { id: 'gold10k', gold: 10_000, usd: 10 }
+export type Pack = { id: string; usd: number; gold: number; bonus: number; tag?: string }
+/** base rate 1,000 gold per $1; bigger packs add bonus gold. Must match GOLD_PACKS in src/game/defs.ts */
+export const GOLD_PACKS: Pack[] = [
+  { id: 'p5', usd: 5, gold: 5_000, bonus: 0 },
+  { id: 'p10', usd: 10, gold: 10_000, bonus: 0, tag: 'POPULAR' },
+  { id: 'p25', usd: 25, gold: 27_500, bonus: 10 },
+  { id: 'p50', usd: 50, gold: 60_000, bonus: 20 },
+  { id: 'p100', usd: 100, gold: 130_000, bonus: 30, tag: 'BEST VALUE' }
+]
+export const FIRST_BUY_BONUS = 0.5 // +50% gold on a wallet's first purchase
+export const GOLD_PACK = GOLD_PACKS[1]
 export const MANA_TOKEN = '0x0f5d2fb29fb7d3cfee444a200298f468908cc942' // MANA (Ethereum mainnet)
 const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 const QUOTE_TTL_MS = 30 * 60 * 1000
@@ -58,13 +68,21 @@ export function toWei(usd: number, price: number, currency: Currency): bigint {
 }
 export const fromWei = (w: bigint) => Number(w) / 1e18
 
-export async function createQuote(db: Sql, address: string, currency: Currency, wallet: string, prices: PriceFeed) {
+export async function hasBought(db: Sql, address: string) {
+  return (await db.query("SELECT 1 FROM purchases WHERE address = $1 AND status = 'paid' LIMIT 1", [address])).rows.length > 0
+}
+
+export async function createQuote(db: Sql, address: string, currency: Currency, wallet: string, prices: PriceFeed, packId = 'p10') {
+  const pack = GOLD_PACKS.find((k) => k.id === packId)
+  if (!pack) throw Object.assign(new Error('unknown pack'), { statusCode: 400 })
+  const first = !(await hasBought(db, address))
+  const gold = Math.round(pack.gold * (first ? 1 + FIRST_BUY_BONUS : 1))
   const p = await prices()
-  const wei = toWei(GOLD_PACK.usd, p[currency], currency)
+  const wei = toWei(pack.usd, p[currency], currency)
   const id = `q_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
   await db.query(
     'INSERT INTO purchases (id, address, currency, amount_wei, gold, usd, to_wallet, created_at) VALUES ($1, $2, $3, $4, $5::integer, $6::integer, $7, $8)',
-    [id, address, currency, wei.toString(), GOLD_PACK.gold, GOLD_PACK.usd, wallet.toLowerCase(), Date.now()]
+    [id, address, currency, wei.toString(), gold, pack.usd, wallet.toLowerCase(), Date.now()]
   )
   return {
     id,
@@ -73,8 +91,10 @@ export async function createQuote(db: Sql, address: string, currency: Currency, 
     token: currency === 'MANA' ? MANA_TOKEN : null,
     amountWei: wei.toString(),
     amount: fromWei(wei),
-    gold: GOLD_PACK.gold,
-    usd: GOLD_PACK.usd,
+    pack: pack.id,
+    gold,
+    firstBonus: first,
+    usd: pack.usd,
     priceUsd: p[currency],
     expiresAt: Date.now() + QUOTE_TTL_MS
   }

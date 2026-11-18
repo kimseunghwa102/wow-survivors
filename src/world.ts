@@ -5,7 +5,7 @@ import LAYOUT from '../layout.json'
 import { node, text, setText, hitbox, bob, V, FACE } from './helpers'
 import { topRuns, topPvp } from './game/net'
 import { save, loadBoard } from './game/persist'
-import { G, equipped } from './game/game'
+import { G, equipped, openGoldShop } from './game/game'
 import { ARMORY } from './game/defs'
 
 export function buildWorld() {
@@ -62,15 +62,31 @@ export function buildWorld() {
   text(V(sx, 3.4, sz), 'ARCANE FORGE', 3.2, '#5EF2FF', { billboard: true, outline: '#001A22' })
 
   // creator credit at the spawn point — click to open X
-  const xHolder = node(V(10.6, 2.4, 2.2))
+  const xHolder = node(V(9.2, 3.0, 12.2))
   bob(xHolder, 0.08, 2600)
   text(V(0, 0.45, 0), 'Created by', 1.6, '#CFC8E8', { billboard: true, parent: xHolder })
   text(V(0, 0, 0), 'X / Twitter  @bitcoinisnotall', 3.4, '#FFFFFF', { billboard: true, outline: '#1D9BF0', parent: xHolder })
   text(V(0, -0.45, 0), 'click to follow', 1.4, '#1D9BF0', { billboard: true, parent: xHolder })
-  const xHit = hitbox(V(10.6, 2.4, 2.2), V(3.4, 1.6, 1.0))
+  const xHit = hitbox(V(9.2, 3.0, 12.2), V(3.4, 1.6, 1.0))
   pointerEventsSystem.onPointerDown({ entity: xHit, opts: { button: InputAction.IA_POINTER, hoverText: 'Follow @bitcoinisnotall on X', maxDistance: 12 } }, () => {
     void openExternalUrl({ url: 'https://x.com/bitcoinisnotall' })
   })
+
+  // THE TREASURY (gold shop) — overflowing chest kiosk facing the spawn; click to open
+  const [tx, , tz] = LAYOUT.treasury
+  const tre = node(V(tx, 0, tz), Quaternion.fromEulerDegrees(0, -92, 0))
+  GltfContainer.create(tre, { src: 'models/treasury.glb' })
+  const coinHolder = node(V(0, 2.7, 0.1), undefined, tre)
+  bob(coinHolder, 0.25, 1600)
+  const bigCoin = node(V(0, 0, 0), undefined, coinHolder, V(4, 4, 4))
+  GltfContainer.create(bigCoin, { src: 'models/coin.glb' })
+  Tween.setRotateContinuous(bigCoin, Quaternion.fromEulerDegrees(0, 1, 0), 120)
+  text(V(0, 3.2, -1.0), 'THE TREASURY', 3.0, '#FFD86A', { parent: tre, outline: '#3A1A00', rot: Quaternion.fromEulerDegrees(0, 180, 0) })
+  text(V(0, 5.6, -1.2), 'BUY GOLD', 4.2, '#FFFFFF', { parent: tre, outline: '#9A3BFF', rot: Quaternion.fromEulerDegrees(0, 180, 0) })
+  text(V(0, 1.6, 1.9), 'first purchase +50% gold', 1.8, '#3DFF8E', { parent: tre, billboard: true })
+  LightSource.create(node(V(tx, 3.5, tz)), { type: LightSource.Type.Point({}), color: Color3.create(1, 0.78, 0.35), intensity: 3000, range: 10 })
+  const treHit = hitbox(V(tx, 1.5, tz), V(4, 3, 4))
+  pointerEventsSystem.onPointerDown({ entity: treHit, opts: { button: InputAction.IA_POINTER, hoverText: 'The Treasury — buy gold', maxDistance: 10 } }, () => openGoldShop())
 
   // Armory: the weapon you'd swing floats over a pedestal; click to open the shop
   const [ax, , az] = LAYOUT.armory

@@ -1,6 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express'
 import { verify } from '@dcl/platform-crypto-middleware'
-import { GOLD_PACK, createQuote, confirmPurchase, settlePending, Rpc, PriceFeed, coingecko, Currency } from './payments'
+import { GOLD_PACK, GOLD_PACKS, FIRST_BUY_BONUS, hasBought, createQuote, confirmPurchase, settlePending, Rpc, PriceFeed, coingecko, Currency } from './payments'
 import { Sql, getOrCreate, toProfile, startRun, getOpenRun, finishRun, buy, leaderboard, rankOf, buyArmory, claimDaily } from './db'
 import { META_KEYS, META_MAX, MetaKey, metaCost, clampRun, LIMITS } from './rules'
 
@@ -83,7 +83,7 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
     authed(async (req, res, a) => {
       if (pay.rpc && pay.wallet && !a.guest) await settlePending(db, a.address, pay.rpc).catch(() => 0)
       const p = await getOrCreate(db, a.address, nameOf(req), a.guest)
-      res.json({ ok: true, profile: toProfile(p) })
+      res.json({ ok: true, profile: { ...toProfile(p), firstPurchase: !a.guest && !(await hasBought(db, a.address)) } })
     })
   )
 
@@ -156,7 +156,7 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
   // ── gold packs paid in ETH / MANA, sent to the owner's wallet ──
   const payOn = () => !!pay.wallet && /^0x[0-9a-fA-F]{40}$/.test(pay.wallet) && !!pay.rpc
   app.get('/api/shop/config', (_req, res) => {
-    res.json({ ok: true, enabled: payOn(), gold: GOLD_PACK.gold, usd: GOLD_PACK.usd, wallet: payOn() ? pay.wallet!.toLowerCase() : null, currencies: ['ETH', 'MANA'] })
+    res.json({ ok: true, enabled: payOn(), gold: GOLD_PACK.gold, usd: GOLD_PACK.usd, packs: GOLD_PACKS, firstBonus: FIRST_BUY_BONUS, wallet: payOn() ? pay.wallet!.toLowerCase() : null, currencies: ['ETH', 'MANA'] })
   })
 
   app.post(
@@ -167,7 +167,7 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
       const currency = String(req.body?.currency).toUpperCase() as Currency
       if (currency !== 'ETH' && currency !== 'MANA') return res.status(400).json({ ok: false, error: 'currency must be ETH or MANA' })
       await getOrCreate(db, a.address, nameOf(req), a.guest)
-      const q = await createQuote(db, a.address, currency, pay.wallet!, pay.prices ?? coingecko)
+      const q = await createQuote(db, a.address, currency, pay.wallet!, pay.prices ?? coingecko, String(req.body?.pack ?? 'p10'))
       res.json({ ok: true, quote: q })
     })
   )

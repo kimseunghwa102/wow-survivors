@@ -15,6 +15,7 @@ export type ServerProfile = {
   totalKills: number
   armory?: number
   daily?: { streak: number; claimable: boolean; next: number; doubleReady: boolean }
+  firstPurchase?: boolean
 }
 export type GlobalBoard = { runs: { n: string; t: number; l: number; k: number }[]; pvp: [string, number][]; players: number }
 
@@ -101,15 +102,15 @@ export async function serverClaimDaily(name: string) {
   return { reward: r.reward as number, profile: r.profile as ServerProfile }
 }
 
-export type GoldQuote = { id: string; currency: 'ETH' | 'MANA'; to: string; token: string | null; amountWei: string; amount: number; gold: number; usd: number; expiresAt: number }
+export type GoldQuote = { id: string; pack: string; currency: 'ETH' | 'MANA'; to: string; token: string | null; amountWei: string; amount: number; gold: number; firstBonus: boolean; usd: number; expiresAt: number }
 
 export async function shopConfig() {
   const r = await fetch(`${API_URL}/api/shop/config`)
   return (await r.json()) as { enabled: boolean; gold: number; usd: number; wallet: string | null }
 }
 
-export async function shopQuote(currency: 'ETH' | 'MANA', name: string) {
-  const r = await call('POST', '/api/shop/quote', { currency, name })
+export async function shopQuote(currency: 'ETH' | 'MANA', name: string, pack: string) {
+  const r = await call('POST', '/api/shop/quote', { currency, name, pack })
   return r.quote as GoldQuote
 }
 
