@@ -1,7 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express'
 import { verify } from '@dcl/platform-crypto-middleware'
 import { GOLD_PACK, GOLD_PACKS, FIRST_BUY_BONUS, hasBought, createQuote, confirmPurchase, settlePending, Rpc, PriceFeed, coingecko, Currency } from './payments'
-import { Sql, getOrCreate, toProfile, startRun, getOpenRun, finishRun, buy, leaderboard, rankOf, buyArmory, claimDaily } from './db'
+import { Sql, getOrCreate, toProfile, startRun, getOpenRun, finishRun, buy, leaderboard, rankOf, buyArmory, claimDaily, getResume, saveCheckpoint, bankAbandoned } from './db'
 import { META_KEYS, META_MAX, MetaKey, metaCost, clampRun, LIMITS } from './rules'
 
 export type Auth = { address: string; guest: boolean; meta: Record<string, any> }
@@ -83,7 +83,7 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
     authed(async (req, res, a) => {
       if (pay.rpc && pay.wallet && !a.guest) await settlePending(db, a.address, pay.rpc).catch(() => 0)
       const p = await getOrCreate(db, a.address, nameOf(req), a.guest)
-      res.json({ ok: true, profile: { ...toProfile(p), firstPurchase: !a.guest && !(await hasBought(db, a.address)) } })
+      res.json({ ok: true, profile: { ...toProfile(p), firstPurchase: !a.guest && !(await hasBought(db, a.address)) }, resume: await getResume(db, a.address) })
     })
   )
 
@@ -96,6 +96,26 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
       const weapon = String(req.body?.weapon || '').slice(0, 16)
       const runId = await startRun(db, a.address, weapon)
       res.json({ ok: true, runId })
+    })
+  )
+
+  // mid-run checkpoint: lets the player leave and resume later without losing skills or gold
+  app.post(
+    '/api/run/save',
+    authed(async (req, res, a) => {
+      const b = req.body || {}
+      const ok = await saveCheckpoint(db, String(b.runId || ''), a.address, b.snap)
+      res.status(ok ? 200 : 404).json({ ok, error: ok ? undefined : 'run not found or already finished' })
+    })
+  )
+
+  // bank a saved run without resuming it ("start fresh")
+  app.post(
+    '/api/run/abandon',
+    authed(async (_req, res, a) => {
+      const banked = await bankAbandoned(db, a.address)
+      const p = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
+      res.json({ ok: true, banked, profile: p ? toProfile(p) : null })
     })
   )
 

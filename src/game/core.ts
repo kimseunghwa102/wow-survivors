@@ -89,6 +89,14 @@ export function setRandom(fn: () => number) {
   rand = fn
 }
 
+export type RunSnap = {
+  v: number; time: number; level: number; xp: number; kills: number; gold: number; hp: number; maxHp: number
+  pendingLevels: number; rerolls: number; pvpKills: number
+  weapons: [WeaponId, number][]; passives: [PassiveId, number][]; evolved: WeaponId[]
+  bossIndex: number; bossQueue: number; bossesSlain: number; boostDmg: number; boostArea: number; boostRegen: number
+  nextElite: number; nextRing: number
+}
+
 export class Run {
   // player
   x = 0
@@ -135,8 +143,8 @@ export class Run {
   projs: Proj[] = []
   private nextId = 1
   private spawnAcc = 0
-  private nextElite = TUNING.eliteEvery
-  private nextRing = TUNING.ringEvery
+  nextElite = TUNING.eliteEvery
+  nextRing = TUNING.ringEvery
   private pvpAcc = new Map<string, number>()
   private pvpLast = new Map<string, number>()
   events: Ev[] = []
@@ -149,6 +157,48 @@ export class Run {
     if (!isHoldable(eq)) eq--
     this.equip = Math.max(0, eq)
     this.maxHp = this.hp = TUNING.baseHp + this.meta.hp * 10
+  }
+
+  /** everything needed to resume this run later (enemies respawn; an alive boss comes back at full hp) */
+  snapshot(): RunSnap {
+    const boss = this.boss
+    return {
+      v: 1,
+      time: Math.floor(this.time), level: this.level, xp: Math.floor(this.xp), kills: this.kills, gold: Math.floor(this.gold),
+      hp: Math.ceil(this.hp), maxHp: this.maxHp, pendingLevels: this.pendingLevels, rerolls: this.rerolls, pvpKills: this.pvpKills,
+      weapons: [...this.weapons.entries()], passives: [...this.passives.entries()], evolved: [...this.evolved],
+      bossIndex: boss ? this.bossIndex - 1 : this.bossIndex, bossQueue: this.bossQueue + (boss ? 1 : 0), bossesSlain: this.bossesSlain,
+      boostDmg: this.boostDmg, boostArea: this.boostArea, boostRegen: this.boostRegen,
+      nextElite: this.nextElite, nextRing: this.nextRing
+    }
+  }
+
+  static restore(s: RunSnap, meta: { might: number; hp: number; magnet: number; xp: number }, armory: number, equip: number) {
+    const first = (s.weapons[0]?.[0] ?? 'lash') as WeaponId
+    const r = new Run(first, meta, armory, equip)
+    r.weapons = new Map(s.weapons)
+    r.passives = new Map(s.passives)
+    r.evolved = new Set(s.evolved)
+    r.time = s.time
+    r.level = s.level
+    r.xp = s.xp
+    r.kills = s.kills
+    r.gold = s.gold
+    r.maxHp = Math.max(r.maxHp, s.maxHp)
+    r.hp = Math.max(1, Math.min(r.maxHp, s.hp))
+    r.pendingLevels = s.pendingLevels
+    r.rerolls = s.rerolls
+    r.pvpKills = s.pvpKills
+    r.bossIndex = s.bossIndex
+    r.bossQueue = s.bossQueue
+    r.bossesSlain = s.bossesSlain
+    r.boostDmg = s.boostDmg
+    r.boostArea = s.boostArea
+    r.boostRegen = s.boostRegen
+    r.nextElite = s.nextElite
+    r.nextRing = s.nextRing
+    r.invuln = 3
+    return r
   }
 
   // ───────── derived stats ─────────

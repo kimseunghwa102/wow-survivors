@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import { PAY_SCHEMA } from './payments'
-import { META_KEYS, MetaKey, ARMORY_COST, DAILY_REWARD, dayKey } from './rules'
+import { META_KEYS, MetaKey, ARMORY_COST, DAILY_REWARD, dayKey, clampRun } from './rules'
 
 /** minimal pg-compatible client (pg.Pool in production, pg-mem in tests) */
 export type Sql = { query: (text: string, params?: unknown[]) => Promise<{ rows: any[]; rowCount: number | null }> }
@@ -48,6 +48,8 @@ ALTER TABLE players ADD COLUMN IF NOT EXISTS daily_last TEXT;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS daily_streak INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS double_last TEXT;
 CREATE INDEX IF NOT EXISTS players_best ON players(best_time DESC);
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS snapshot TEXT;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS checkpoint_at TIMESTAMPTZ;
 `
 
 export async function migrate(db: Sql) {
@@ -142,11 +144,57 @@ export async function getOrCreate(db: Sql, address: string, name: string, guest:
 
 export async function startRun(db: Sql, address: string, weapon: string) {
   const id = randomUUID()
-  // close any run left open (disconnects) — no reward
+  // runs left open (player left mid-run): bank what their last checkpoint earned, then close the rest
+  await bankAbandoned(db, address)
   await db.query('UPDATE runs SET ended_at = NOW(), gold_given = 0 WHERE address = $1 AND ended_at IS NULL', [address])
   await db.query('INSERT INTO runs (id, address, weapon) VALUES ($1, $2, $3)', [id, address, weapon])
   await db.query('UPDATE players SET last_start = NOW() WHERE address = $1', [address])
   return id
+}
+
+const num = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0)
+const ms = (d: Date | string) => new Date(d).getTime()
+
+/** latest checkpoint of a run left open in the last 48h — the player can resume it */
+export async function getResume(db: Sql, address: string) {
+  const r = await db.query('SELECT * FROM runs WHERE address = $1 AND ended_at IS NULL AND snapshot IS NOT NULL', [address])
+  const rows = r.rows.filter((x: any) => x.checkpoint_at && Date.now() - ms(x.checkpoint_at) < 48 * 3600e3)
+  rows.sort((a: any, b: any) => ms(b.checkpoint_at) - ms(a.checkpoint_at))
+  const x = rows[0]
+  if (!x) return null
+  try {
+    return { runId: x.id as string, snap: JSON.parse(x.snapshot) }
+  } catch {
+    return null
+  }
+}
+
+/** store a mid-run checkpoint (no gold is granted until the run ends or is abandoned) */
+export async function saveCheckpoint(db: Sql, id: string, address: string, snap: any) {
+  const text = JSON.stringify(snap ?? {})
+  if (text.length > 16000) return false
+  const r = await db.query(
+    'UPDATE runs SET snapshot = $1, checkpoint_at = NOW(), time_sec = $2, level = $3, kills = $4, gold_claim = $5, pvp_kills = $6 WHERE id = $7 AND address = $8 AND ended_at IS NULL',
+    [text, Math.floor(num(snap?.time)), Math.floor(num(snap?.level)), Math.floor(num(snap?.kills)), Math.floor(num(snap?.gold)), Math.floor(num(snap?.pvpKills)), id, address]
+  )
+  return (r.rowCount ?? 0) > 0
+}
+
+/** pay out checkpointed runs that were abandoned (clamped by the same anti-cheat rules as a normal finish) */
+export async function bankAbandoned(db: Sql, address: string) {
+  const r = await db.query('SELECT * FROM runs WHERE address = $1 AND ended_at IS NULL AND snapshot IS NOT NULL', [address])
+  let total = 0
+  for (const run of r.rows) {
+    if (!run.checkpoint_at) continue
+    const elapsed = (ms(run.checkpoint_at) - ms(run.started_at)) / 1000
+    const res = clampRun(
+      { time: num(run.time_sec), level: num(run.level), kills: num(run.kills), gold: num(run.gold_claim), pvpKills: num(run.pvp_kills), killedByPlayer: false },
+      elapsed
+    )
+    const fin = await finishRun(db, run, address, res, num(run.gold_claim), null)
+    total += res.gold + fin.bonus
+  }
+  return total
 }
 
 export async function getOpenRun(db: Sql, id: string, address: string) {

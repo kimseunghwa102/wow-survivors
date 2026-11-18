@@ -8,7 +8,7 @@ import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, b
 import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm } from './view'
 import { play, setupSfx, musicLevel } from './sfx'
 import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf } from './net'
-import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile, serverArmoryBuy, serverClaimDaily, shopConfig, shopQuote, shopConfirm } from './persist'
+import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile, serverArmoryBuy, serverClaimDaily, shopConfig, shopQuote, shopConfirm, serverSaveRun, serverAbandon, pingServer } from './persist'
 import { getUserAccount, sendAsync, requirePayment } from '~system/EthereumController'
 import { getPlayer } from '@dcl/sdk/players'
 
@@ -60,7 +60,9 @@ export const G = {
   payBusy: false,
   payMsg: '' as string,
   buyConfirmT: 0,
-  doubleBonus: 0
+  doubleBonus: 0,
+  goldPulse: 0, // bank counter flash when gold comes in
+  lastBank: -1
 }
 
 export const equipped = () => {
@@ -291,8 +293,33 @@ export function claimDaily() {
     .finally(() => (G.dailyBusy = false))
 }
 
+/** continue the run the player left (skills, level, gold all intact) */
+export function resumeRun() {
+  const s = save.resume
+  if (!s) return
+  save.resume = null
+  save.runId = s.runId
+  G.run = Run.restore(s.snap, { ...G.meta }, G.armory, equipped())
+  G.doubleBonus = 0
+  G.armoryOpen = false
+  G.pvpKills = s.snap.pvpKills ?? 0
+  G.phase = 'running'
+  G.summary = null
+  play('levelup')
+  banner(`RUN RESUMED — Lv ${s.snap.level} · ● ${s.snap.gold.toLocaleString()} gold carried`, 4)
+}
+
 export function startRun(w: WeaponId) {
-  void serverStartRun(w, me().name)
+  const left = save.resume
+  save.resume = null
+  // a saved run that is not resumed gets banked by the server when the new run starts
+  void serverStartRun(w, me().name).then(() => {
+    if (!left) return
+    void loadProfile(me().name).then((p) => {
+      applyProfile(p)
+      banner(`Your saved run was banked: +${left.snap.gold.toLocaleString()} gold`, 4)
+    })
+  })
   G.run = new Run(w, { ...G.meta }, G.armory, equipped())
   G.doubleBonus = 0
   G.armoryOpen = false
@@ -561,13 +588,40 @@ export function setupGame() {
   let tries = 0
   const tryLoad = () =>
     loadProfile(me().name).then((p) => {
-      if (p) applyProfile(p)
-      else if (++tries < 4) retryAt = 8 * tries
+      if (p) {
+        applyProfile(p)
+        // a run that started while the server was still waking up: register it now so it gets saved
+        if (G.run && !save.runId && G.phase !== 'dead') void serverStartRun([...G.run.weapons.keys()][0], me().name)
+        if (save.resume && !G.run) banner(`Your run is saved (Lv ${save.resume.snap.level}) — enter the rift to RESUME`, 6)
+      } else {
+        // free-tier server can take ~1 min to wake up: keep trying, never give up
+        retryAt = Math.min(20, 5 + ++tries * 3)
+        void pingServer()
+      }
     })
+  void pingServer()
   let retryAt = 2
   let loadT = 0
+  let ckT = 0
+  let pingT = 0
   engine.addSystem((dt) => {
     loadT += dt
+    // mid-run checkpoint every 15s → leaving the scene never loses skills or gold
+    ckT += dt
+    if (G.run && G.phase !== 'dead' && G.run.alive && ckT > 15) {
+      ckT = 0
+      void serverSaveRun(G.run.snapshot())
+    }
+    // keep the free-tier save server awake while someone is here
+    pingT += dt
+    if (pingT > 240) {
+      pingT = 0
+      void pingServer()
+    }
+    // bank counter flash
+    if (G.bank > G.lastBank && G.lastBank >= 0) G.goldPulse = 0.8
+    G.lastBank = G.bank
+    if (G.goldPulse > 0) G.goldPulse = Math.max(0, G.goldPulse - dt)
     if (retryAt > 0 && loadT >= retryAt) {
       retryAt = 0
       loadT = 0
@@ -639,7 +693,10 @@ export function setupGame() {
 
     if (G.phase === 'idle' && G.inArena) G.phase = 'start'
     if (G.phase === 'start' && !G.inArena) G.phase = 'idle'
-    if (G.run && wasIn && !G.inArena && G.phase !== 'dead') banner('SANCTUARY — your run is paused', 3)
+    if (G.run && wasIn && !G.inArena && G.phase !== 'dead') {
+      banner('SANCTUARY — your run is paused & saved', 3)
+      void serverSaveRun(G.run.snapshot())
+    }
 
     const r = G.run
     if (r) {

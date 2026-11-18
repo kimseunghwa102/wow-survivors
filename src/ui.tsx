@@ -1,6 +1,6 @@
 import ReactEcs, { ReactEcsRenderer, UiEntity, Label, Button } from '@dcl/sdk/react-ecs'
 import { Color4 } from '@dcl/sdk/math'
-import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold } from './game/game'
+import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun } from './game/game'
 import { optionLabel, Option } from './game/core'
 import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable } from './game/defs'
 import { feed, topRuns } from './game/net'
@@ -55,8 +55,6 @@ function TopHud() {
 function SidePanel() {
   const r = G.run
   if (!r) return null
-  const ws = [...r.weapons.entries()] as [WeaponId, number][]
-  const ps = [...r.passives.entries()] as [PassiveId, number][]
   const hpCol = G.hurtFlash > 0 ? C('#FFFFFF') : r.hp / r.maxHp < 0.3 ? C('#FF2A3D') : C('#E0102A')
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 90, right: RIGHT }, width: 250, flexDirection: 'column' }}>
@@ -93,25 +91,65 @@ function SidePanel() {
           </UiEntity>
         ) : null}
       </UiEntity>
-      {/* loadout */}
-      <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', padding: 8, margin: { top: 6 } }} uiBackground={{ color: PANEL }}>
-        <Label value="<b>SKILLS</b>" fontSize={11} color={DIM} uiTransform={{ height: 15 }} textAlign="middle-left" />
-        {ws.map(([id, lv]) => (
-          <Label
-            key={id}
-            value={`${r.evolved.has(id) ? '✦ ' + WEAPONS[id].evo : WEAPONS[id].name}  <b>${lv >= MAX_WEAPON_LVL ? 'MAX' : 'Lv' + lv}</b>`}
-            fontSize={13}
-            color={C(WEAPONS[id].color)}
-            uiTransform={{ height: 18 }}
-            textAlign="middle-left"
-          />
-        ))}
-        {ps.length ? <UiEntity uiTransform={{ height: 4 }} /> : null}
-        {ps.map(([id, lv]) => (
-          <Label key={id} value={`${PASSIVES[id].name}  ${lv >= MAX_PASSIVE_LVL ? 'MAX' : 'Lv' + lv}`} fontSize={12} color={DIM} uiTransform={{ height: 16 }} textAlign="middle-left" />
-        ))}
+    </UiEntity>
+  )
+}
+
+/** the bank, always visible at the right-center of the screen */
+function GoldHud() {
+  const r = G.run
+  const pulse = G.goldPulse > 0
+  const status = !save.online ? '● connecting to save server…' : save.profile?.guest ? '● guest — progress not saved' : '● saved to your wallet'
+  return (
+    <UiEntity
+      uiTransform={{ width: 250, height: 92, flexDirection: 'row', alignItems: 'center', padding: { left: 12, right: 12 } }}
+      uiBackground={{ texture: { src: 'images/gold_panel.png' }, textureMode: 'stretch' }}
+    >
+      <UiEntity uiTransform={{ width: pulse ? 64 : 56, height: pulse ? 64 : 56, flexShrink: 0 }} uiBackground={{ texture: { src: 'images/coin.png' }, textureMode: 'stretch' }} />
+      <UiEntity uiTransform={{ flexDirection: 'column', margin: { left: 10 }, flexGrow: 1 }}>
+        <Label value="<b>GOLD</b>" fontSize={11} color={C('#E8C670')} uiTransform={{ height: 14 }} textAlign="middle-left" />
+        <Label value={`<b>${G.bank.toLocaleString()}</b>`} fontSize={pulse ? 30 : 27} color={pulse ? C('#FFF6C8') : GOLD} uiTransform={{ height: 34 }} textAlign="middle-left" />
+        {r && r.gold > 0 ? (
+          <Label value={`+${Math.floor(r.gold).toLocaleString()} this run`} fontSize={11} color={C('#3DFF8E')} uiTransform={{ height: 14 }} textAlign="middle-left" />
+        ) : (
+          <Label value={status} fontSize={10} color={save.online && !save.profile?.guest ? C('#3DFF8E') : C('#FFB347')} uiTransform={{ height: 14 }} textAlign="middle-left" />
+        )}
       </UiEntity>
-      <Feed />
+    </UiEntity>
+  )
+}
+
+/** right-center column: gold first, then the run's skills and the kill feed */
+function RightMid() {
+  const r = G.run
+  const ws = r ? ([...r.weapons.entries()] as [WeaponId, number][]) : []
+  const ps = r ? ([...r.passives.entries()] as [PassiveId, number][]) : []
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: '42%', right: RIGHT }, width: 250, flexDirection: 'column' }}>
+      <GoldHud />
+      {r ? (
+        <UiEntity uiTransform={{ width: '100%', flexDirection: 'column' }}>
+          {/* loadout */}
+          <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', padding: 8, margin: { top: 6 } }} uiBackground={{ color: PANEL }}>
+            <Label value="<b>SKILLS</b>" fontSize={11} color={DIM} uiTransform={{ height: 15 }} textAlign="middle-left" />
+            {ws.map(([id, lv]) => (
+              <Label
+                key={id}
+                value={`${r.evolved.has(id) ? '✦ ' + WEAPONS[id].evo : WEAPONS[id].name}  <b>${lv >= MAX_WEAPON_LVL ? 'MAX' : 'Lv' + lv}</b>`}
+                fontSize={13}
+                color={C(WEAPONS[id].color)}
+                uiTransform={{ height: 18 }}
+                textAlign="middle-left"
+              />
+            ))}
+            {ps.length ? <UiEntity uiTransform={{ height: 4 }} /> : null}
+            {ps.map(([id, lv]) => (
+              <Label key={id} value={`${PASSIVES[id].name}  ${lv >= MAX_PASSIVE_LVL ? 'MAX' : 'Lv' + lv}`} fontSize={12} color={DIM} uiTransform={{ height: 16 }} textAlign="middle-left" />
+            ))}
+          </UiEntity>
+          <Feed />
+        </UiEntity>
+      ) : null}
     </UiEntity>
   )
 }
@@ -405,6 +443,28 @@ function Card(props: { o: Option; onPick: () => void; key?: string }) {
 }
 
 function StartModal() {
+  const rs = save.resume
+  if (rs) {
+    const sn = rs.snap
+    return (
+      <Modal title="YOUR RUN IS WAITING" sub="You left mid-run — everything was saved." color={GOLD}>
+        <Label value={`Lv ${sn.level}  ·  ${mmss(sn.time)}  ·  ${sn.kills.toLocaleString()} kills  ·  ● ${sn.gold.toLocaleString()} gold`} fontSize={18} color={WHITE} uiTransform={{ height: 28 }} />
+        <Label
+          value={sn.weapons.map(([id, lv]) => `${WEAPONS[id]?.name ?? id} Lv${lv}`).join('  ·  ')}
+          fontSize={13}
+          color={C('#8EC5FF')}
+          uiTransform={{ height: 20, margin: { bottom: 10 } }}
+        />
+        <Button value="▶ RESUME RUN" fontSize={20} color={WHITE} uiTransform={{ width: 320, height: 54, margin: 6 }} uiBackground={{ color: C('#1FA85A') }} onMouseDown={tap(resumeRun)} />
+        <Label value={`or start fresh below — the saved run's ● ${sn.gold.toLocaleString()} gold goes to your bank`} fontSize={12} color={DIM} uiTransform={{ height: 18, margin: { top: 8 } }} />
+        <UiEntity uiTransform={{ flexDirection: 'row' }}>
+          {STARTERS.map((w) => (
+            <Button key={w} value={`NEW: ${WEAPONS[w].name}`} fontSize={13} color={WHITE} uiTransform={{ width: 170, height: 34, margin: 4 }} uiBackground={{ color: C('#3A2A5A') }} onMouseDown={tap(() => startRun(w))} />
+          ))}
+        </UiEntity>
+      </Modal>
+    )
+  }
   return (
     <Modal title="CHOOSE YOUR FIRST SKILL" sub="Enemies arrive the moment you choose. Other hunters in the arena can attack you.">
       <UiEntity uiTransform={{ flexDirection: 'row' }}>
@@ -561,6 +621,7 @@ const Root = () => (
     <InfoPanel />
     <NextBoss />
     <SidePanel />
+    <RightMid />
     <HpBar />
     <LobbyHint />
     {G.phase === 'start' ? <StartModal /> : null}

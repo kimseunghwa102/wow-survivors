@@ -78,8 +78,37 @@ async function main() {
   const fast = await signed(alice, 'POST', '/api/run/start', { weapon: 'bolt' })
   assert(fast.status === 429, 'run spam rate-limited')
 
+  console.log('checkpoint + resume')
+  await new Promise((r) => setTimeout(r, 4200))
+  const s3 = await signed(alice, 'POST', '/api/run/start', { weapon: 'lash' })
+  await db.query(`UPDATE runs SET started_at = NOW() - INTERVAL '300 seconds' WHERE id = $1`, [s3.json.runId])
+  const snap = { v: 1, time: 290, level: 20, kills: 500, gold: 800, pvpKills: 0, weapons: [['lash', 5]], passives: [['might', 2]] }
+  const c1 = await signed(alice, 'POST', '/api/run/save', { runId: s3.json.runId, snap })
+  assert(c1.status === 200 && c1.json.ok, 'mid-run checkpoint saved')
+  const c2 = await signed(alice, 'POST', '/api/run/save', { runId: 'nope', snap })
+  assert(c2.status === 404, 'checkpoint for unknown run rejected')
+  const r1 = await signed(alice, 'POST', '/api/profile', {})
+  assert(r1.json.resume?.runId === s3.json.runId && r1.json.resume.snap.level === 20 && r1.json.resume.snap.weapons[0][1] === 5, 'profile offers the saved run (skills intact)')
+  const bankBefore = r1.json.profile.bank
+  const ab = await signed(alice, 'POST', '/api/run/abandon', {})
+  assert(ab.json.ok && ab.json.banked === 800 && ab.json.profile.bank === bankBefore + 800, 'abandoned run banks its checkpoint gold (800)')
+  const r2 = await signed(alice, 'POST', '/api/profile', {})
+  assert(!r2.json.resume, 'nothing to resume after banking')
+  const ab2 = await signed(alice, 'POST', '/api/run/abandon', {})
+  assert(ab2.json.banked === 0, 'cannot bank the same run twice')
+  // leaving mid-run then starting a new run also banks the checkpoint (clamped by anti-cheat)
+  await new Promise((r) => setTimeout(r, 4200))
+  const s4 = await signed(alice, 'POST', '/api/run/start', { weapon: 'bolt' })
+  await db.query(`UPDATE runs SET started_at = NOW() - INTERVAL '60 seconds' WHERE id = $1`, [s4.json.runId])
+  await signed(alice, 'POST', '/api/run/save', { runId: s4.json.runId, snap: { time: 55, level: 5, kills: 50, gold: 99999 } })
+  await new Promise((r) => setTimeout(r, 4200))
+  await signed(alice, 'POST', '/api/run/start', { weapon: 'bolt' })
+  const r3 = await signed(alice, 'POST', '/api/profile', {})
+  const gained = r3.json.profile.bank - ab.json.profile.bank
+  assert(gained > 0 && gained <= 25 * 72, `new run banks the left run, clamped (${gained})`)
+
   console.log('shop')
-  const bank0 = e2.json.profile.bank
+  const bank0 = r3.json.profile.bank
   const b1 = await signed(alice, 'POST', '/api/shop/buy', { key: 'might' })
   assert(b1.json.ok && b1.json.profile.meta.might === 1 && b1.json.profile.bank === bank0 - 80, 'bought Power Lv1 for 80')
   const b2 = await signed(alice, 'POST', '/api/shop/buy', { key: 'might' })

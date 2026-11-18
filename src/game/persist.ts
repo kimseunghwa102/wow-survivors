@@ -2,6 +2,7 @@
 // so the server knows who they are without logins or PINs.
 import { signedFetch } from '~system/SignedFetch'
 import { API_URL } from '../config'
+import type { RunSnap } from './core'
 
 export type ServerProfile = {
   address: string
@@ -24,7 +25,9 @@ export const save = {
   status: 'connecting…' as string,
   profile: null as ServerProfile | null,
   board: null as GlobalBoard | null,
-  runId: '' as string
+  runId: '' as string,
+  /** a run the player left mid-way (from /api/profile) */
+  resume: null as null | { runId: string; snap: RunSnap }
 }
 
 async function call(method: 'GET' | 'POST', path: string, body?: unknown): Promise<any> {
@@ -50,6 +53,7 @@ export async function loadProfile(name: string) {
   try {
     const r = await call('POST', '/api/profile', { name })
     save.profile = r.profile
+    save.resume = r.resume && r.resume.snap && r.resume.snap.v === 1 ? r.resume : null
     save.online = true
     save.status = r.profile.guest ? 'guest — connect a wallet to keep progress everywhere' : 'progress saved to your wallet'
     return r.profile as ServerProfile
@@ -127,5 +131,32 @@ export async function loadBoard() {
     const res = await fetch(API_URL + '/api/leaderboard')
     const j = await res.json()
     if (j.ok) save.board = j
+  } catch {}
+}
+
+/** mid-run checkpoint so leaving the scene never loses skills or gold */
+export async function serverSaveRun(snap: RunSnap) {
+  if (!save.online || !save.runId) return false
+  try {
+    await call('POST', '/api/run/save', { runId: save.runId, snap })
+    return true
+  } catch (e) {
+    console.log('run/save failed', e)
+    return false
+  }
+}
+
+/** bank a saved run instead of resuming it */
+export async function serverAbandon() {
+  const r = await call('POST', '/api/run/abandon', {})
+  if (r.profile) save.profile = r.profile
+  return r as { banked: number; profile: ServerProfile | null }
+}
+
+/** wake the (free-tier) save server and keep it awake while someone is in the scene */
+export async function pingServer() {
+  if (!API_URL) return
+  try {
+    await fetch(API_URL + '/api/health')
   } catch {}
 }
