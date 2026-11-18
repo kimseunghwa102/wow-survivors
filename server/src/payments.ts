@@ -50,14 +50,53 @@ export function rpcClient(url: string): Rpc {
 }
 
 let cache: { t: number; v: { ETH: number; MANA: number } } | null = null
+const UA = { 'user-agent': 'wow-nightswarm-shop/1.0', accept: 'application/json' }
+async function getJson(url: string) {
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), 6000)
+  try {
+    const r = await fetch(url, { headers: UA, signal: ctl.signal })
+    if (!r.ok) throw new Error(`${url} → HTTP ${r.status}`)
+    return (await r.json()) as any
+  } finally {
+    clearTimeout(timer)
+  }
+}
+const SOURCES: [string, () => Promise<{ ETH: number; MANA: number }>][] = [
+  ['coinbase', async () => {
+    const [e, m] = await Promise.all([getJson('https://api.coinbase.com/v2/prices/ETH-USD/spot'), getJson('https://api.coinbase.com/v2/prices/MANA-USD/spot')])
+    return { ETH: Number(e?.data?.amount), MANA: Number(m?.data?.amount) }
+  }],
+  ['kraken', async () => {
+    const j = await getJson('https://api.kraken.com/0/public/Ticker?pair=ETHUSD,MANAUSD')
+    const r: Record<string, any> = j?.result ?? {}
+    const pick = (k: string) => Number(Object.entries(r).find(([n]) => n.includes(k))?.[1]?.['c']?.[0] ?? NaN)
+    return { ETH: pick('ETH'), MANA: pick('MANA') }
+  }],
+  ['coingecko', async () => {
+    const j = await getJson('https://api.coingecko.com/api/v3/simple/price?ids=ethereum,decentraland&vs_currencies=usd')
+    return { ETH: Number(j?.ethereum?.usd), MANA: Number(j?.decentraland?.usd) }
+  }]
+]
+/** live USD prices from the first source that answers; a quote is never built from a price older than 30 min */
 export const coingecko: PriceFeed = async () => {
   if (cache && Date.now() - cache.t < 60_000) return cache.v
-  const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum,decentraland&vs_currencies=usd')
-  const j: any = await r.json()
-  const v = { ETH: Number(j?.ethereum?.usd), MANA: Number(j?.decentraland?.usd) }
-  if (!(v.ETH > 0 && v.MANA > 0)) throw new Error('price feed unavailable')
-  cache = { t: Date.now(), v }
-  return v
+  const errs: string[] = []
+  for (const [name, fn] of SOURCES) {
+    try {
+      const v = await fn()
+      if (v.ETH > 100 && v.MANA > 0.001) {
+        cache = { t: Date.now(), v }
+        return v
+      }
+      errs.push(`${name}: bad data`)
+    } catch (e: any) {
+      errs.push(`${name}: ${e?.message ?? e}`)
+    }
+  }
+  if (cache && Date.now() - cache.t < 30 * 60_000) return cache.v
+  console.error('price feed failed:', errs.join(' | '))
+  throw Object.assign(new Error('price feed unavailable, try again in a minute'), { statusCode: 503 })
 }
 
 /** usd → token amount, rounded UP so the owner never receives less than the pack price */
