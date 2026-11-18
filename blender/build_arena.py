@@ -225,10 +225,10 @@ def curtain():
         for (y, hgt, m, d) in [(12.0, 0.45, BLOCK_D, 0.22), (18.0, 0.45, BLOCK_D, 0.22), (H - 0.6, 0.18, GOLD, 0.06)]:
             box(a2, y, b2, y + hgt, min(fi, fi + o * d), max(fi, fi + o * d), m)
         box(a2 - 0.1, H, b2 + 0.1, H + 0.35, c0 - 0.1, c1 + 0.1, BLOCK_D)  # coping
-        n = int((b2 - a2) / 1.7)
+        n = int((b2 - a2) / 2.6)
         for i in range(n):
             t = a2 + (i + 0.5) * (b2 - a2) / n
-            box(t - 0.45, H + 0.35, t + 0.45, H + 1.4, c0, c1, BLOCK)       # battlements
+            box(t - 0.65, H + 0.35, t + 0.65, H + 1.5, c0, c1, BLOCK)       # battlements
         # glowing arrow slits + giant banners on the inner face
         k = 0
         t = a2 + 4.0
@@ -240,7 +240,6 @@ def curtain():
                     banner_on(fi, 15.0, t, 'e' if o > 0 else 'w', BANNER if k % 2 else BANNER_B, w=2.6, h=5.4)
             else:
                 box(t - 0.12, 14.0, t + 0.12, 16.2, min(fi, fi + o * 0.04), max(fi, fi + o * 0.04), SOUL)
-                box(t - 0.12, 20.0, t + 0.12, 21.4, min(fi, fi + o * 0.04), max(fi, fi + o * 0.04), SOUL)
             k += 1
             t += 5.2
 
