@@ -1,6 +1,6 @@
 import ReactEcs, { ReactEcsRenderer, UiEntity, Label, Button } from '@dcl/sdk/react-ecs'
 import { Color4 } from '@dcl/sdk/math'
-import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon } from './game/game'
+import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold } from './game/game'
 import { optionLabel, Option } from './game/core'
 import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor } from './game/defs'
 import { feed, topRuns } from './game/net'
@@ -155,6 +155,14 @@ function Dock() {
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: 24, right: 16 }, flexDirection: 'column', alignItems: 'flex-end' }}>
       <Button
+        value="💎 BUY GOLD [4]"
+        fontSize={15}
+        color={WHITE}
+        uiTransform={{ width: 210, height: 40, margin: { bottom: 6 } }}
+        uiBackground={{ color: C('#C08A00') }}
+        onMouseDown={tap(openGoldShop)}
+      />
+      <Button
         value={G.infoOpen ? '✕ CLOSE UPGRADES [1]' : '📖 UPGRADES [1]'}
         fontSize={15}
         color={WHITE}
@@ -172,7 +180,30 @@ function Dock() {
           onMouseDown={toggleAuto}
         />
       ) : null}
-      <Label value="keys: 1 upgrades · 2 switch weapon · 3 buy next · E auto · F nuke" fontSize={11} color={DIM} uiTransform={{ height: 16 }} />
+      <Label value="keys: 1 upgrades · 2 switch weapon · 3 buy next · 4 gold shop · E auto · F nuke" fontSize={11} color={DIM} uiTransform={{ height: 16 }} />
+    </UiEntity>
+  )
+}
+
+function GoldShop() {
+  if (!G.goldShopOpen) return null
+  const gs = G.goldShop
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 90, right: 282 }, width: 380, flexDirection: 'column', alignItems: 'center', padding: 14 }} uiBackground={{ color: C('#140C06', 0.95) }}>
+      <Label value="<b>💎 GOLD SHOP</b>" fontSize={22} color={GOLD} uiTransform={{ height: 30 }} />
+      <Label value={`<b>${gs.gold.toLocaleString()} GOLD</b>  =  $${gs.usd}`} fontSize={18} color={WHITE} uiTransform={{ height: 26 }} />
+      <Label value="paid in ETH or MANA (Ethereum) · gas fee extra · goes to your bank" fontSize={11} color={DIM} uiTransform={{ height: 16, margin: { bottom: 8 } }} />
+      {gs.enabled ? (
+        <UiEntity uiTransform={{ flexDirection: 'row' }}>
+          <Button value={G.payBusy ? '…' : 'PAY WITH ETH [2]'} fontSize={14} color={WHITE} uiTransform={{ width: 165, height: 40, margin: 4 }} uiBackground={{ color: C('#4A5BD8') }} onMouseDown={tap(() => void buyGold('ETH'))} />
+          <Button value={G.payBusy ? '…' : 'PAY WITH MANA [3]'} fontSize={14} color={WHITE} uiTransform={{ width: 165, height: 40, margin: 4 }} uiBackground={{ color: C('#FF2D55') }} onMouseDown={tap(() => void buyGold('MANA'))} />
+        </UiEntity>
+      ) : (
+        <Label value="Gold shop opens soon" fontSize={14} color={DIM} uiTransform={{ height: 22 }} />
+      )}
+      {G.payMsg ? <Label value={G.payMsg} fontSize={12} color={G.payMsg.startsWith('✓') ? C('#3DFF8E') : C('#FFB84A')} uiTransform={{ height: 34, width: 350 }} /> : null}
+      <Label value="Your wallet asks you to confirm. Gold is added after the payment is on-chain." fontSize={10} color={DIM} uiTransform={{ height: 28, width: 350 }} />
+      <Button value="CLOSE [4]" fontSize={13} color={WHITE} uiTransform={{ width: 120, height: 30, margin: { top: 4 } }} uiBackground={{ color: C('#2A2A3A') }} onMouseDown={tap(() => (G.goldShopOpen = false))} />
     </UiEntity>
   )
 }
@@ -480,7 +511,7 @@ const Root = () => (
     <TopHud />
     <BossBar />
     <Dock />
-    <InfoPanel />
+    {G.goldShopOpen ? <GoldShop /> : <InfoPanel />}
     <NextBoss />
     <SidePanel />
     <HpBar />

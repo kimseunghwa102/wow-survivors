@@ -101,6 +101,25 @@ export async function serverClaimDaily(name: string) {
   return { reward: r.reward as number, profile: r.profile as ServerProfile }
 }
 
+export type GoldQuote = { id: string; currency: 'ETH' | 'MANA'; to: string; token: string | null; amountWei: string; amount: number; gold: number; usd: number; expiresAt: number }
+
+export async function shopConfig() {
+  const r = await fetch(`${API_URL}/api/shop/config`)
+  return (await r.json()) as { enabled: boolean; gold: number; usd: number; wallet: string | null }
+}
+
+export async function shopQuote(currency: 'ETH' | 'MANA', name: string) {
+  const r = await call('POST', '/api/shop/quote', { currency, name })
+  return r.quote as GoldQuote
+}
+
+export async function shopConfirm(quoteId: string, txHash: string) {
+  // 'pending' comes back as 200, invalid/failed as 400 (call() throws with the server's error text)
+  const r = await call('POST', '/api/shop/confirm', { quoteId, txHash })
+  if (r.profile) save.profile = r.profile
+  return r as { ok: boolean; status: string; gold?: number; error?: string; profile?: ServerProfile }
+}
+
 export async function loadBoard() {
   if (!API_URL) return
   try {

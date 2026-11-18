@@ -8,7 +8,8 @@ import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, bossFor } from './defs'
 import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName } from './view'
 import { play, setupSfx, musicLevel } from './sfx'
 import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf } from './net'
-import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile, serverArmoryBuy, serverClaimDaily } from './persist'
+import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile, serverArmoryBuy, serverClaimDaily, shopConfig, shopQuote, shopConfirm } from './persist'
+import { getUserAccount, sendAsync } from '~system/EthereumController'
 
 export type Phase = 'idle' | 'start' | 'running' | 'levelup' | 'chest' | 'dead'
 export type MetaKey = 'might' | 'hp' | 'magnet' | 'xp'
@@ -51,6 +52,10 @@ export const G = {
   nukeAsk: false,
   autoAttack: false, // auto-swing the armory weapon at the nearest foe
   infoOpen: false, // upgrades overview panel (key 1)
+  goldShopOpen: false,
+  goldShop: { enabled: false, gold: 10000, usd: 10 },
+  payBusy: false,
+  payMsg: '' as string,
   buyConfirmT: 0,
   doubleBonus: 0
 }
@@ -111,6 +116,96 @@ export function buyArmory(tier: number) {
   G.bank -= cost
   G.armory = tier
   done()
+}
+
+// ───────── GOLD SHOP: 10,000 gold for $10, paid in ETH or MANA straight to the owner's wallet ─────────
+const MANA_TOKEN = '0x0f5d2fb29fb7d3cfee444a200298f468908cc942'
+
+/** decimal string → hex (no BigInt needed in the scene runtime) */
+function decToHex(dec: string) {
+  let digits = dec.replace(/^0+/, '').split('').map(Number)
+  if (!digits.length) return '0'
+  let hex = ''
+  while (digits.length) {
+    let rem = 0
+    const next: number[] = []
+    for (const d of digits) {
+      const cur = rem * 10 + d
+      const q = Math.floor(cur / 16)
+      rem = cur % 16
+      if (next.length || q) next.push(q)
+    }
+    hex = rem.toString(16) + hex
+    digits = next
+  }
+  return hex
+}
+const pad64 = (h: string) => h.replace(/^0x/, '').toLowerCase().padStart(64, '0')
+
+export function openGoldShop() {
+  G.goldShopOpen = true
+  G.payMsg = ''
+  shopConfig()
+    .then((c) => (G.goldShop = { enabled: c.enabled, gold: c.gold, usd: c.usd }))
+    .catch(() => (G.goldShop.enabled = false))
+}
+
+export async function buyGold(currency: 'ETH' | 'MANA') {
+  if (G.payBusy) return
+  if (!save.online) return void (G.payMsg = 'Save server offline — try again in a moment')
+  G.payBusy = true
+  try {
+    const acc = await getUserAccount({})
+    const from = acc.address
+    if (!from) throw new Error('connect a wallet to buy gold (guests cannot pay)')
+    G.payMsg = 'Getting a price quote…'
+    const q = await shopQuote(currency, me().name)
+    const amountHex = '0x' + decToHex(q.amountWei)
+    const tx =
+      currency === 'ETH'
+        ? { from, to: q.to, value: amountHex }
+        : { from, to: MANA_TOKEN, value: '0x0', data: '0xa9059cbb' + pad64(q.to) + pad64(amountHex) }
+    G.payMsg = `Confirm ${q.amount} ${currency} in your wallet…`
+    const res = await sendAsync({ id: Date.now() % 1e9, method: 'eth_sendTransaction', jsonParams: JSON.stringify([tx]) })
+    let hash = ''
+    try {
+      const j = JSON.parse(res.jsonAnyResponse)
+      hash = typeof j === 'string' ? j : j?.result ?? ''
+      if (!hash && j?.error) throw new Error(j.error.message ?? 'wallet rejected the transaction')
+    } catch (e) {
+      if (/^0x[0-9a-fA-F]{64}$/.test(res.jsonAnyResponse)) hash = res.jsonAnyResponse
+      else throw e
+    }
+    if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) throw new Error('no transaction was sent')
+    G.payMsg = 'Payment sent — waiting for the blockchain (usually under a minute)…'
+    // poll until mined (the server also settles it on your next login if you leave)
+    for (let i = 0; i < 90; i++) {
+      const r = await shopConfirm(q.id, hash)
+      if (r.ok) {
+        if (r.profile) applyProfile(r.profile)
+        G.payMsg = `✓ +${(r.gold ?? q.gold).toLocaleString()} gold added. Thank you!`
+        play('buy')
+        banner(`+${(r.gold ?? q.gold).toLocaleString()} GOLD!`, 4)
+        return
+      }
+      await new Promise<void>((done) => {
+        let t = 0
+        const sys = (dt: number) => {
+          t += dt
+          if (t >= 10) {
+            engine.removeSystem(sys)
+            done()
+          }
+        }
+        engine.addSystem(sys)
+      })
+    }
+    G.payMsg = 'Still not confirmed — your gold will be added automatically next time you visit.'
+  } catch (e: any) {
+    G.payMsg = `Payment not completed: ${String(e?.message ?? e).slice(0, 90)}`
+  } finally {
+    G.payBusy = false
+  }
 }
 
 export function equipWeapon(i: number) {
@@ -468,8 +563,21 @@ export function setupGame() {
       G.infoOpen = !G.infoOpen
       play('click')
     }
-    if (inputSystem.isTriggered(InputAction.IA_ACTION_4, PointerEventType.PET_DOWN)) cycleWeapon()
-    if (inputSystem.isTriggered(InputAction.IA_ACTION_5, PointerEventType.PET_DOWN)) buyNextHotkey()
+    const k2 = inputSystem.isTriggered(InputAction.IA_ACTION_4, PointerEventType.PET_DOWN)
+    const k3 = inputSystem.isTriggered(InputAction.IA_ACTION_5, PointerEventType.PET_DOWN)
+    if (inputSystem.isTriggered(InputAction.IA_ACTION_6, PointerEventType.PET_DOWN)) {
+      if (G.goldShopOpen) G.goldShopOpen = false
+      else openGoldShop()
+      play('click')
+    }
+    if (G.goldShopOpen) {
+      // while the gold shop is open: 2 = pay with ETH, 3 = pay with MANA
+      if (k2) void buyGold('ETH')
+      if (k3) void buyGold('MANA')
+    } else {
+      if (k2) cycleWeapon()
+      if (k3) buyNextHotkey()
+    }
   })
 
   engine.addSystem((dt) => {

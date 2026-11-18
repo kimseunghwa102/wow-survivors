@@ -1,6 +1,7 @@
 import { Pool } from 'pg'
 import { createApp, dclAuth, devAuth } from './app'
 import { migrate } from './db'
+import { rpcClient } from './payments'
 
 async function main() {
   const url = process.env.DATABASE_URL
@@ -14,7 +15,10 @@ async function main() {
   const dev = process.env.DEV_AUTH === '1' && process.env.NODE_ENV !== 'production'
   const parcels = (process.env.ALLOWED_PARCELS || '').split(';').map((s) => s.trim()).filter(Boolean)
   const auth = dev ? devAuth : dclAuth({ allowedParcels: parcels, allowGuests: process.env.ALLOW_GUESTS !== '0' })
-  const app = createApp(pool, auth)
+  const wallet = process.env.PAYMENT_WALLET || ''
+  const rpc = rpcClient(process.env.ETH_RPC || 'https://ethereum-rpc.publicnode.com')
+  const app = createApp(pool, auth, { wallet, rpc })
+  console.log(wallet ? `payments → ${wallet}` : 'payments disabled (set PAYMENT_WALLET)')
   const port = Number(process.env.PORT || 8080)
   app.listen(port, () => console.log(`wow-survivors api on :${port} (auth: ${dev ? 'DEV' : 'decentraland signedFetch'})`))
 }

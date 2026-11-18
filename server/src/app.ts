@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express'
 import { verify } from '@dcl/platform-crypto-middleware'
+import { GOLD_PACK, createQuote, confirmPurchase, settlePending, Rpc, PriceFeed, coingecko, Currency } from './payments'
 import { Sql, getOrCreate, toProfile, startRun, getOpenRun, finishRun, buy, leaderboard, rankOf, buyArmory, claimDaily } from './db'
 import { META_KEYS, META_MAX, MetaKey, metaCost, clampRun, LIMITS } from './rules'
 
@@ -35,7 +36,9 @@ export const devAuth: Authenticator = async (req) => {
   return { address: a.toLowerCase(), guest: false, meta: {} }
 }
 
-export function createApp(db: Sql, auth: Authenticator) {
+export type PayOpts = { wallet?: string; rpc?: Rpc; prices?: PriceFeed }
+
+export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
   const app = express()
   app.disable('x-powered-by')
   app.use(express.json({ limit: '16kb' }))
@@ -78,6 +81,7 @@ export function createApp(db: Sql, auth: Authenticator) {
   app.post(
     '/api/profile',
     authed(async (req, res, a) => {
+      if (pay.rpc && pay.wallet && !a.guest) await settlePending(db, a.address, pay.rpc).catch(() => 0)
       const p = await getOrCreate(db, a.address, nameOf(req), a.guest)
       res.json({ ok: true, profile: toProfile(p) })
     })
@@ -146,6 +150,35 @@ export function createApp(db: Sql, auth: Authenticator) {
       const reward = await claimDaily(db, a.address)
       const after = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
       res.status(reward ? 200 : 400).json({ ok: reward > 0, reward, error: reward ? undefined : 'already claimed today', profile: toProfile(after) })
+    })
+  )
+
+  // ── gold packs paid in ETH / MANA, sent to the owner's wallet ──
+  const payOn = () => !!pay.wallet && /^0x[0-9a-fA-F]{40}$/.test(pay.wallet) && !!pay.rpc
+  app.get('/api/shop/config', (_req, res) => {
+    res.json({ ok: true, enabled: payOn(), gold: GOLD_PACK.gold, usd: GOLD_PACK.usd, wallet: payOn() ? pay.wallet!.toLowerCase() : null, currencies: ['ETH', 'MANA'] })
+  })
+
+  app.post(
+    '/api/shop/quote',
+    authed(async (req, res, a) => {
+      if (!payOn()) return res.status(503).json({ ok: false, error: 'payments are not enabled yet' })
+      if (a.guest) return res.status(403).json({ ok: false, error: 'connect a wallet to buy gold' })
+      const currency = String(req.body?.currency).toUpperCase() as Currency
+      if (currency !== 'ETH' && currency !== 'MANA') return res.status(400).json({ ok: false, error: 'currency must be ETH or MANA' })
+      await getOrCreate(db, a.address, nameOf(req), a.guest)
+      const q = await createQuote(db, a.address, currency, pay.wallet!, pay.prices ?? coingecko)
+      res.json({ ok: true, quote: q })
+    })
+  )
+
+  app.post(
+    '/api/shop/confirm',
+    authed(async (req, res, a) => {
+      if (!payOn()) return res.status(503).json({ ok: false, error: 'payments are not enabled yet' })
+      const r = await confirmPurchase(db, a.address, String(req.body?.quoteId ?? ''), String(req.body?.txHash ?? ''), pay.rpc!)
+      const p = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
+      res.status(r.status === 'invalid' || r.status === 'failed' ? 400 : 200).json({ ...r, profile: p ? toProfile(p) : undefined })
     })
   )
 

@@ -27,7 +27,16 @@ async function main() {
   const { Pool } = mem.adapters.createPg()
   const db = new Pool()
   await migrate(db)
-  const app = createApp(db, dclAuth({ allowedParcels: ['-106,76', '-105,77'] }))
+  // fake chain for payment tests
+  const OWNER = '0x' + 'ab'.repeat(20)
+  const chain: Record<string, { tx: any; receipt: any }> = {}
+  const rpc = async (method: string, params: any[]) => {
+    if (method === 'eth_getTransactionByHash') return chain[params[0]]?.tx ?? null
+    if (method === 'eth_getTransactionReceipt') return chain[params[0]]?.receipt ?? null
+    if (method === 'eth_getBlockByNumber') return { timestamp: '0x' + Math.floor(Date.now() / 1000).toString(16) }
+    throw new Error('unexpected ' + method)
+  }
+  const app = createApp(db, dclAuth({ allowedParcels: ['-106,76', '-105,77'] }), { wallet: OWNER, rpc, prices: async () => ({ ETH: 2500, MANA: 0.25 }) })
   const server = app.listen(0)
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 
@@ -99,6 +108,47 @@ async function main() {
   await db.query('UPDATE players SET bank = 0 WHERE address = $1', [alice.owner.address.toLowerCase()])
   const poor = await signed(alice, 'POST', '/api/armory/buy', { tier: 2 })
   assert(poor.status === 400 && poor.json.profile.armory === 1, 'not enough gold rejected')
+
+  console.log('gold packs (ETH / MANA → owner wallet)')
+  const cfg = await (await fetch(base + '/api/shop/config')).json()
+  assert(cfg.enabled && cfg.gold === 10000 && cfg.usd === 10 && cfg.wallet === OWNER, 'shop config: 10,000 gold for $10 to the owner wallet')
+  const bob = await identity()
+  await signed(bob, 'POST', '/api/profile', {})
+  const qe = await signed(bob, 'POST', '/api/shop/quote', { currency: 'ETH' })
+  assert(qe.json.ok && qe.json.quote.amount === 0.004 && qe.json.quote.to === OWNER, 'ETH quote: $10 @ $2500 = 0.004 ETH')
+  const bobAddr = bob.owner.address.toLowerCase()
+  const h1 = '0x' + '11'.repeat(32)
+  const pend = await signed(bob, 'POST', '/api/shop/confirm', { quoteId: qe.json.quote.id, txHash: h1 })
+  assert(pend.json.status === 'pending', 'not mined yet → pending')
+  chain[h1] = { tx: { from: bobAddr, to: OWNER, value: '0x' + BigInt(qe.json.quote.amountWei).toString(16) }, receipt: { blockNumber: '0x10', status: '0x1', logs: [] } }
+  const pb0 = pend.json.profile.bank
+  const ok1 = await signed(bob, 'POST', '/api/shop/confirm', { quoteId: qe.json.quote.id, txHash: h1 })
+  assert(ok1.json.ok && ok1.json.profile.bank === pb0 + 10000, 'ETH payment verified on-chain → +10,000 gold')
+  const again9 = await signed(bob, 'POST', '/api/shop/confirm', { quoteId: qe.json.quote.id, txHash: h1 })
+  assert(again9.json.profile.bank === pb0 + 10000, 'confirming twice does not double-credit')
+  const qe2 = await signed(bob, 'POST', '/api/shop/quote', { currency: 'ETH' })
+  const reuse = await signed(bob, 'POST', '/api/shop/confirm', { quoteId: qe2.json.quote.id, txHash: h1 })
+  assert(reuse.status === 400, 'same tx cannot pay for a second pack')
+  const h2 = '0x' + '22'.repeat(32)
+  chain[h2] = { tx: { from: bobAddr, to: '0x' + 'cd'.repeat(20), value: '0x' + BigInt(qe2.json.quote.amountWei).toString(16) }, receipt: { blockNumber: '0x11', status: '0x1', logs: [] } }
+  const wrong = await signed(bob, 'POST', '/api/shop/confirm', { quoteId: qe2.json.quote.id, txHash: h2 })
+  assert(wrong.status === 400, 'payment to another wallet is rejected')
+  const h3 = '0x' + '33'.repeat(32)
+  chain[h3] = { tx: { from: bobAddr, to: OWNER, value: '0x1' }, receipt: { blockNumber: '0x12', status: '0x1', logs: [] } }
+  const small = await signed(bob, 'POST', '/api/shop/confirm', { quoteId: qe2.json.quote.id, txHash: h3 })
+  assert(small.status === 400, 'underpayment is rejected')
+  const qm = await signed(bob, 'POST', '/api/shop/quote', { currency: 'MANA' })
+  assert(qm.json.quote.amount === 40 && qm.json.quote.token === '0x0f5d2fb29fb7d3cfee444a200298f468908cc942', 'MANA quote: $10 @ $0.25 = 40 MANA')
+  const h4 = '0x' + '44'.repeat(32)
+  const pad = (a: string) => '0x' + a.replace(/^0x/, '').padStart(64, '0')
+  chain[h4] = {
+    tx: { from: bobAddr, to: '0x0f5d2fb29fb7d3cfee444a200298f468908cc942', value: '0x0' },
+    receipt: { blockNumber: '0x13', status: '0x1', logs: [{ address: '0x0f5d2fb29fb7d3cfee444a200298f468908cc942', topics: ['0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef', pad(bobAddr), pad(OWNER)], data: pad(BigInt(qm.json.quote.amountWei).toString(16)) }] }
+  }
+  const okm = await signed(bob, 'POST', '/api/shop/confirm', { quoteId: qm.json.quote.id, txHash: h4 })
+  assert(okm.json.ok && okm.json.profile.bank === pb0 + 20000, 'MANA transfer verified from token logs → +10,000 gold')
+  const stolen = await signed(alice, 'POST', '/api/shop/confirm', { quoteId: qm.json.quote.id, txHash: h4 })
+  assert(stolen.status === 400, "someone else can't claim another player's quote / payment")
 
   console.log('persistence + leaderboard')
   const again2 = await signed(alice, 'POST', '/api/profile', {})

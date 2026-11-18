@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto'
+import { PAY_SCHEMA } from './payments'
 import { META_KEYS, MetaKey, ARMORY_COST, DAILY_REWARD, dayKey } from './rules'
 
 /** minimal pg-compatible client (pg.Pool in production, pg-mem in tests) */
@@ -50,7 +51,7 @@ CREATE INDEX IF NOT EXISTS players_best ON players(best_time DESC);
 `
 
 export async function migrate(db: Sql) {
-  for (const stmt of SCHEMA.split(';').map((s) => s.trim()).filter(Boolean)) await db.query(stmt)
+  for (const stmt of (SCHEMA + ';' + PAY_SCHEMA).split(';').map((s) => s.trim()).filter(Boolean)) await db.query(stmt)
 }
 
 export type Profile = {
