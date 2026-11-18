@@ -125,7 +125,7 @@ function SidePanel() {
 function GoldHud() {
   const r = G.run
   const pulse = G.goldPulse > 0
-  const status = !save.online ? '● connecting to save server…' : save.profile?.guest ? '● guest — progress not saved' : '● saved to your wallet'
+  const status = !save.online ? '● loading your saved gold…' : save.profile?.guest ? '● guest — progress not saved' : '● saved to your wallet'
   return (
     <UiEntity
       uiTransform={{ width: 250, height: 92, flexDirection: 'row', alignItems: 'center', padding: { left: 12, right: 12 } }}
@@ -134,7 +134,7 @@ function GoldHud() {
       <UiEntity uiTransform={{ width: pulse ? 64 : 56, height: pulse ? 64 : 56, flexShrink: 0 }} uiBackground={{ texture: { src: 'images/coin.png' }, textureMode: 'stretch' }} />
       <UiEntity uiTransform={{ flexDirection: 'column', margin: { left: 10 }, flexGrow: 1 }}>
         <Label value="<b>GOLD</b>" fontSize={11} color={C('#E8C670')} uiTransform={{ height: 14 }} textAlign="middle-left" />
-        <Label value={`<b>${G.bank.toLocaleString()}</b>`} fontSize={pulse ? 30 : 27} color={pulse ? C('#FFF6C8') : GOLD} uiTransform={{ height: 34 }} textAlign="middle-left" />
+        <Label value={save.online ? `<b>${G.bank.toLocaleString()}</b>` : '<b>···</b>'} fontSize={pulse ? 30 : 27} color={pulse ? C('#FFF6C8') : GOLD} uiTransform={{ height: 34 }} textAlign="middle-left" />
         {r && r.gold > 0 ? (
           <Label value={`+${Math.floor(r.gold).toLocaleString()} this run`} fontSize={11} color={C('#3DFF8E')} uiTransform={{ height: 14 }} textAlign="middle-left" />
         ) : (
