@@ -441,6 +441,46 @@ for z in (36.0, 43.0):
 for (x, z) in [(51, 35), (61, 35)]:
     lamp(x, z)
 
+# ═══════════ RIBBED DOMES WITH OPEN OCULUS (concept B) ═══════════
+DGLASS = M.add('dome_glass', '#8A5BFF', 0.1, 0.1, '#5A2BCF', 1.2, alpha=0.55)
+LANT = M.add('dome_lantern', '#FFC060', 0.0, 0.4, '#FF8A1E', 8.0)
+
+
+def _se(t, a, b, p=4.0):
+    c, s_ = math.cos(t), math.sin(t)
+    return a * math.copysign(abs(c) ** (2 / p), c), b * math.copysign(abs(s_) ** (2 / p), s_)
+
+
+def dome(cx, cz, a, b, y0=7.7, y1=21.0, inner=0.52, segs=64, rows=7):
+    def P(i, j):
+        t = 2 * math.pi * i / segs
+        s_ = j / rows
+        k = 1 - (1 - inner) * s_
+        x, z = _se(t, a * k, b * k)
+        return (cx + x, y0 + (y1 - y0) * math.sin(s_ * math.pi / 2), cz + z)
+    for i in range(segs):
+        for j in range(rows):
+            m = DGLASS if (j in (2, 3) and i % 4 in (1, 2)) else SLATE
+            B.faces(B.a(m), [P(i, j), P(i + 1, j), P(i + 1, j + 1), P(i, j + 1)], [[0, 1, 2, 3]])
+    for i in range(0, segs, 4):
+        for j in range(rows):
+            p0, p1 = P(i, j), P(i, j + 1)
+            dx, dy, dz = p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]
+            ln = math.sqrt(dx * dx + dy * dy + dz * dz)
+            B.box((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2 - 0.25, (p0[2] + p1[2]) / 2, 0.5, 0.5, ln + 0.1, BLOCK,
+                  yaw=math.degrees(math.atan2(dx, dz)), pitch=-math.degrees(math.atan2(dy, math.hypot(dx, dz))))
+        lx, ly, lz = P(i, rows)
+        B.box(lx, ly - 2.2, lz, 0.05, 4.0, 0.05, GOLD)
+        B.octa(lx, ly - 4.4, lz, 0.35, 0.5, LANT)
+    for i in range(segs):
+        p0, p1 = P(i, rows), P(i + 1, rows)
+        dx, dz = p1[0] - p0[0], p1[2] - p0[2]
+        B.box((p0[0] + p1[0]) / 2, p0[1] + 0.2, (p0[2] + p1[2]) / 2, 0.7, 0.6, math.hypot(dx, dz) + 0.05, GOLD, yaw=math.degrees(math.atan2(dx, dz)))
+
+
+dome(32, 24, 15.3, 23.3)                       # the Rift
+dome(16, 64, 15.3, 15.1, y1=19.0, inner=0.5)   # Cathedral Court
+
 objs = B.emit('arena')
 
 

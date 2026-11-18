@@ -34,6 +34,9 @@ export function buildWorld() {
   LightSource.create(node(V(32, 6, 24)), { type: LightSource.Type.Point({}), color: soul, intensity: 5000, range: 20 })
   LightSource.create(node(V(16, 6, 64)), { type: LightSource.Type.Point({}), color: soul, intensity: 5000, range: 20 })
   LightSource.create(node(V(16, 6, 74)), { type: LightSource.Type.Point({}), color: Color3.create(0.75, 0.35, 1), intensity: 3500, range: 16 })
+  // warm lantern light under each dome's oculus ring
+  LightSource.create(node(V(32, 14, 24)), { type: LightSource.Type.Point({}), color: fire, intensity: 6000, range: 24 })
+  LightSource.create(node(V(16, 13, 64)), { type: LightSource.Type.Point({}), color: fire, intensity: 5000, range: 20 })
   LightSource.create(node(V(8, 4, 8)), { type: LightSource.Type.Point({}), color: Color3.create(1, 0.8, 0.45), intensity: 2500, range: 14 })
   LightSource.create(node(V(56, 4, 40)), { type: LightSource.Type.Point({}), color: Color3.create(1, 0.8, 0.45), intensity: 2200, range: 12 })
 
