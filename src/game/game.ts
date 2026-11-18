@@ -50,6 +50,8 @@ export const G = {
   aim: 0,
   nukeAsk: false,
   autoAttack: false, // auto-swing the armory weapon at the nearest foe
+  infoOpen: false, // upgrades overview panel (key 1)
+  buyConfirmT: 0,
   doubleBonus: 0
 }
 
@@ -84,6 +86,11 @@ export function buyArmory(tier: number) {
   }
   const done = () => {
     G.equip = -1
+    if (G.run) {
+      // new weapons work immediately, even mid-run
+      G.run.armory = G.armory
+      G.run.equip = equipped()
+    }
     G.armoryMsg = `✓ ${ARMORY[tier].name} unlocked and equipped!`
     play('buy')
     banner(`${ARMORY[tier].name.toUpperCase()} UNLOCKED!`, 3)
@@ -104,6 +111,37 @@ export function buyArmory(tier: number) {
   G.bank -= cost
   G.armory = tier
   done()
+}
+
+export function equipWeapon(i: number) {
+  if (i > G.armory || i >= NUKE_TIER) return
+  G.equip = i
+  if (G.run) G.run.equip = equipped()
+  play('click')
+  G.armoryMsg = `In hand: ${ARMORY[i].name}`
+}
+
+/** key 2: cycle through owned weapons */
+export function cycleWeapon() {
+  const top = Math.min(G.armory, NUKE_TIER - 1)
+  if (top <= 0) return banner('Unlock more weapons in the Armory (key 1)', 2)
+  const next = (equipped() + 1) % (top + 1)
+  equipWeapon(next)
+  banner(`IN HAND: ${ARMORY[next].name.toUpperCase()}`, 1.5)
+}
+
+/** key 3: buy the next armory weapon (press twice to confirm) */
+export function buyNextHotkey() {
+  const next = G.armory + 1
+  if (next >= ARMORY.length) return banner('Armory complete!', 2)
+  G.infoOpen = true
+  if (G.buyConfirmT > 0) {
+    G.buyConfirmT = 0
+    buyArmory(next)
+    return
+  }
+  G.buyConfirmT = 2.5
+  G.armoryMsg = `Press 3 again to buy ${ARMORY[next].name} for ● ${ARMORY[next].cost.toLocaleString()}`
 }
 
 export function toggleAuto() {
@@ -421,6 +459,17 @@ export function setupGame() {
         G.run.pvpKills++
       } else G.bank += 10 * lvl
     }
+  })
+
+  // hotkeys that work anywhere (lobby or mid-run): 1 = upgrades panel, 2 = switch weapon, 3 = buy next weapon
+  engine.addSystem((dt) => {
+    if (G.buyConfirmT > 0) G.buyConfirmT -= dt
+    if (inputSystem.isTriggered(InputAction.IA_ACTION_3, PointerEventType.PET_DOWN)) {
+      G.infoOpen = !G.infoOpen
+      play('click')
+    }
+    if (inputSystem.isTriggered(InputAction.IA_ACTION_4, PointerEventType.PET_DOWN)) cycleWeapon()
+    if (inputSystem.isTriggered(InputAction.IA_ACTION_5, PointerEventType.PET_DOWN)) buyNextHotkey()
   })
 
   engine.addSystem((dt) => {

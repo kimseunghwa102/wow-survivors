@@ -1,6 +1,6 @@
 import ReactEcs, { ReactEcsRenderer, UiEntity, Label, Button } from '@dcl/sdk/react-ecs'
 import { Color4 } from '@dcl/sdk/math'
-import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto } from './game/game'
+import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon } from './game/game'
 import { optionLabel, Option } from './game/core'
 import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor } from './game/defs'
 import { feed, topRuns } from './game/net'
@@ -150,20 +150,92 @@ function Flash() {
   return <UiEntity uiTransform={{ positionType: 'absolute', width: '100%', height: '100%' }} uiBackground={{ color: C('#FFF3D6', Math.min(0.85, G.flash * 1.6)) }} />
 }
 
-function AutoToggle() {
-  if (!G.run) return null
+function Dock() {
   const on = G.autoAttack
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: 24, right: 16 }, flexDirection: 'column', alignItems: 'flex-end' }}>
       <Button
-        value={on ? '⚔ AUTO ATTACK  ON' : '⚔ AUTO ATTACK  OFF'}
+        value={G.infoOpen ? '✕ CLOSE UPGRADES [1]' : '📖 UPGRADES [1]'}
         fontSize={15}
         color={WHITE}
-        uiTransform={{ width: 210, height: 44 }}
-        uiBackground={{ color: on ? C('#1FA85A') : C('#3A2A4A') }}
-        onMouseDown={toggleAuto}
+        uiTransform={{ width: 210, height: 40, margin: { bottom: 6 } }}
+        uiBackground={{ color: G.infoOpen ? C('#7B3BFF') : C('#2A1A40') }}
+        onMouseDown={tap(() => (G.infoOpen = !G.infoOpen))}
       />
-      <Label value={on ? 'hits the nearest foe for you · E to toggle' : 'hold LEFT CLICK to attack · E = auto'} fontSize={11} color={DIM} uiTransform={{ height: 16 }} />
+      {G.run ? (
+        <Button
+          value={on ? '⚔ AUTO ATTACK  ON [E]' : '⚔ AUTO ATTACK  OFF [E]'}
+          fontSize={15}
+          color={WHITE}
+          uiTransform={{ width: 210, height: 44 }}
+          uiBackground={{ color: on ? C('#1FA85A') : C('#3A2A4A') }}
+          onMouseDown={toggleAuto}
+        />
+      ) : null}
+      <Label value="keys: 1 upgrades · 2 switch weapon · 3 buy next · E auto · F nuke" fontSize={11} color={DIM} uiTransform={{ height: 16 }} />
+    </UiEntity>
+  )
+}
+
+function Row(props: { left: string; right: string; color?: Color4; rc?: Color4; key?: string }) {
+  return (
+    <UiEntity uiTransform={{ flexDirection: 'row', width: '100%', height: 18, justifyContent: 'space-between' }}>
+      <Label value={props.left} fontSize={12} color={props.color ?? WHITE} uiTransform={{ height: 18 }} textAlign="middle-left" />
+      <Label value={props.right} fontSize={12} color={props.rc ?? DIM} uiTransform={{ height: 18 }} textAlign="middle-right" />
+    </UiEntity>
+  )
+}
+
+/** non-blocking overview of every upgrade — open any time with key 1 */
+function InfoPanel() {
+  if (!G.infoOpen) return null
+  const eq = equipped()
+  const r = G.run
+  const ws = r ? ([...r.weapons.entries()] as [WeaponId, number][]) : []
+  const ps = r ? ([...r.passives.entries()] as [PassiveId, number][]) : []
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 90, right: 282 }, width: 380, flexDirection: 'column', padding: 12 }} uiBackground={{ color: C('#0E0818', 0.92) }}>
+      <Label value="<b>UPGRADES</b>" fontSize={20} color={GOLD} uiTransform={{ height: 26 }} textAlign="middle-left" />
+      <Label value={`Bank ● ${G.bank.toLocaleString()}`} fontSize={13} color={GOLD} uiTransform={{ height: 18 }} textAlign="middle-left" />
+      <Label value="<b>ARMORY</b>  (your own attack)" fontSize={13} color={C('#FFB84A')} uiTransform={{ height: 20, margin: { top: 6 } }} textAlign="middle-left" />
+      {ARMORY.map((w, i) => {
+        const owned = i <= G.armory
+        const next = i === G.armory + 1
+        const status = i === NUKE_TIER && owned ? 'OWNED · F' : i === eq ? '✓ IN HAND' : owned ? 'owned · press 2' : next ? (G.bank >= w.cost ? `BUY ● ${w.cost.toLocaleString()} · press 3` : `need ● ${w.cost.toLocaleString()}`) : `🔒 ● ${w.cost.toLocaleString()}`
+        return (
+          <UiEntity key={w.name} uiTransform={{ flexDirection: 'row', width: '100%', height: 22, alignItems: 'center' }}>
+            <Label value={`${owned ? '■' : '□'} ${w.name}`} fontSize={12} color={owned ? C(w.color) : DIM} uiTransform={{ width: 150, height: 20 }} textAlign="middle-left" />
+            {(next || (owned && i !== eq && i < NUKE_TIER)) ? (
+              <Button
+                value={status}
+                fontSize={11}
+                color={WHITE}
+                uiTransform={{ width: 210, height: 20 }}
+                uiBackground={{ color: next ? (G.bank >= w.cost ? C('#1FA85A') : C('#5A2A2A')) : C('#3A2A5A') }}
+                onMouseDown={tap(() => (next ? buyArmory(i) : equipWeapon(i)))}
+              />
+            ) : (
+              <Label value={status} fontSize={11} color={i === eq ? C('#3DFF8E') : DIM} uiTransform={{ width: 210, height: 20 }} textAlign="middle-right" />
+            )}
+          </UiEntity>
+        )
+      })}
+      {G.armoryMsg ? <Label value={G.armoryMsg} fontSize={12} color={G.armoryMsg.startsWith('✓') ? C('#3DFF8E') : C('#FFB84A')} uiTransform={{ height: 18 }} textAlign="middle-left" /> : null}
+      <Label value="<b>ARCANE FORGE</b>  (permanent, buy at the forge)" fontSize={13} color={C('#9FE8FF')} uiTransform={{ height: 20, margin: { top: 6 } }} textAlign="middle-left" />
+      {(Object.keys(META) as MetaKey[]).map((k) => (
+        <Row key={k} left={META[k].name} right={`${G.meta[k]} / ${META[k].max}${G.meta[k] < META[k].max ? `  · next ● ${metaCost(G.meta[k]).toLocaleString()}` : '  MAX'}`} />
+      ))}
+      <Label value={r ? `<b>THIS RUN</b>  ·  Lv ${r.level}` : '<b>THIS RUN</b>  ·  start a run in the rift'} fontSize={13} color={C('#FF7AC8')} uiTransform={{ height: 20, margin: { top: 6 } }} textAlign="middle-left" />
+      {ws.map(([id, lv]) => {
+        const w = WEAPONS[id]
+        const asc = r!.evolved.has(id)
+        const hint = asc ? 'ASCENDED ✦' : lv >= MAX_WEAPON_LVL ? (r!.p(w.evoWith) > 0 ? 'open a vault to ASCEND' : `ascend: + ${PASSIVES[w.evoWith].name}`) : lv < 4 ? `new form at Lv4` : lv < 7 ? `new form at Lv7` : `max at Lv${MAX_WEAPON_LVL}`
+        return <Row key={id} left={`${asc ? w.evo : w.name}  Lv${lv}`} color={C(w.color)} right={hint} rc={asc ? C('#FFFFFF') : DIM} />
+      })}
+      {ps.map(([id, lv]) => (
+        <Row key={id} left={`${PASSIVES[id].name}  Lv${lv}`} color={C(PASSIVES[id].color)} right={`${'●'.repeat(lv)}${'○'.repeat(Math.max(0, MAX_PASSIVE_LVL - lv))}`} />
+      ))}
+      {r && !ws.length && !ps.length ? <Label value="—" fontSize={12} color={DIM} /> : null}
     </UiEntity>
   )
 }
@@ -373,7 +445,7 @@ function ArmoryModal() {
                   color={WHITE}
                   uiTransform={{ width: 150, height: 32 }}
                   uiBackground={{ color: inHand ? C('#3DFF8E', 0.35) : C('#3A2A5A') }}
-                  onMouseDown={tap(() => (G.equip = i))}
+                  onMouseDown={tap(() => equipWeapon(i))}
                 />
               )
             ) : (
@@ -407,7 +479,8 @@ const Root = () => (
     <Flash />
     <TopHud />
     <BossBar />
-    <AutoToggle />
+    <Dock />
+    <InfoPanel />
     <NextBoss />
     <SidePanel />
     <HpBar />
