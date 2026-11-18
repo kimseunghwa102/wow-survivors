@@ -1,6 +1,6 @@
 import ReactEcs, { ReactEcsRenderer, UiEntity, Label, Button } from '@dcl/sdk/react-ecs'
 import { Color4 } from '@dcl/sdk/math'
-import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped } from './game/game'
+import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto } from './game/game'
 import { optionLabel, Option } from './game/core'
 import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor } from './game/defs'
 import { feed, topRuns } from './game/net'
@@ -76,7 +76,7 @@ function SidePanel() {
       </UiEntity>
       {/* armory weapon + nuke */}
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', padding: 8, margin: { top: 6 } }} uiBackground={{ color: PANEL }}>
-        <Label value={`<b>${ARMORY[r.equip].name}</b>  ·  hold LEFT CLICK`} fontSize={12} color={C(ARMORY[r.equip].color)} uiTransform={{ height: 16 }} textAlign="middle-left" />
+        <Label value={`<b>${ARMORY[r.equip].name}</b>  ·  ${G.autoAttack ? 'AUTO' : 'hold LEFT CLICK'}`} fontSize={12} color={C(ARMORY[r.equip].color)} uiTransform={{ height: 16 }} textAlign="middle-left" />
         {r.armory >= NUKE_TIER ? (
           <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', width: '100%', margin: { top: 4 } }}>
             <Button
@@ -148,6 +148,24 @@ function NextBoss() {
 function Flash() {
   if (G.flash <= 0) return null
   return <UiEntity uiTransform={{ positionType: 'absolute', width: '100%', height: '100%' }} uiBackground={{ color: C('#FFF3D6', Math.min(0.85, G.flash * 1.6)) }} />
+}
+
+function AutoToggle() {
+  if (!G.run) return null
+  const on = G.autoAttack
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: 24, right: 16 }, flexDirection: 'column', alignItems: 'flex-end' }}>
+      <Button
+        value={on ? '⚔ AUTO ATTACK  ON' : '⚔ AUTO ATTACK  OFF'}
+        fontSize={15}
+        color={WHITE}
+        uiTransform={{ width: 210, height: 44 }}
+        uiBackground={{ color: on ? C('#1FA85A') : C('#3A2A4A') }}
+        onMouseDown={toggleAuto}
+      />
+      <Label value={on ? 'hits the nearest foe for you · E to toggle' : 'hold LEFT CLICK to attack · E = auto'} fontSize={11} color={DIM} uiTransform={{ height: 16 }} />
+    </UiEntity>
+  )
 }
 
 function HpBar() {
@@ -388,6 +406,7 @@ const Root = () => (
     <Flash />
     <TopHud />
     <BossBar />
+    <AutoToggle />
     <NextBoss />
     <SidePanel />
     <HpBar />

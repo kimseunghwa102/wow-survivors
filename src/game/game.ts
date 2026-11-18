@@ -48,6 +48,7 @@ export const G = {
   flash: 0, // white screen flash (nuke)
   aim: 0,
   nukeAsk: false,
+  autoAttack: false, // auto-swing the armory weapon at the nearest foe
   doubleBonus: 0
 }
 
@@ -90,6 +91,12 @@ export function buyArmory(tier: number) {
   G.bank -= cost
   G.armory = tier
   done()
+}
+
+export function toggleAuto() {
+  G.autoAttack = !G.autoAttack
+  play('click')
+  banner(G.autoAttack ? 'AUTO ATTACK ON' : 'AUTO ATTACK OFF', 1.5)
 }
 
 export function claimDaily() {
@@ -440,7 +447,26 @@ export function setupGame() {
         }
         G.aim = aim
         setAim(aim)
-        if (inputSystem.isPressed(InputAction.IA_POINTER)) r.manualAttack(aim, targets)
+        if (inputSystem.isTriggered(InputAction.IA_PRIMARY, PointerEventType.PET_DOWN)) toggleAuto()
+        if (G.autoAttack) {
+          // aim at the nearest foe within reach of the equipped weapon
+          const w = ARMORY[r.equip]
+          const reach = w.gun ? w.range : w.range * r.area + 2
+          let best = reach
+          let ay = -999
+          for (const e of r.enemies) {
+            if (!e.alive) continue
+            const d = Math.hypot(e.x - r.x, e.z - r.z) - e.r
+            if (d < best) {
+              best = d
+              ay = (Math.atan2(e.x - r.x, e.z - r.z) * 180) / Math.PI
+            }
+          }
+          if (ay > -999) {
+            setAim(ay)
+            r.manualAttack(ay, targets)
+          }
+        } else if (inputSystem.isPressed(InputAction.IA_POINTER)) r.manualAttack(aim, targets)
         if (inputSystem.isTriggered(InputAction.IA_SECONDARY, PointerEventType.PET_DOWN) || G.nukeAsk) r.nuke(aim)
       }
       G.nukeAsk = false
