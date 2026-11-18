@@ -15,13 +15,13 @@ IMG = os.path.join(ROOT, 'images')
 os.makedirs(IMG, exist_ok=True)
 
 
-def coin_pile(B, GOLDC, GEM, RUBY, cx, cz, n, spread, seed, chest=None, height=1.0, seg=10):
+def coin_pile(B, GOLDC, GEM, RUBY, cx, cz, n, spread, seed, chest=None, height=1.0, seg=10, y0=0.0):
     rnd = random.Random(seed)
     # heap: coins on a cone-ish mound
     for i in range(n):
         r = spread * math.sqrt(rnd.random())
         a = rnd.random() * 2 * math.pi
-        y = (1 - r / spread) * height * 0.55 + rnd.random() * 0.05
+        y = y0 + (1 - r / spread) * height * 0.55 + rnd.random() * 0.05
         x, z = cx + math.cos(a) * r, cz + math.sin(a) * r
         B.cyl(x, y, z, 0.09, 0.025, GOLDC, seg=seg)
         if rnd.random() < 0.35:   # tilted coins break the regular look
@@ -32,22 +32,22 @@ def coin_pile(B, GOLDC, GEM, RUBY, cx, cz, n, spread, seed, chest=None, height=1
         r = spread * rnd.uniform(0.4, 0.9)
         h = rnd.randint(4, 10)
         for j in range(h):
-            B.cyl(cx + math.cos(a) * r + rnd.uniform(-0.01, 0.01), j * 0.028, cz + math.sin(a) * r + rnd.uniform(-0.01, 0.01), 0.09, 0.026, GOLDC, seg=seg)
+            B.cyl(cx + math.cos(a) * r + rnd.uniform(-0.01, 0.01), y0 + j * 0.028, cz + math.sin(a) * r + rnd.uniform(-0.01, 0.01), 0.09, 0.026, GOLDC, seg=seg)
     for k in range(n // 60):
         a = rnd.random() * 2 * math.pi
         r = spread * rnd.uniform(0, 0.7)
-        y = (1 - r / spread) * height * 0.55 + 0.08
+        y = y0 + (1 - r / spread) * height * 0.55 + 0.08
         B.octa(cx + math.cos(a) * r, y, cz + math.sin(a) * r, 0.06, 0.09, GEM if k % 2 else RUBY)
 
 
-def chest(B, WOODC, GOLDC, cx, cz, s=1.0, yaw=0):
-    B.box(cx, 0.25 * s, cz, 1.0 * s, 0.5 * s, 0.65 * s, WOODC, yaw=yaw)
+def chest(B, WOODC, GOLDC, cx, cz, s=1.0, yaw=0, y0=0.0):
+    B.box(cx, y0 + 0.25 * s, cz, 1.0 * s, 0.5 * s, 0.65 * s, WOODC, yaw=yaw)
     for dx in (-0.45, 0.45):
-        B.box(cx + dx * s, 0.25 * s, cz, 0.06 * s, 0.52 * s, 0.67 * s, GOLDC, yaw=yaw)
-    B.box(cx, 0.5 * s, cz, 1.02 * s, 0.05 * s, 0.67 * s, GOLDC, yaw=yaw)
+        B.box(cx + dx * s, y0 + 0.25 * s, cz, 0.06 * s, 0.52 * s, 0.67 * s, GOLDC, yaw=yaw)
+    B.box(cx, y0 + 0.5 * s, cz, 1.02 * s, 0.05 * s, 0.67 * s, GOLDC, yaw=yaw)
     # open lid tilted back
-    B.box(cx, 0.78 * s, cz - 0.36 * s, 1.0 * s, 0.6 * s, 0.08 * s, WOODC, yaw=yaw, pitch=-15)
-    B.box(cx, 1.06 * s, cz - 0.43 * s, 1.02 * s, 0.06 * s, 0.1 * s, GOLDC, yaw=yaw, pitch=-15)
+    B.box(cx, y0 + 0.78 * s, cz - 0.36 * s, 1.0 * s, 0.6 * s, 0.08 * s, WOODC, yaw=yaw, pitch=-15)
+    B.box(cx, y0 + 1.06 * s, cz - 0.43 * s, 1.02 * s, 0.06 * s, 0.1 * s, GOLDC, yaw=yaw, pitch=-15)
 
 
 # ═════════════ 1) TREASURY KIOSK (GLB) ═════════════
@@ -68,10 +68,10 @@ B.cyl(0, 0.25, 0, 2.02, 0.05, GOLDC, seg=24)
 B.cyl(0, 0.3, 0, 1.6, 0.2, MARB, seg=24)
 B.ring(0, 0.5, 0, 1.55, 1.65, 0.05, NEON, seg=32)
 # overflowing chest + piles
-chest(B, WOODC, GOLDC, 0, 0.1, 1.1)
-coin_pile(B, GOLDC, GEM, RUBY, 0, 0.12, 32, 0.45, 1, height=1.6, seg=6)   # coins spilling out of the chest top
-coin_pile(B, GOLDC, GEM, RUBY, 0.9, 0.6, 22, 0.6, 2, height=0.5, seg=6)
-coin_pile(B, GOLDC, GEM, RUBY, -0.9, 0.55, 20, 0.55, 3, height=0.45, seg=6)
+chest(B, WOODC, GOLDC, 0, 0.1, 1.1, y0=0.5)
+coin_pile(B, GOLDC, GEM, RUBY, 0, 0.1, 34, 0.33, 1, height=0.9, seg=6, y0=1.08)   # coins spilling out of the chest top
+coin_pile(B, GOLDC, GEM, RUBY, 0.85, 0.6, 30, 0.55, 2, height=0.6, seg=6, y0=0.5)
+coin_pile(B, GOLDC, GEM, RUBY, -0.85, 0.55, 28, 0.5, 3, height=0.55, seg=6, y0=0.5)
 # neon arch behind
 for s in (-1, 1):
     B.box(s * 1.75, 2.0, -1.2, 0.25, 3.6, 0.25, MARB)
