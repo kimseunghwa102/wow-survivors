@@ -4,8 +4,8 @@ import { Vector3 } from '@dcl/sdk/math'
 import { movePlayerTo } from '~system/RestrictedActions'
 import LAYOUT from '../../layout.json'
 import { Run, Option, Ev, inArena } from './core'
-import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, bossFor, GOLD_PACKS } from './defs'
-import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName } from './view'
+import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS } from './defs'
+import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm } from './view'
 import { play, setupSfx, musicLevel } from './sfx'
 import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf } from './net'
 import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile, serverArmoryBuy, serverClaimDaily, shopConfig, shopQuote, shopConfirm } from './persist'
@@ -63,7 +63,10 @@ export const G = {
   doubleBonus: 0
 }
 
-export const equipped = () => Math.min(G.equip < 0 ? G.armory : G.equip, G.armory, NUKE_TIER - 1)
+export const equipped = () => {
+  const t = Math.min(G.equip < 0 ? G.armory : G.equip, G.armory)
+  return isHoldable(t) ? t : t - 1
+}
 
 export function banner(text: string, sec = 3) {
   G.banner = text
@@ -95,6 +98,10 @@ export function buyArmory(tier: number) {
   }
   const done = () => {
     G.equip = -1
+    if (tier === GOD_TIER) {
+      banner('✦ YOU HAVE ASCENDED — YOU ARE A GOD ✦', 6)
+      play('evolve')
+    }
     if (G.run) {
       // new weapons work immediately, even mid-run
       G.run.armory = G.armory
@@ -235,7 +242,7 @@ export async function buyGold(currency: 'ETH' | 'MANA') {
 }
 
 export function equipWeapon(i: number) {
-  if (i > G.armory || i >= NUKE_TIER) return
+  if (i > G.armory || !isHoldable(i)) return
   G.equip = i
   if (G.run) G.run.equip = equipped()
   play('click')
@@ -244,9 +251,9 @@ export function equipWeapon(i: number) {
 
 /** key 2: cycle through owned weapons */
 export function cycleWeapon() {
-  const top = Math.min(G.armory, NUKE_TIER - 1)
-  if (top <= 0) return banner('Unlock more weapons in the Armory (key 1)', 2)
-  const next = (equipped() + 1) % (top + 1)
+  const owned = ARMORY.map((_, i) => i).filter((i) => i <= G.armory && isHoldable(i))
+  if (owned.length <= 1) return banner('Unlock more weapons in the Armory (key 1)', 2)
+  const next = owned[(owned.indexOf(equipped()) + 1) % owned.length]
   equipWeapon(next)
   banner(`IN HAND: ${ARMORY[next].name.toUpperCase()}`, 1.5)
 }
@@ -489,6 +496,12 @@ function handle(evs: Ev[]) {
       case 'swing':
         play((['punch', 'bonk', 'smash', 'flameslash', 'reaper'] as const)[Math.min(4, e.tier)], 0.92 + Math.random() * 0.16)
         break
+      case 'zeus':
+        play('sigil', 0.75 + Math.random() * 0.2)
+        break
+      case 'divine':
+        play('pulse', 0.6)
+        break
       case 'tracer':
         play('gun', 0.9 + Math.random() * 0.2)
         break
@@ -585,6 +598,8 @@ export function setupGame() {
   // hotkeys that work anywhere (lobby or mid-run): 1 = upgrades panel, 2 = switch weapon, 3 = buy next weapon
   engine.addSystem((dt) => {
     if (G.buyConfirmT > 0) G.buyConfirmT -= dt
+    // Divine Ascension in hand → the player takes divine form (lobby and runs)
+    setGodForm(equipped() === GOD_TIER)
     const k1 = inputSystem.isTriggered(InputAction.IA_ACTION_3, PointerEventType.PET_DOWN)
     if (k1 && !G.goldShopOpen) {
       G.infoOpen = !G.infoOpen
@@ -670,16 +685,23 @@ export function setupGame() {
       G.nukeAsk = false
       renderRun(r, evs, dt)
       handle(evs)
-      // swiftness passive → avatar speed
+    }
+    // swiftness passive → avatar speed; divine form → god flight (huge jumps, double jump, gliding)
+    {
       const sp = G.run ? G.run.speedMul : 1
-      if (sp !== lastSpeed) {
-        lastSpeed = sp
-        // NOTE: values are relative to Decentraland's default locomotion; tune after a first playtest
-        AvatarLocomotionSettings.createOrReplace(engine.PlayerEntity, { walkSpeed: 1.5 * sp, jogSpeed: 8 * sp, runSpeed: 10 * sp })
+      const god = equipped() === GOD_TIER
+      const key = god ? sp + 100 : sp
+      if (key !== lastSpeed) {
+        lastSpeed = key
+        if (!god && sp === 1) AvatarLocomotionSettings.deleteFrom(engine.PlayerEntity)
+        else
+          AvatarLocomotionSettings.createOrReplace(engine.PlayerEntity, {
+            walkSpeed: 1.5 * sp,
+            jogSpeed: (god ? 10 : 8) * sp,
+            runSpeed: (god ? 14 : 10) * sp,
+            ...(god ? { jumpHeight: 6, runJumpHeight: 7, doubleJumpHeight: 6, glidingSpeed: 9, glidingFallingSpeed: 1.2, hardLandingCooldown: 0 } : {})
+          })
       }
-    } else if (lastSpeed !== 1) {
-      lastSpeed = 1
-      AvatarLocomotionSettings.deleteFrom(engine.PlayerEntity)
     }
 
     statusT += dt
@@ -696,7 +718,8 @@ export function setupGame() {
         oa: rr?.orbitAngle ?? 0,
         orr: rr?.orbitRadius() ?? 0,
         au: rr?.auraRadius() ?? 0,
-        k: rr?.kills ?? 0
+        k: rr?.kills ?? 0,
+        gd: equipped() === GOD_TIER
       })
     }
   })

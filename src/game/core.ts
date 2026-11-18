@@ -2,7 +2,7 @@
 import LAYOUT from '../../layout.json'
 import {
   WeaponId, PassiveId, EnemyKind, WEAPONS, PASSIVES, ENEMIES, MAX_WEAPON_LVL, MAX_PASSIVE_LVL,
-  MAX_WEAPONS, MAX_PASSIVES, waveMix, xpNeed, ARMORY, NUKE, NUKE_TIER, manualLevelScale, bossFor, BossDef,
+  MAX_WEAPONS, MAX_PASSIVES, waveMix, xpNeed, ARMORY, NUKE, NUKE_TIER, GOD_TIER, isHoldable, manualLevelScale, bossFor, BossDef,
   BOOSTS, BoostId
 } from './defs'
 
@@ -67,6 +67,8 @@ export type Ev =
   | { t: 'swing'; x: number; z: number; yaw: number; range: number; arc: number; tier: number }
   | { t: 'quake'; x: number; z: number; r: number }
   | { t: 'tracer'; x: number; z: number; yaw: number; len: number }
+  | { t: 'zeus'; pts: [number, number][] }
+  | { t: 'divine'; x: number; z: number; r: number }
   | { t: 'nukeLaunch'; x: number; z: number; tx: number; tz: number; delay: number }
   | { t: 'nuke'; x: number; z: number; r: number }
   | { t: 'bossSpawn'; boss: number }
@@ -142,8 +144,10 @@ export class Run {
   constructor(start: WeaponId, meta?: { might: number; hp: number; magnet: number; xp: number }, armory = 0, equip?: number) {
     this.weapons.set(start, 1)
     if (meta) this.meta = meta
-    this.armory = Math.max(0, Math.min(NUKE_TIER, armory))
-    this.equip = Math.min(equip ?? this.armory, this.armory, NUKE_TIER - 1)
+    this.armory = Math.max(0, Math.min(ARMORY.length - 1, armory))
+    let eq = Math.min(equip ?? this.armory, this.armory)
+    if (!isHoldable(eq)) eq--
+    this.equip = Math.max(0, eq)
     this.maxHp = this.hp = TUNING.baseHp + this.meta.hp * 10
   }
 
@@ -302,7 +306,7 @@ export class Run {
       e.z = c.z
       // contact damage: one hit at a time with short i-frames (like the genre)
       if (dist < e.r + 0.55 && this.invuln <= 0 && this.hurtCd <= 0) {
-        const dmg = e.dmg * Math.max(0.25, 1 - this.armor * 0.08)
+        const dmg = e.dmg * Math.max(0.25, 1 - this.armor * 0.08) * (this.god ? 0.5 : 1)
         this.hp -= dmg
         this.lastAttacker = ''
         this.hurtCd = 0.6
@@ -335,7 +339,8 @@ export class Run {
   private hitEnemy(e: Enemy, dmg: number, kx = 0, kz = 0) {
     if (!e.alive) return
     const crit = rand() < 0.05 + 0.02 * this.p('fortune')
-    const d = dmg * this.might * (crit ? 2 : 1)
+    let d = dmg * this.might * (crit ? 2 : 1)
+    if (this.god) d = Math.max(d, e.hp + 1)
     e.hp -= d
     e.kx += kx
     e.kz += kz
@@ -752,7 +757,7 @@ export class Run {
         const r = d.slam
         this.events.push({ t: 'slam', x: b.x, z: b.z, r })
         if (Math.hypot(this.x - b.x, this.z - b.z) < r && this.invuln <= 0) {
-          const dmg = d.dmg * 1.6 * Math.max(0.3, 1 - this.armor * 0.08)
+          const dmg = d.dmg * 1.6 * Math.max(0.3, 1 - this.armor * 0.08) * (this.god ? 0.5 : 1)
           this.hp -= dmg
           this.lastAttacker = ''
           this.events.push({ t: 'hurt', dmg })
@@ -799,6 +804,11 @@ export class Run {
     }
   }
 
+  /** Divine Ascension in hand: every hit on a monster is lethal */
+  get god() {
+    return this.equip === GOD_TIER && this.alive
+  }
+
   get canNuke() {
     return this.armory >= NUKE_TIER && this.nukeCd <= 0 && !this.pendingNuke
   }
@@ -823,6 +833,53 @@ export class Run {
     const fx = Math.sin(a)
     const fz = Math.cos(a)
     const dmg = w.dmg * manualLevelScale(this.level)
+    if (w.god) {
+      // divine nova: everything around you dies
+      const R = w.range * this.area
+      for (const e of this.enemies) {
+        if (!e.alive) continue
+        const dx = e.x - this.x
+        const dz = e.z - this.z
+        const d = Math.hypot(dx, dz)
+        if (d > R + e.r) continue
+        this.hitEnemy(e, 1, (dx / (d || 1)) * w.knock, (dz / (d || 1)) * w.knock)
+      }
+      for (const r of remotes) if (Math.hypot(r.x - this.x, r.z - this.z) < R) this.pvpDamage(r, 400)
+      this.events.push({ t: 'divine', x: this.x, z: this.z, r: R })
+      return true
+    }
+    if (w.chain) {
+      // Zeus: strike the foe nearest the aim line, then leap to the closest unhit foes
+      let cur: Enemy | undefined
+      let best = Infinity
+      for (const e of this.enemies) {
+        if (!e.alive) continue
+        const dx = e.x - this.x
+        const dz = e.z - this.z
+        const t = dx * fx + dz * fz
+        if (t < 0 || t > w.range) continue
+        const score = Math.hypot(dx, dz) + Math.abs(dx * fz - dz * fx) * 2
+        if (score < best) (best = score), (cur = e)
+      }
+      const pts: [number, number][] = [[this.x, this.z]]
+      const hit = new Set<number>()
+      for (let k = 0; cur && k <= w.chain; k++) {
+        hit.add(cur.id)
+        pts.push([cur.x, cur.z])
+        const from = cur
+        this.hitEnemy(from, dmg * (1 - k * 0.06), 0, 0)
+        cur = undefined
+        let bd = 9
+        for (const e of this.enemies) {
+          if (!e.alive || hit.has(e.id)) continue
+          const d = Math.hypot(e.x - from.x, e.z - from.z)
+          if (d < bd) (bd = d), (cur = e)
+        }
+      }
+      for (const r of remotes) if (Math.hypot(r.x - this.x, r.z - this.z) < 8) this.pvpDamage(r, dmg * 0.4)
+      if (pts.length > 1) this.events.push({ t: 'zeus', pts })
+      return true
+    }
     if (w.gun) {
       const spread = ((rand() - 0.5) * 7 * Math.PI) / 180
       const gx = Math.sin(a + spread)

@@ -1,11 +1,11 @@
 // Renders the pure simulation (core.ts) with pooled Decentraland entities.
 import {
   engine, Entity, Transform, GltfContainer, Animator,
-  TextShape, TextAlignMode, Font, Billboard, BillboardMode, Tween, MeshRenderer, Material, MaterialTransparencyMode, EasingFunction
+  TextShape, TextAlignMode, Font, Billboard, BillboardMode, Tween, MeshRenderer, Material, MaterialTransparencyMode, EasingFunction, AvatarAttach, AvatarAnchorPointType
 } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { Run, Ev } from './core'
-import { ENEMIES, EnemyKind, ARMORY, bossFor, WeaponId, WEAPONS, PASSIVES, PassiveId, MAX_PASSIVE_LVL } from './defs'
+import { ENEMIES, EnemyKind, ARMORY, GOD_TIER, bossFor, WeaponId, WEAPONS, PASSIVES, PassiveId, MAX_PASSIVE_LVL } from './defs'
 
 const HIDE = Vector3.create(32, -40, 24)
 const V = Vector3.create
@@ -158,6 +158,9 @@ export function setupView() {
   setupUpgradeFx()
   setupHalos()
   spawnPool = pick('models/fx_spawn.glb', 8, 0)
+  zeusPool = pick('models/fx_sigil_asc.glb', 9, 0)
+  divinePool = pick('models/fx_pulse_asc.glb', 3, 0)
+  godAura = ent()
   deathPool = pick('models/fx_death.glb', 16, 0)
   bossEnt = ent()
   bossModel = engine.addEntity()
@@ -412,6 +415,22 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
       const w = ev.range * (ev.arc >= 180 ? 2.3 : ev.arc >= 140 ? 1.9 : 1.5)
       t.scale = V(w, 1, ev.range * 1.1)
       fxs.push({ e, life: 0.2, max: 0.2, pool: swingPools[kind], kind: 'swing', r: ev.range, w })
+    } else if (ev.t === 'zeus') {
+      swingT = 0.12
+      for (const [x, z] of ev.pts.slice(1)) {
+        const e = zeusPool.take()
+        if (!e) break
+        const t = Transform.getMutable(e)
+        t.position = V(x, 0, z)
+        t.rotation = yawQ(Math.random() * 360)
+        t.scale = V(2.2, 1, 2.2)
+        active.push({ e, life: 0.22, max: 0.22, kind: 'strike', r: 1.1, asc: 3, pool: zeusPool })
+      }
+    } else if (ev.t === 'divine') {
+      const e = divinePool.take()
+      if (!e) continue
+      Transform.getMutable(e).position = V(ev.x, 0.05, ev.z)
+      active.push({ e, life: 0.45, max: 0.45, kind: 'nova', r: ev.r, asc: 3, pool: divinePool })
     } else if (ev.t === 'quake') {
       const e = quakePool.take()
       if (!e) continue
@@ -729,6 +748,25 @@ function deathPuff(x: number, z: number, s: number) {
   if (!e) return
   Transform.getMutable(e).position = V(x, 0.05, z)
   active.push({ e, life: 0.55, max: 0.55, kind: 'up', asc: 0, pool: deathPool, r: 0.75 * s })
+}
+
+// ───────── Zeus lightning + divine form ─────────
+let zeusPool: Pool
+let divinePool: Pool
+let godAura: Entity
+let godShown = false
+/** the god's divine form follows the player's avatar (halo, wings of light, aura) */
+export function setGodForm(on: boolean) {
+  if (on === godShown) return
+  godShown = on
+  if (on) {
+    GltfContainer.createOrReplace(godAura, { src: 'models/god_aura.glb' })
+    AvatarAttach.createOrReplace(godAura, { anchorPointId: AvatarAnchorPointType.AAPT_POSITION })
+  } else {
+    AvatarAttach.deleteFrom(godAura)
+    GltfContainer.deleteFrom(godAura)
+    Transform.getMutable(godAura).position = HIDE
+  }
 }
 
 let aimYaw = 0

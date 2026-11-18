@@ -156,6 +156,65 @@ B.quad((0, -0.14, 0.05), (0, 0.14, 0.05), (0, 0.14, -0.9), (0, -0.14, -0.9), JET
 B.emit('w')
 done('w_nuke')
 
+# 7 Zeus' Atomic Thunder: a crackling golden lightning javelin
+M = scene()
+CORE = M.add('zeus_core', '#FFFFFF', 0.0, 0.2, '#FFE45A', 10.0)
+GOLDZ = metal(M, 'zeus_gold', '#FFD040', 0.2, '#B08000', 1.0)
+ARC = tmat(M, 'zeus_arc', t_lightning('w_zeus_arc.png', '#FFE45A', (1, 1, 1), w=96, h=512, seed=7), 8)
+B = Builder(M)
+pts = [(0, 0, 0.0), (0.06, 0, 0.35), (-0.05, 0, 0.6), (0.07, 0, 0.9), (-0.04, 0, 1.2), (0.0, 0, 1.55)]
+for (x0, y0, z0), (x1, y1, z1) in zip(pts, pts[1:]):
+    ln = math.hypot(x1 - x0, z1 - z0)
+    B.box((x0 + x1) / 2, 0, (z0 + z1) / 2, 0.07, 0.07, ln + 0.02, CORE, yaw=math.degrees(math.atan2(x1 - x0, z1 - z0)))
+    B.box((x0 + x1) / 2, 0, (z0 + z1) / 2, 0.11, 0.035, ln, GOLDZ, yaw=math.degrees(math.atan2(x1 - x0, z1 - z0)))
+B.octa(0, 0, 1.62, 0.07, 0.04, CORE)
+B.box(0, 0, -0.1, 0.16, 0.16, 0.22, GOLDZ)
+for k in range(3):
+    a = math.radians(k * 60)
+    dx, dy = math.cos(a) * 0.3, math.sin(a) * 0.3
+    B.quad((-dx, -dy, 0.0), (dx, dy, 0.0), (dx, dy, 1.7), (-dx, -dy, 1.7), ARC, uv=((0, 0), (1, 0), (1, 1), (0, 1)))
+B.emit('w')
+done('w_zeus')
+
+# 8 Divine Ascension: a radiant sun-orb held by the god
+M = scene()
+SUN = M.add('sun_core', '#FFFFFF', 0.0, 0.2, '#FFF2B0', 12.0)
+RAYS = tmat(M, 'sun_rays', t_radial('w_god_rays.png', '#FFD86A', (1, 1, 1), spikes=12, power=1.6), 6)
+GOLDG = metal(M, 'god_gold', '#FFD040', 0.2, '#B08000', 1.5)
+B = Builder(M)
+B.sphere(0, 0, 0.35, 0.16, SUN, 12, 8)
+B.ring(0, 0, 0.35, 0.24, 0.28, 0.03, GOLDG, seg=24)
+cross3(B, 1.0, RAYS)
+B.emit('w')
+done('w_god')
+
+# Divine form (attached to the player's avatar): halo, wings of light, aura column, sun mandorla, ground sigil
+M = scene()
+HALO = M.add('halo', '#FFF6C8', 0.3, 0.2, '#FFD86A', 10.0)
+WING = M.add('wing_light', '#FFF4D0', 0.0, 0.4, '#FFD86A', 4.0, alpha=0.75)
+FEATH = M.add('wing_edge', '#FFFFFF', 0.0, 0.3, '#FFFFFF', 8.0)
+COL = tmat(M, 'god_column', t_band('god_column.png', '#FFD86A', (1, 1, 1)), 3)
+MAND = tmat(M, 'mandorla', t_radial('god_mandorla.png', '#FFE7A0', (1, 1, 1), spikes=16, power=1.4), 4)
+SIG = tmat(M, 'god_sigil', t_rune('god_sigil.png', '#FFD24A', (1, 1, 1), n=512, petals=12, seed=11), 4)
+B = Builder(M)
+B.ring(0, 2.28, 0, 0.24, 0.3, 0.04, HALO, seg=32)
+B.quad((-0.85, 1.05, -0.32), (0.85, 1.05, -0.32), (0.85, 2.75, -0.32), (-0.85, 2.75, -0.32), MAND)
+open_cyl(B, 0.55, 2.6, COL, seg=24)
+flat(B, 2.6, 2.6, SIG, y=0.03)
+for sgn in (-1, 1):
+    # each wing: 5 long feathers fanning out and up from the shoulder blade
+    for k in range(5):
+        ang = math.radians(10 + k * 17)
+        ln = 1.9 - k * 0.22
+        x0, y0 = sgn * 0.15, 1.45
+        x1, y1 = x0 + sgn * math.cos(ang) * ln, y0 + math.sin(ang) * ln * 0.9 - 0.15
+        w = 0.24 - k * 0.02
+        B.quad((x0, y0 - w, -0.25), (x1, y1 - w * 0.4, -0.35 - k * 0.04), (x1, y1 + w * 0.4, -0.35 - k * 0.04), (x0, y0 + w, -0.25), WING)
+        ln2 = math.hypot(x1 - x0, y1 - y0)
+        B.box((x0 + x1) / 2, (y0 + y1) / 2 + w * 0.45, -0.3, ln2, 0.03, 0.03, FEATH, roll=math.degrees(math.atan2(y1 - y0, x1 - x0)))
+B.emit('god')
+finish('god_aura')
+
 # ═════════════ SWING / IMPACT FX ═════════════
 SW = {
     'fist': ('#D9D2FF', (1, 1, 1), False),

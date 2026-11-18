@@ -1,7 +1,7 @@
 // Multiplayer: other players' status, PvP hits, kill bounties and the shared leaderboard.
 import {
   engine, Entity, Schemas, Transform, PlayerIdentityData, MeshRenderer, Material, MaterialTransparencyMode,
-  TextShape, Billboard, BillboardMode, Font, TextAlignMode
+  TextShape, Billboard, BillboardMode, Font, TextAlignMode, GltfContainer, AvatarAttach, AvatarAnchorPointType
 } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { MessageBus } from '@dcl/sdk/message-bus'
@@ -24,6 +24,7 @@ export type Status = {
   orr: number
   au: number
   k: number
+  gd?: boolean
 }
 type RemoteInfo = Status & { seen: number; x: number; z: number; entity?: Entity }
 
@@ -137,7 +138,7 @@ export function attackable(myRunActive: boolean, meInArena: boolean): Remote[] {
 }
 
 // ───────────── remote player visuals: level tag, HP bar, their blades & aura ─────────────
-type Vis = { tag: Entity; aura: Entity; blades: Entity[] }
+type Vis = { tag: Entity; aura: Entity; blades: Entity[]; god?: Entity }
 const vis = new Map<string, Vis>()
 const HIDE = Vector3.create(32, -40, 24)
 
@@ -194,8 +195,21 @@ function setupRemoteVisuals() {
       const hide = (e: Entity) => (Transform.getMutable(e).position = HIDE)
       if (!active) {
         ;[v.tag, v.aura, ...v.blades].forEach(hide)
+        if (v.god) {
+          engine.removeEntity(v.god)
+          v.god = undefined
+        }
         if (now - r.seen > 30) remotes.delete(id)
         continue
+      }
+      // remote god: show their divine form on their avatar
+      if (r.gd && !v.god) {
+        v.god = engine.addEntity()
+        GltfContainer.create(v.god, { src: 'models/god_aura.glb' })
+        AvatarAttach.create(v.god, { avatarId: id, anchorPointId: AvatarAnchorPointType.AAPT_POSITION })
+      } else if (!r.gd && v.god) {
+        engine.removeEntity(v.god)
+        v.god = undefined
       }
       const ts = TextShape.getMutable(v.tag)
       const frac = Math.max(0, Math.min(1, r.hp / Math.max(1, r.mh)))

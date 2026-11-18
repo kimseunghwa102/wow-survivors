@@ -5,7 +5,7 @@ export const META_MAX = 5
 export const metaCost = (lvl: number) => 80 * (lvl + 1) * (lvl + 1)
 
 /** Armory: permanent manual weapons, bought in order. Must match ARMORY in src/game/defs.ts. */
-export const ARMORY_COST = [0, 200, 500, 2000, 4000, 20000, 100000]
+export const ARMORY_COST = [0, 200, 500, 2000, 4000, 20000, 100000, 200000, 1000000]
 /** Daily login streak rewards (day 1..7, day 7+ repeats the last). */
 export const DAILY_REWARD = [100, 150, 250, 400, 600, 800, 1200]
 export const dayKey = (t = Date.now()) => new Date(t).toISOString().slice(0, 10)

@@ -2,7 +2,7 @@ import ReactEcs, { ReactEcsRenderer, UiEntity, Label, Button } from '@dcl/sdk/re
 import { Color4 } from '@dcl/sdk/math'
 import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold } from './game/game'
 import { optionLabel, Option } from './game/core'
-import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS } from './game/defs'
+import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable } from './game/defs'
 import { feed, topRuns } from './game/net'
 import { save } from './game/persist'
 import { play } from './game/sfx'
@@ -283,7 +283,7 @@ function InfoPanel() {
         return (
           <UiEntity key={w.name} uiTransform={{ flexDirection: 'row', width: '100%', height: 22, alignItems: 'center' }}>
             <Label value={`${owned ? '■' : '□'} ${w.name}`} fontSize={12} color={owned ? C(w.color) : DIM} uiTransform={{ width: 150, height: 20 }} textAlign="middle-left" />
-            {(next || (owned && i !== eq && i < NUKE_TIER)) ? (
+            {(next || (owned && i !== eq && isHoldable(i))) ? (
               <Button
                 value={status}
                 fontSize={11}

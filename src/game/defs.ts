@@ -107,6 +107,8 @@ export type ArmoryDef = {
   model: string
   fx: string
   gun?: boolean
+  chain?: number // Zeus: lightning jumps to this many extra foes
+  god?: boolean // Divine Ascension: every hit is lethal
   quake?: number // hammer shockwave radius
   leech?: number // hp per hit
   desc: string
@@ -118,8 +120,13 @@ export const ARMORY: ArmoryDef[] = [
   { name: 'Flame Sword', cost: 2000, dmg: 120, range: 3.7, arc: 160, cd: 0.38, knock: 4, color: '#FF6A1E', model: 'models/w_flame.glb', fx: 'flame', desc: 'Wide burning slashes' },
   { name: 'Reaper Blade', cost: 4000, dmg: 210, range: 4.6, arc: 240, cd: 0.4, knock: 5, leech: 1, color: '#B07BFF', model: 'models/w_reaper.glb', fx: 'reaper', desc: 'Huge sweeps that steal life' },
   { name: 'Storm Minigun', cost: 20000, dmg: 60, range: 18, arc: 0, cd: 0.07, knock: 1.5, gun: true, color: '#7FE8FF', model: 'models/w_minigun.glb', fx: 'gun', desc: 'Hold to shred everything in a line' },
-  { name: 'Doomsday Nuke', cost: 100000, dmg: 40000, range: 16, arc: 0, cd: 30, knock: 0, color: '#FF3B2E', model: 'models/w_nuke.glb', fx: 'nuke', desc: 'Press F: wipe the screen (30s cooldown)' }
+  { name: 'Doomsday Nuke', cost: 100000, dmg: 40000, range: 16, arc: 0, cd: 30, knock: 0, color: '#FF3B2E', model: 'models/w_nuke.glb', fx: 'nuke', desc: 'Press F: wipe the screen (30s cooldown)' },
+  { name: "Zeus' Atomic Thunder", cost: 200000, dmg: 1400, range: 20, arc: 0, cd: 0.22, knock: 3, chain: 7, color: '#FFE45A', model: 'models/w_zeus.glb', fx: 'zeus', desc: 'Chain lightning that leaps through 8 foes' },
+  { name: 'Divine Ascension', cost: 1000000, dmg: 1, range: 10, arc: 360, cd: 0.35, knock: 12, god: true, color: '#FFFFFF', model: 'models/w_god.glb', fx: 'god', desc: 'BECOME A GOD — divine form, everything dies in one hit' }
 ]
+export const GOD_TIER = 8
+/** weapons you can hold (the nuke is an F-key ability, not a held weapon) */
+export const isHoldable = (tier: number) => tier !== NUKE_TIER
 export const NUKE_TIER = 6
 export const NUKE = { cd: 30, delay: 1.2, radius: 16, dmg: 40000, bossCap: 0.2, ahead: 9 }
 /** manual damage grows with player level so the armory stays relevant deep into a run */
