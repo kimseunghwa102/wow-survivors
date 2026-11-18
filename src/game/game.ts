@@ -9,7 +9,8 @@ import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName } 
 import { play, setupSfx, musicLevel } from './sfx'
 import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf } from './net'
 import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile, serverArmoryBuy, serverClaimDaily, shopConfig, shopQuote, shopConfirm } from './persist'
-import { getUserAccount, sendAsync } from '~system/EthereumController'
+import { getUserAccount, sendAsync, requirePayment } from '~system/EthereumController'
+import { getPlayer } from '@dcl/sdk/players'
 
 export type Phase = 'idle' | 'start' | 'running' | 'levelup' | 'chest' | 'dead'
 export type MetaKey = 'might' | 'hp' | 'magnet' | 'xp'
@@ -158,9 +159,15 @@ export async function buyGold(currency: 'ETH' | 'MANA') {
   if (!save.online) return void (G.payMsg = 'Save server offline — try again in a moment')
   G.payBusy = true
   try {
-    const acc = await getUserAccount({})
-    const from = acc.address
-    if (!from) throw new Error('connect a wallet to buy gold (guests cannot pay)')
+    // wallet address: the player identity is reliable in every explorer; getUserAccount is a fallback
+    const pl = getPlayer()
+    let from = pl && !pl.isGuest && /^0x[0-9a-fA-F]{40}$/.test(pl.userId) ? pl.userId : ''
+    if (!from) {
+      try {
+        from = (await getUserAccount({})).address ?? ''
+      } catch {}
+    }
+    if (!from) throw new Error(pl?.isGuest ? 'you are logged in as a guest — log in with a wallet to buy gold' : 'could not read your wallet address')
     G.payMsg = 'Getting a price quote…'
     const q = await shopQuote(currency, me().name, GOLD_PACKS[G.packSel].id)
     const amountHex = '0x' + decToHex(q.amountWei)
@@ -169,16 +176,31 @@ export async function buyGold(currency: 'ETH' | 'MANA') {
         ? { from, to: q.to, value: amountHex }
         : { from, to: MANA_TOKEN, value: '0x0', data: '0xa9059cbb' + pad64(q.to) + pad64(amountHex) }
     G.payMsg = `Confirm ${q.amount} ${currency} in your wallet…`
-    const res = await sendAsync({ id: Date.now() % 1e9, method: 'eth_sendTransaction', jsonParams: JSON.stringify([tx]) })
-    let hash = ''
-    try {
-      const j = JSON.parse(res.jsonAnyResponse)
-      hash = typeof j === 'string' ? j : j?.result ?? ''
-      if (!hash && j?.error) throw new Error(j.error.message ?? 'wallet rejected the transaction')
-    } catch (e) {
-      if (/^0x[0-9a-fA-F]{64}$/.test(res.jsonAnyResponse)) hash = res.jsonAnyResponse
-      else throw e
+    const pickHash = (raw: string) => {
+      const m = /0x[0-9a-fA-F]{64}/.exec(raw ?? '')
+      return m ? m[0] : ''
     }
+    let hash = ''
+    let why = ''
+    try {
+      const res = await sendAsync({ id: Date.now() % 1e9, method: 'eth_sendTransaction', jsonParams: JSON.stringify([tx]) })
+      hash = pickHash(res.jsonAnyResponse)
+      if (!hash) why = res.jsonAnyResponse
+    } catch (e: any) {
+      why = String(e?.message ?? e)
+    }
+    if (!hash) {
+      // fallback: the explorer's built-in payment prompt
+      try {
+        const res = await requirePayment({ toAddress: q.to, amount: q.amount, currency })
+        hash = pickHash(res.jsonAnyResponse)
+        if (!hash) why = res.jsonAnyResponse || why
+      } catch (e: any) {
+        why = String(e?.message ?? e) || why
+      }
+    }
+    if (!hash && /denied|reject|cancel/i.test(why)) throw new Error('payment cancelled in the wallet')
+    if (!hash && why) throw new Error(why.slice(0, 120))
     if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) throw new Error('no transaction was sent')
     G.payMsg = 'Payment sent — waiting for the blockchain (usually under a minute)…'
     // poll until mined (the server also settles it on your next login if you leave)
