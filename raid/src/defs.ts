@@ -30,7 +30,8 @@ export const RAID = {
 export const BOSS = {
   name: 'THE PALE SOVEREIGN',
   title: 'Reaper of the Last Hour',
-  home: { x: 8, z: 10 },
+  home: { x: 8, z: 8.7 },
+  baseY: 0.4, // his tattered hem hangs below his feet: lift him so nothing dips under the ground
   radius: 2.6, // body hitbox
   model: 'models/reaper.glb'
 }
@@ -58,3 +59,29 @@ export const GOLD_PACKS = [
 ]
 export const FIRST_BUY_BONUS = 0.5
 export const MANA_TOKEN = '0x0f5d2fb29fb7d3cfee444a200298f468908cc942'
+
+/** your castle build follows you here: auto-skills fire at the reaper (must match server/src/raid.ts SKILL_DPS) */
+export type SkillId = 'lash' | 'bolt' | 'orbit' | 'aura' | 'thunder' | 'nova'
+export const SKILL_DPS: Record<SkillId, number> = { lash: 30, bolt: 28, orbit: 25, aura: 22, thunder: 35, nova: 32 }
+export const SKILLS: Record<SkillId, { name: string; color: string; fx: string; cd: number; range: number }> = {
+  lash: { name: 'Rift Scythe', color: '#FF3B4E', fx: 'slash', cd: 1.0, range: 5.5 },
+  bolt: { name: 'Star Shard', color: '#A26BFF', fx: 'shard', cd: 0.7, range: 14 },
+  orbit: { name: 'Halo Glaives', color: '#5EF2FF', fx: 'glaive', cd: 0.5, range: 4.2 },
+  aura: { name: 'Void Bloom', color: '#FF4FD2', fx: 'bloom', cd: 0.5, range: 4.5 },
+  thunder: { name: 'Storm Sigil', color: '#9FE8FF', fx: 'sigil', cd: 1.2, range: 14 },
+  nova: { name: 'Ember Pulse', color: '#FF8A1E', fx: 'pulse', cd: 1.6, range: 7 }
+}
+export type Build = { level: number; weapons: [SkillId, number][]; passives: [string, number][]; evolved: SkillId[] }
+export const TIER_SUFFIX = ['', '_t2', '_t3', '_asc']
+export const skillTier = (b: Build, id: SkillId) => (b.evolved.includes(id) ? 3 : (b.weapons.find((w) => w[0] === id)?.[1] ?? 0) >= 7 ? 2 : (b.weapons.find((w) => w[0] === id)?.[1] ?? 0) >= 4 ? 1 : 0)
+export function skillMult(b: Build) {
+  const pv = (id: string) => b.passives.find((p) => p[0] === id)?.[1] ?? 0
+  return 1 + 0.08 * pv('might') + 0.06 * pv('haste') + 0.05 * pv('duplicator')
+}
+/** damage per second one skill deals vs the reaper */
+export function skillDps(b: Build, id: SkillId) {
+  const lv = b.weapons.find((w) => w[0] === id)?.[1] ?? 0
+  return SKILL_DPS[id] * lv * (b.evolved.includes(id) ? 1.6 : 1) * skillMult(b) * RAID.levelScale(b.level)
+}
+/** keeps a ring/disc of radius r (centred at x,z) inside the parcel — anything poking out would be hidden by the explorer */
+export const fitR = (x: number, z: number, r: number) => Math.max(0.5, Math.min(r, x - 0.25, 15.75 - x, z - 0.25, 15.75 - z))

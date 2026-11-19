@@ -20,6 +20,34 @@ export const RAID = {
   goldMax: 25_000
 }
 
+/** auto-skill damage per second per skill level vs the reaper (must match raid/src/defs.ts SKILL_DPS) */
+export const SKILL_DPS: Record<string, number> = { lash: 30, bolt: 28, orbit: 25, aura: 22, thunder: 35, nova: 32 }
+export type Build = { level: number; weapons: [string, number][]; passives: [string, number][]; evolved: string[] }
+/** the build a hunter brings into the raid (their latest run), condensed */
+export function buildOf(raw: any): Build | null {
+  try {
+    const b = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (!b || !Array.isArray(b.weapons)) return null
+    return {
+      level: Math.max(1, Math.min(999, Math.floor(n(b.level)))),
+      weapons: b.weapons.filter((w: any) => SKILL_DPS[w?.[0]] !== undefined).slice(0, 6).map((w: any) => [String(w[0]), Math.max(1, Math.min(8, Math.floor(n(w[1]))))]),
+      passives: (b.passives ?? []).slice(0, 6).map((p: any) => [String(p[0]), Math.max(1, Math.min(5, Math.floor(n(p[1]))))]),
+      evolved: (b.evolved ?? []).filter((x: any) => SKILL_DPS[x] !== undefined).slice(0, 6).map(String)
+    }
+  } catch {
+    return null
+  }
+}
+/** total auto-skill dps of a build (same formula on the client) */
+export function skillDps(b: Build | null) {
+  if (!b) return 0
+  const pv = (id: string) => b.passives.find((p) => p[0] === id)?.[1] ?? 0
+  const mult = 1 + 0.08 * pv('might') + 0.06 * pv('haste') + 0.05 * pv('duplicator')
+  let d = 0
+  for (const [w, lv] of b.weapons) d += SKILL_DPS[w] * lv * (b.evolved.includes(w) ? 1.6 : 1)
+  return d * mult * RAID.levelScale(b.level)
+}
+
 /** cosmetic loot table (ids must match src/raid/defs.ts COSMETICS) */
 export const COSMETICS = [
   { id: 'title_slayer', rarity: 'common', w: 34 },
@@ -64,7 +92,8 @@ CREATE TABLE IF NOT EXISTS player_items (
   PRIMARY KEY (address, item)
 );
 ALTER TABLE players ADD COLUMN IF NOT EXISTS cosmetic TEXT;
-ALTER TABLE players ADD COLUMN IF NOT EXISTS title TEXT`
+ALTER TABLE players ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS last_build TEXT`
 
 /** the reaper's day turns over at midnight Korea time */
 export const raidDay = (t = Date.now()) => new Date(t + 9 * 3600e3).toISOString().slice(0, 10)
@@ -109,9 +138,9 @@ export async function raidState(db: Sql, address?: string, now = Date.now()) {
 }
 
 /** most damage this hunter could have dealt since their last accepted hit */
-export function allowance(p: { armory: number; best_level: number }, sinceLastSec: number) {
+export function allowance(p: { armory: number; best_level: number; last_build?: string | null }, sinceLastSec: number) {
   const tier = Math.max(0, Math.min(RAID.dps.length - 1, n(p.armory)))
-  const dps = RAID.dps[tier] * RAID.levelScale(n(p.best_level)) * RAID.slack
+  const dps = (RAID.dps[tier] * RAID.levelScale(n(p.best_level)) + skillDps(buildOf(p.last_build))) * RAID.slack
   const burst = tier >= 6 && sinceLastSec >= 25 ? RAID.burst * RAID.levelScale(n(p.best_level)) : 0
   return Math.floor(dps * Math.min(RAID.window, Math.max(0, sinceLastSec)) + burst)
 }
@@ -119,7 +148,7 @@ export function allowance(p: { armory: number; best_level: number }, sinceLastSe
 export async function raidHit(db: Sql, address: string, name: string, claimed: number, now = Date.now()) {
   const r = await raidToday(db, now)
   if (r.killed_at) return { accepted: 0, killed: false }
-  const p = (await db.query('SELECT armory, best_level, is_guest FROM players WHERE address = $1', [address])).rows[0]
+  const p = (await db.query('SELECT armory, best_level, is_guest, last_build FROM players WHERE address = $1', [address])).rows[0]
   if (!p) return { accepted: 0, killed: false }
   let row = (await db.query('SELECT * FROM raid_dmg WHERE day = $1 AND address = $2', [r.day, address])).rows[0]
   if (!row) {
@@ -184,8 +213,8 @@ async function distributeLoot(db: Sql, day: string, maxHp: number, rand = Math.r
 
 export async function inventory(db: Sql, address: string) {
   const items = (await db.query('SELECT item, qty FROM player_items WHERE address = $1', [address])).rows
-  const p = (await db.query('SELECT cosmetic, title FROM players WHERE address = $1', [address])).rows[0]
-  return { items: Object.fromEntries(items.map((r: any) => [r.item, n(r.qty)])), cosmetic: p?.cosmetic ?? null, title: p?.title ?? null }
+  const p = (await db.query('SELECT cosmetic, title, last_build FROM players WHERE address = $1', [address])).rows[0]
+  return { items: Object.fromEntries(items.map((r: any) => [r.item, n(r.qty)])), cosmetic: p?.cosmetic ?? null, title: p?.title ?? null, build: buildOf(p?.last_build) }
 }
 
 export async function equipCosmetic(db: Sql, address: string, item: string | null) {

@@ -178,6 +178,11 @@ export async function saveCheckpoint(db: Sql, id: string, address: string, snap:
     'UPDATE runs SET snapshot = $1, checkpoint_at = NOW(), time_sec = $2, level = $3, kills = $4, gold_claim = $5, pvp_kills = $6 WHERE id = $7 AND address = $8 AND ended_at IS NULL',
     [text, Math.floor(num(snap?.time)), Math.floor(num(snap?.level)), Math.floor(num(snap?.kills)), Math.floor(num(snap?.gold)), Math.floor(num(snap?.pvpKills)), id, address]
   )
+  if ((r.rowCount ?? 0) > 0) {
+    // the latest build follows the hunter into the raid at -91,71
+    const build = JSON.stringify({ level: snap?.level, weapons: snap?.weapons, passives: snap?.passives, evolved: snap?.evolved })
+    if (build.length < 4000) await db.query('UPDATE players SET last_build = $1 WHERE address = $2', [build, address])
+  }
   return (r.rowCount ?? 0) > 0
 }
 

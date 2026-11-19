@@ -11,7 +11,7 @@ import { MessageBus } from '@dcl/sdk/message-bus'
 import { getPlayer } from '@dcl/sdk/players'
 import { getUserAccount, sendAsync, requirePayment } from '~system/EthereumController'
 import { movePlayerTo } from '~system/RestrictedActions'
-import { ARMORY, NUKE_TIER, RAID, BOSS, COSMETICS, cosmetic, GOLD_PACKS, MANA_TOKEN } from './defs'
+import { ARMORY, NUKE_TIER, RAID, BOSS, COSMETICS, cosmetic, GOLD_PACKS, MANA_TOKEN, SKILLS, SkillId, Build, skillTier, skillDps, TIER_SUFFIX, fitR } from './defs'
 import { loadProfile, raidState, raidHit, equipCosmetic, pingServer, shopConfig, shopQuote, shopConfirm, Profile, Inventory, RaidState } from './api'
 import { play, musicLevel } from './sfx'
 import { PORTAL } from './world'
@@ -23,6 +23,7 @@ export const R = {
   status: 'waking the save server…',
   profile: null as Profile | null,
   inv: { items: {}, cosmetic: null, title: null } as Inventory,
+  build: null as Build | null,
   raid: null as RaidState | null,
   offset: 0, // server clock − local clock (ms)
   hp: 400,
@@ -127,7 +128,7 @@ const fxs: Fx[] = []
 let warnPool: Pool, conePool: Pool, eruptPool: Pool, shockPool: Pool, boltPool: Pool, hitPool: Pool, domePool: Pool, sweepPool: Pool, dmgPool: Pool
 
 function setupBoss() {
-  bossRoot = ent(undefined, V(BOSS.home.x, 0, BOSS.home.z))
+  bossRoot = ent(undefined, V(BOSS.home.x, BOSS.baseY, BOSS.home.z))
   bossModel = engine.addEntity()
   Transform.create(bossModel, { parent: bossRoot, rotation: yawQ(bossYaw) })
   GltfContainer.create(bossModel, { src: BOSS.model })
@@ -200,7 +201,7 @@ const PLAN: { t: number; k: 'move' | 'sweep' | 'slam' | 'erupt' | 'bolts' | 'fin
 ]
 const CYCLE = [18, 14, 11]
 const DMG = { sweep: 80, slam: 130, erupt: 70, bolt: 42, dome: 35 }
-type Pending = { at: number; fn: () => void }
+type Pending = { at: number; fn: () => void; always?: boolean }
 let pending: Pending[] = []
 let lastK = -1
 let lastLocal = 0
@@ -229,7 +230,7 @@ function schedule(T: number) {
   const anchor = { x: BOSS.home.x + (rnd() - 0.5) * 1.2, z: BOSS.home.z + (rnd() - 0.5) * 0.9 }
   const eruptN = 4 + ph * 2
   const erupts: [number, number][] = []
-  for (let i = 0; i < eruptN; i++) erupts.push([1.6 + rnd() * 12.8, 2.6 + rnd() * 12])
+  for (let i = 0; i < eruptN; i++) erupts.push([2.2 + rnd() * 11.6, 2.4 + rnd() * 11.4])
   const finaleDome = ph >= 1 && rnd() < 0.85
   for (const p of PLAN) {
     const at = p.t * s
@@ -242,26 +243,27 @@ function startAttack(kind: string, T: number, s: number, ph: number, anchor: { x
   const p = me()
   const mult = 1 + ph * 0.25
   if (kind === 'move') {
-    const from = V(bossPos.x, bossY, bossPos.z)
+    const from = V(bossPos.x, BOSS.baseY, bossPos.z)
     bossPos = anchor
-    Tween.createOrReplace(bossRoot, { mode: Tween.Mode.Move({ start: from, end: V(anchor.x, 0, anchor.z) }), duration: 1600 * s, easingFunction: EasingFunction.EF_EASESINE })
+    Tween.createOrReplace(bossRoot, { mode: Tween.Mode.Move({ start: from, end: V(anchor.x, BOSS.baseY, anchor.z) }), duration: 1600 * s, easingFunction: EasingFunction.EF_EASESINE })
     bossY = 0
   } else if (kind === 'sweep') {
     const yaw = faceYaw(p.x, p.z)
-    const c = spawnFx(conePool, 'warn', bossPos.x, bossPos.z, 1.6 * s, 9.5, 0.04, yaw)
+    const CR = fitR(bossPos.x, bossPos.z, 9.5)
+    const c = spawnFx(conePool, 'warn', bossPos.x, bossPos.z, 1.6 * s, CR, 0.04, yaw)
     play('r_laugh', 1)
     pending.push({ at: T + 0.6 * s, fn: () => playAnim('Swing') })
     pending.push({
       at: T + 1.6 * s,
       fn: () => {
         play('r_swing')
-        spawnFx(sweepPool, 'sweep', bossPos.x, bossPos.z, 0.5, 9.5, 1.0, yaw)
+        spawnFx(sweepPool, 'sweep', bossPos.x, bossPos.z, 0.5, CR, 1.0, yaw)
         const q = me()
         const dx = q.x - bossPos.x
         const dz = q.z - bossPos.z
         const d = Math.hypot(dx, dz)
         const ang = Math.abs(((((Math.atan2(dx, dz) * 180) / Math.PI - yaw) % 360) + 540) % 360 - 180)
-        if (d < 9.8 && ang < 72) hurt(DMG.sweep * mult, 'the scythe')
+        if (d < CR + 0.3 && ang < 72) hurt(DMG.sweep * mult, 'the scythe')
         if (c) c.life = 0
       }
     })
@@ -269,33 +271,35 @@ function startAttack(kind: string, T: number, s: number, ph: number, anchor: { x
     // he leaps toward you and crashes down: a huge circle right in front of him
     const yaw = faceYaw(p.x, p.z)
     const a = (yaw * Math.PI) / 180
-    const cx = clamp(bossPos.x + Math.sin(a) * 4.5, 3, 13)
-    const cz = clamp(bossPos.z + Math.cos(a) * 4.5, 2.5, 14)
-    spawnFx(warnPool, 'warn', cx, cz, 1.8 * s, 4.6)
+    const cx = clamp(bossPos.x + Math.sin(a) * 4.5, 3.2, 12.8)
+    const cz = clamp(bossPos.z + Math.cos(a) * 4.5, 3.0, 13)
+    const SR = fitR(cx, cz, 4.6)
+    spawnFx(warnPool, 'warn', cx, cz, 1.8 * s, SR)
     play('r_roar', 1.1)
     playAnim('Slam')
-    const hop = { x: clamp(bossPos.x + Math.sin(a) * 0.6, 7, 9), z: clamp(bossPos.z + Math.cos(a) * 0.6, 8.6, 10.2) }
-    Tween.createOrReplace(bossRoot, { mode: Tween.Mode.Move({ start: V(bossPos.x, 0, bossPos.z), end: V(hop.x, 1.5, hop.z) }), duration: 900 * s, easingFunction: EasingFunction.EF_EASEOUTQUAD })
+    const hop = { x: clamp(bossPos.x + Math.sin(a) * 0.5, 7.4, 8.6), z: clamp(bossPos.z + Math.cos(a) * 0.5, 8.3, 9.1) }
+    const Y0 = BOSS.baseY
+    Tween.createOrReplace(bossRoot, { mode: Tween.Mode.Move({ start: V(bossPos.x, Y0, bossPos.z), end: V(hop.x, Y0 + 1.2, hop.z) }), duration: 900 * s, easingFunction: EasingFunction.EF_EASEOUTQUAD })
     pending.push({
       at: T + 0.9 * s,
-      fn: () => Tween.createOrReplace(bossRoot, { mode: Tween.Mode.Move({ start: V(hop.x, 1.5, hop.z), end: V(hop.x, 0, hop.z) }), duration: 450 * s, easingFunction: EasingFunction.EF_EASEINQUAD })
+      fn: () => Tween.createOrReplace(bossRoot, { mode: Tween.Mode.Move({ start: V(hop.x, Y0 + 1.2, hop.z), end: V(hop.x, Y0, hop.z) }), duration: 450 * s, easingFunction: EasingFunction.EF_EASEINQUAD })
     })
     bossPos = hop
     pending.push({
       at: T + 1.8 * s,
       fn: () => {
         play('r_slam')
-        spawnFx(shockPool, 'shock', cx, cz, 0.7, 4.6)
-        spawnFx(eruptPool, 'burst', cx, cz, 0.5, 1.6)
+        spawnFx(shockPool, 'shock', cx, cz, 0.7, fitR(cx, cz, 9.2) / 2)
+        spawnFx(eruptPool, 'burst', cx, cz, 0.5, fitR(cx, cz, 2.5) / 1.55)
         const q = me()
-        if (Math.hypot(q.x - cx, q.z - cz) < 4.7) hurt(DMG.slam * mult, 'the slam')
+        if (Math.hypot(q.x - cx, q.z - cz) < SR + 0.1) hurt(DMG.slam * mult, 'the slam')
       }
     })
   } else if (kind === 'erupt') {
     playAnim('Cast')
     play('r_timestop', 0.8)
-    const spots = [...erupts, [clamp(p.x, 1.2, 14.8), clamp(p.z, 1.6, 14.8)] as [number, number]]
-    for (const [x, z] of spots) spawnFx(warnPool, 'warn', x, z, 1.6 * s, 1.9)
+    const spots = [...erupts, [clamp(p.x, 2.2, 13.8), clamp(p.z, 2.2, 13.8)] as [number, number]]
+    for (const [x, z] of spots) spawnFx(warnPool, 'warn', x, z, 1.6 * s, fitR(x, z, 1.9))
     pending.push({
       at: T + 1.6 * s,
       fn: () => {
@@ -303,8 +307,8 @@ function startAttack(kind: string, T: number, s: number, ph: number, anchor: { x
         const q = me()
         let hit = false
         for (const [x, z] of spots) {
-          spawnFx(eruptPool, 'erupt', x, z, 0.9, 1.9)
-          if (!hit && Math.hypot(q.x - x, q.z - z) < 2.0) hit = true
+          spawnFx(eruptPool, 'erupt', x, z, 0.9, fitR(x, z, 1.9 * 1.55) / 1.55)
+          if (!hit && Math.hypot(q.x - x, q.z - z) < fitR(x, z, 1.9) + 0.1) hit = true
         }
         if (hit) hurt(DMG.erupt * mult, 'the lava')
       }
@@ -335,12 +339,13 @@ function startAttack(kind: string, T: number, s: number, ph: number, anchor: { x
     if (dome) {
       playAnim('Cast')
       play('r_timestop')
-      spawnFx(domePool, 'dome', bossPos.x, bossPos.z, 2.4 * s, 7.2, 0)
+      const DR = fitR(bossPos.x, bossPos.z, 7.2)
+      spawnFx(domePool, 'dome', bossPos.x, bossPos.z, 2.4 * s, DR, 0)
       pending.push({
         at: T + 0.8 * s,
         fn: () => {
           const q = me()
-          if (Math.hypot(q.x - bossPos.x, q.z - bossPos.z) < 7.2) {
+          if (Math.hypot(q.x - bossPos.x, q.z - bossPos.z) < DR) {
             R.slowT = 4
             hurt(DMG.dome * mult, 'the hourglass')
             banner('TIME STOPS AROUND YOU — get out!', 2)
@@ -439,11 +444,153 @@ export function nuke() {
   R.nukeCd = 30
   const d = RAID.burst * 0.9 * levelScale()
   R.pending += d
-  spawnFx(eruptPool, 'erupt', bossPos.x, bossPos.z - 1, 1.2, 4.2)
-  spawnFx(shockPool, 'shock', bossPos.x, bossPos.z, 0.9, 9)
+  spawnFx(eruptPool, 'erupt', bossPos.x, bossPos.z - 1, 1.2, fitR(bossPos.x, bossPos.z - 1, 6.5) / 1.55)
+  spawnFx(shockPool, 'shock', bossPos.x, bossPos.z, 0.9, fitR(bossPos.x, bossPos.z, 9) / 2)
   play('r_slam', 0.7)
   floatDmg(d, '#FF3B2E', true)
   banner('☢ NUKE!', 1.2)
+}
+
+// ───────────────────────── your castle build: auto-skills fire at the reaper ─────────────────────────
+const SKILL_CODE: SkillId[] = ['lash', 'bolt', 'orbit', 'aura', 'thunder', 'nova']
+const skillCd: Partial<Record<SkillId, number>> = {}
+const skillPools: Partial<Record<string, Entity[]>> = {}
+let glaives: Entity[] = []
+let bloom: Entity | undefined
+let buildKey = ''
+let rfOut: number[][] = []
+type Shot = { e: Entity; x: number; z: number; tx: number; tz: number; y: number; t: number; mine: boolean; dmg: number }
+const shots: Shot[] = []
+
+function fxEnt(kind: string, tier: number) {
+  const key = kind + tier
+  const list = (skillPools[key] ??= [])
+  let e = list.find((x) => Transform.get(x).position.y < -20)
+  if (!e) {
+    if (list.length >= 6) return undefined
+    e = ent(`models/fx_${kind}${TIER_SUFFIX[tier]}.glb`)
+    list.push(e)
+  }
+  return e
+}
+function release(e: Entity, after: number, grow?: { from: number; to: number }) {
+  if (grow) Tween.createOrReplace(e, { mode: Tween.Mode.Scale({ start: V(grow.from, 1, grow.from), end: V(grow.to, 1, grow.to) }), duration: after * 1000, easingFunction: EasingFunction.EF_EASEOUTQUAD })
+  pending.push({
+    at: serverNow() / 1000 + after,
+    fn: () => {
+      Tween.deleteFrom(e)
+      Transform.getMutable(e).position = HIDE
+    },
+    always: true
+  })
+}
+
+function setupBuild() {
+  const b = R.build
+  const key = b ? JSON.stringify(b) : ''
+  if (key === buildKey) return
+  buildKey = key
+  for (const g of glaives) engine.removeEntity(g)
+  glaives = []
+  if (bloom) engine.removeEntity(bloom)
+  bloom = undefined
+  if (!b) return
+  const has = (id: SkillId) => b.weapons.some((w) => w[0] === id)
+  if (has('orbit')) {
+    const n = 2 + Math.min(3, Math.floor((b.weapons.find((w) => w[0] === 'orbit')?.[1] ?? 1) / 3))
+    for (let i = 0; i < n; i++) glaives.push(ent(`models/fx_glaive${TIER_SUFFIX[skillTier(b, 'orbit')]}.glb`))
+  }
+  if (has('aura')) bloom = ent(`models/fx_bloom${TIER_SUFFIX[skillTier(b, 'aura')]}.glb`)
+}
+
+/** a skill visual — mine, or another hunter's (tx/tz = point on the reaper) */
+function drawSkill(id: SkillId, tier: number, x: number, z: number, tx: number, tz: number, mine: boolean, dmg = 0) {
+  const k = SKILLS[id].fx
+  const yaw = (Math.atan2(tx - x, tz - z) * 180) / Math.PI
+  if (id === 'lash') {
+    const e = fxEnt(k, tier)
+    if (!e) return
+    const t = Transform.getMutable(e)
+    t.position = V((x + tx) / 2, 1.2, (z + tz) / 2)
+    t.rotation = yawQ(yaw)
+    t.scale = V(2.6, 2.6, 2.6)
+    release(e, 0.3)
+  } else if (id === 'bolt') {
+    const e = fxEnt(k, tier)
+    if (!e) return
+    Transform.getMutable(e).position = V(x, 1.4, z)
+    Transform.getMutable(e).scale = V(1.4, 1.4, 1.4)
+    shots.push({ e, x, z, tx, tz, y: 1.4, t: 0, mine, dmg })
+  } else if (id === 'thunder') {
+    const e = fxEnt(k, tier)
+    if (!e) return
+    const t = Transform.getMutable(e)
+    t.position = V(tx, 0.05, tz)
+    t.scale = V(1.8, 1.8, 1.8)
+    release(e, 0.5)
+  } else if (id === 'nova') {
+    const e = fxEnt(k, tier)
+    if (!e) return
+    const r = fitR(x, z, SKILLS.nova.range)
+    Transform.getMutable(e).position = V(x, 0.06, z)
+    release(e, 0.45, { from: 0.4, to: r })
+  }
+}
+
+function skillStep(dt: number) {
+  const b = R.build
+  const p = me()
+  // persistent visuals: glaives circle you, the bloom blooms under you
+  const T = serverNow() / 1000
+  glaives.forEach((g, i) => {
+    const a = T * 2.6 + (i / glaives.length) * Math.PI * 2
+    const t = Transform.getMutable(g)
+    t.position = V(p.x + Math.cos(a) * 1.6, 1.0, p.z + Math.sin(a) * 1.6)
+    t.rotation = yawQ(((a * 180) / Math.PI) * 4)
+  })
+  if (bloom && b) {
+    const r = SKILLS.aura.range * (1 + 0.05 * (b.passives.find((x) => x[0] === 'expanse')?.[1] ?? 0))
+    const t = Transform.getMutable(bloom)
+    t.position = V(p.x, 0.05, p.z)
+    t.scale = V(r * 2 * 0.5, 1, r * 2 * 0.5)
+  }
+  // shard projectiles (mine and others')
+  for (let i = shots.length - 1; i >= 0; i--) {
+    const s = shots[i]
+    s.t += dt
+    const dx = s.tx - s.x
+    const dz = s.tz - s.z
+    const d = Math.hypot(dx, dz)
+    const step = 24 * dt
+    if (d <= step || s.t > 1.5) {
+      Transform.getMutable(s.e).position = HIDE
+      if (s.mine) spawnFx(hitPool, 'hit', s.tx, s.tz, 0.15, 1, 2 + Math.random() * 3)
+      shots.splice(i, 1)
+      continue
+    }
+    s.x += (dx / d) * step
+    s.z += (dz / d) * step
+    s.y += (3.5 - s.y) * dt * 2
+    const t = Transform.getMutable(s.e)
+    t.position = V(s.x, s.y, s.z)
+    t.rotation = yawQ((Math.atan2(dx, dz) * 180) / Math.PI)
+  }
+  if (!b || R.dead || !R.raid?.alive || !shown) return
+  const dist = Math.hypot(p.x - bossPos.x, p.z - bossPos.z) - BOSS.radius
+  for (const [id] of b.weapons) {
+    skillCd[id] = (skillCd[id] ?? Math.random() * SKILLS[id].cd) - dt
+    if ((skillCd[id] as number) > 0 || dist > SKILLS[id].range) continue
+    skillCd[id] = SKILLS[id].cd
+    const dmg = skillDps(b, id) * SKILLS[id].cd
+    R.pending += dmg
+    const a = Math.atan2(p.x - bossPos.x, p.z - bossPos.z) + (Math.random() - 0.5) * 0.9
+    const tx = bossPos.x + Math.sin(a) * BOSS.radius
+    const tz = bossPos.z + Math.cos(a) * BOSS.radius
+    const tier = skillTier(b, id)
+    if (id !== 'orbit' && id !== 'aura') drawSkill(id, tier, p.x, p.z, tx, tz, true, dmg)
+    if (Math.random() < 0.5) floatDmg(dmg, SKILLS[id].color)
+    if (rfOut.length < 8) rfOut.push([SKILL_CODE.indexOf(id), tier, Math.round(p.x * 10) / 10, Math.round(p.z * 10) / 10, Math.round(tx * 10) / 10, Math.round(tz * 10) / 10])
+  }
 }
 
 // ───────────────────────── server sync ─────────────────────────
@@ -454,7 +601,10 @@ let lastAlive: boolean | null = null
 
 function applyRaid(r: RaidState, inv?: Inventory) {
   R.offset = r.now - Date.now()
-  if (inv) R.inv = inv
+  if (inv) {
+    R.inv = inv
+    if ((inv as any).build) R.build = (inv as any).build
+  }
   if (lastAlive === true && !r.alive) bossDies(r.killer)
   if (lastAlive === null && !r.alive) hideBoss(true)
   if (lastAlive === false && r.alive) hideBoss(false)
@@ -489,6 +639,8 @@ async function reloadProfile() {
     const { profile, inv } = await loadProfile(R.name)
     R.profile = profile
     R.inv = inv
+    R.build = (inv as any).build ?? null
+    setupBuild()
     R.firstPurchase = !!profile.firstPurchase
     R.online = true
     R.status = profile.guest ? 'guest — log in with a wallet to fight and loot' : 'progress shared with the castle'
@@ -700,6 +852,13 @@ export function setupGame() {
     R.party = R.party.slice(0, 5)
     floatDmg(m.d, m.c)
   })
+  bus.on('rf', (m: { id: string; e: number[][] }) => {
+    if (!m || m.id === pl?.userId || !Array.isArray(m.e)) return
+    for (const [c, t, x, z, tx, tz] of m.e.slice(0, 8)) {
+      const id = SKILL_CODE[c]
+      if (id && id !== 'orbit' && id !== 'aura') drawSkill(id, Math.max(0, Math.min(3, t | 0)), x, z, tx, tz, false)
+    }
+  })
   bus.on('rc', (m: { id: string; cos: string | null }) => {
     if (!m || m.id === pl?.userId) return
     const o = others.get(m.id) ?? { cos: null }
@@ -712,6 +871,7 @@ export function setupGame() {
 
   let presenceT = 0
   let godSet = false
+  let rfT = 0
   let slowSet = false
   engine.addSystem((dt) => {
     const T = serverNow() / 1000
@@ -728,7 +888,7 @@ export function setupGame() {
       if (pending[i].at <= T) {
         const p = pending[i]
         pending.splice(i, 1)
-        if (R.raid?.alive) p.fn()
+        if (R.raid?.alive || p.always) p.fn()
       }
     // the reaper turns to face you
     if (shown && R.raid?.alive) {
@@ -793,6 +953,13 @@ export function setupGame() {
       AvatarLocomotionSettings.createOrReplace(engine.PlayerEntity, { walkSpeed: 1.5, jogSpeed: 10, runSpeed: 14, jumpHeight: 5, runJumpHeight: 6, doubleJumpHeight: 5, glidingSpeed: 9, glidingFallingSpeed: 1.2 })
     }
     attackStep(dt)
+    skillStep(dt)
+    rfT += dt
+    if (rfT > 0.25 && rfOut.length) {
+      rfT = 0
+      bus.emit('rf', { id: pl?.userId ?? '', e: rfOut.splice(0, 8) })
+      rfOut = []
+    }
     void syncTick(dt)
 
     // cosmetics presence ~every 4 s

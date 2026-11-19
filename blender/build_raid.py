@@ -504,7 +504,7 @@ def build_arena():
     M.add('portal', '#9B4BFF', 0, 0.3, '#B26BFF', 5.0)
     M.add('bonew', '#B8A47E', 0, 0.7)
     b = Builder(M)
-    E, S, HT = 0.06, 16.0, 19.9
+    E, S, HT = 0.15, 16.0, 19.85
     # cracked ground (8×8 with heave)
     n = 8
     vs, fs, uvs = [], [], []
@@ -512,7 +512,7 @@ def build_arena():
     for j in range(n + 1):
         for i in range(n + 1):
             x, z = E + (S - 2 * E) * i / n, E + (S - 2 * E) * j / n
-            y = 0.0 if i in (0, n) or j in (0, n) else float(rng.uniform(-0.05, 0.12))
+            y = 0.01 if i in (0, n) or j in (0, n) else float(rng.uniform(0.01, 0.14))
             vs.append((x, y, z))
     for j in range(n):
         for i in range(n):
@@ -520,38 +520,37 @@ def build_arena():
             fs.append([a, a + n + 1, a + n + 2, a + 1])
             uvs.append([((i) / n, (j) / n), ((i) / n, (j + 1) / n), ((i + 1) / n, (j + 1) / n), ((i + 1) / n, (j) / n)])
     b.faces(b.a('ground'), vs, fs, uvs=uvs)
-    b.collider(0, -0.3, 0, S, 0.0, S)
     # walls: inner faces carry the 360° panorama; ceiling = storm sky with a blood moon
     walls = [((E, 0, E), (S - E, 0, E), 0), ((S - E, 0, E), (S - E, 0, S - E), 1), ((S - E, 0, S - E), (E, 0, S - E), 2), ((E, 0, S - E), (E, 0, E), 3)]
     for (p0, p1, k) in walls:
         u0, u1 = k / 4, (k + 1) / 4
         b.quad((p0[0], 0, p0[2]), (p1[0], 0, p1[2]), (p1[0], HT, p1[2]), (p0[0], HT, p0[2]), 'wall', uv=((u0, 0), (u1, 0), (u1, 1), (u0, 1)))
     b.quad((E, HT, E), (E, HT, S - E), (S - E, HT, S - E), (S - E, HT, E), 'sky')
-    for (x0, z0, x1, z1) in [(0, 0, S, 0.3), (0, S - 0.3, S, S), (0, 0, 0.3, S), (S - 0.3, 0, S, S)]:
+    for (x0, z0, x1, z1) in [(E, E, S - E, 0.45), (E, S - 0.45, S - E, S - E), (E, E, 0.45, S - E), (S - 0.45, E, S - E, S - E)]:
         b.collider(x0, 0, z0, x1, HT, z1)
     # lava pools + rocks + bones
-    for (cx, cz, r) in [(4.0, 11.5, 1.5), (12.3, 5.2, 1.2), (11.8, 12.6, 0.9)]:
+    for (cx, cz, r) in [(4.2, 11.0, 1.4), (11.9, 5.4, 1.1), (11.6, 12.4, 0.9)]:
         seg = 10
         pts = [(cx + math.cos(2 * math.pi * i / seg) * r * rng.uniform(0.7, 1.15), 0.05, cz + math.sin(2 * math.pi * i / seg) * r * rng.uniform(0.7, 1.15)) for i in range(seg)]
         b.faces(b.a('lava'), [(cx, 0.06, cz)] + pts, [[0, 1 + (i + 1) % seg, 1 + i] for i in range(seg)])
         for i in range(seg):
             x, _, z = pts[i]
-            b.box(x, 0.12, z, rng.uniform(0.3, 0.6), 0.3, rng.uniform(0.3, 0.6), 'rock', yaw=float(rng.uniform(0, 90)), pitch=float(rng.uniform(-15, 15)))
+            b.box(x, 0.25, z, rng.uniform(0.3, 0.6), 0.3, rng.uniform(0.3, 0.6), 'rock', yaw=float(rng.uniform(0, 90)), pitch=float(rng.uniform(-15, 15)))
     for _ in range(14):  # heaved slabs (earthquake)
-        x, z = rng.uniform(1.2, 14.8), rng.uniform(1.2, 14.8)
+        x, z = rng.uniform(2.0, 14.0), rng.uniform(2.0, 14.0)
         if 4.5 < x < 11.5 and 4.5 < z < 11.5:
             continue
-        b.box(x, 0.15, z, rng.uniform(0.8, 1.8), 0.25, rng.uniform(0.6, 1.4), 'rock', yaw=float(rng.uniform(0, 180)), pitch=float(rng.uniform(8, 25)), roll=float(rng.uniform(-15, 15)))
+        b.box(x, 0.45, z, rng.uniform(0.8, 1.6), 0.25, rng.uniform(0.6, 1.2), 'rock', yaw=float(rng.uniform(0, 180)), pitch=float(rng.uniform(8, 22)), roll=float(rng.uniform(-12, 12)))
     for (x, z, yaw) in [(2.2, 6.5, 10), (2.8, 8.8, -15), (13.6, 9.5, 20), (6.2, 14.2, 5), (9.8, 14.4, -8)]:  # graves
-        b.box(x, 0.7, z, 0.75, 1.4, 0.22, 'stone', yaw=yaw, roll=float(rng.uniform(-12, 12)))
+        b.box(x, 0.8, z, 0.75, 1.4, 0.22, 'stone', yaw=yaw, roll=float(rng.uniform(-10, 10)))
     for _ in range(9):
-        x, z = rng.uniform(1.5, 14.5), rng.uniform(1.5, 14.5)
-        b.sphere(x, 0.15, z, 0.18, 'bonew', 6, 4, 0.17, 0.2)
+        x, z = rng.uniform(1.0, 15.0), rng.uniform(1.0, 15.0)
+        b.sphere(x, 0.24, z, 0.18, 'bonew', 6, 4, 0.17, 0.2)
     # rotting trees in the corners (bent, hollow, dripping moss)
-    for (tx, tz, ang) in [(1.6, 1.8, 30), (14.3, 2.2, 150), (1.9, 14.2, -40), (14.2, 14.1, -140)]:
+    for (tx, tz, ang) in [(2.6, 2.9, 45), (13.4, 3.0, 135), (2.7, 13.2, -45), (13.3, 13.1, -135)]:
         rot_tree(b, tx, tz, ang)
     # the dimensional portal home (south edge)
-    px, pz = 8.0, 1.0
+    px, pz = 8.0, 1.2
     for s in (-1, 1):
         b.box(px + s * 1.7, 1.9, pz, 0.6, 3.8, 0.6, 'stone')
         b.box(px + s * 1.7, 3.95, pz, 0.8, 0.3, 0.8, 'rock')
@@ -565,19 +564,19 @@ def build_arena():
 def rot_tree(b, x, z, ang):
     a = math.radians(ang)
     dx, dz = math.cos(a), math.sin(a)
-    pts = [(x, 0, z), (x + dx * 0.4, 2.2, z + dz * 0.4), (x + dx * 1.2, 4.0, z + dz * 1.2), (x + dx * 2.3, 5.2, z + dz * 2.3)]
+    pts = [(x, 0.2, z), (x + dx * 0.4, 2.2, z + dz * 0.4), (x + dx * 1.2, 4.0, z + dz * 1.2), (x + dx * 2.3, 5.2, z + dz * 2.3)]
     r = [0.55, 0.42, 0.3, 0.18]
     for i in range(3):
         seg_between(b, pts[i], pts[i + 1], r[i], 'rot', 6, r[i + 1])
     for k in range(5):  # crooked branches
         base = np.array(pts[1 + k % 3], float)
         ba = a + rng.uniform(-1.6, 1.6)
-        tip = base + np.array((math.cos(ba) * rng.uniform(1.0, 2.0), rng.uniform(0.3, 1.4), math.sin(ba) * rng.uniform(1.0, 2.0)))
+        tip = base + np.array((math.cos(ba) * rng.uniform(0.8, 1.5), rng.uniform(0.3, 1.4), math.sin(ba) * rng.uniform(0.8, 1.5)))
         seg_between(b, base, tip, 0.12, 'rot', 4, 0.03)
         b.box(tip[0], tip[1] - 0.6, tip[2], 0.08, 1.2, 0.08, 'moss')  # hanging moss
     for k in range(3):  # roots
         ra = a + math.pi + (k - 1) * 0.9
-        seg_between(b, (x, 0.3, z), (x + math.cos(ra) * 1.3, -0.05, z + math.sin(ra) * 1.3), 0.2, 'rot', 4, 0.05)
+        seg_between(b, (x, 0.45, z), (x + math.cos(ra) * 0.9, 0.1, z + math.sin(ra) * 0.9), 0.2, 'rot', 4, 0.05)
     b.sphere(x + dx * 0.4, 1.6, z + dz * 0.4, 0.3, 'moss', 6, 4, 0.25, 0.3)
 
 
@@ -642,7 +641,20 @@ def build_fx():
     # hit spark
     fx('fx_r_hit', lambda b: [b.octa(0, 0, 0, 0.35, 0.9, 'spark'), b.octa(0, 0, 0, 0.9, 0.25, 'spark')], [('spark', '#FFE7A0', 10.0, 1.0)])
     # time-stop dome (hourglass curse)
-    fx('fx_r_dome', lambda b: b.sphere(0, 0, 0, 1.0, 'dome', 16, 8), [('dome', '#FFC85A', 1.6, 0.18)])
+    def dome(b):  # hemisphere (never dips below the ground)
+        lon, lat = 16, 5
+        vs, fs = [], []
+        for j in range(lat + 1):
+            th = (math.pi / 2) * j / lat
+            for i in range(lon):
+                a = 2 * math.pi * i / lon
+                vs.append((math.cos(a) * math.cos(th), 0.02 + math.sin(th), math.sin(a) * math.cos(th)))
+        for j in range(lat):
+            for i in range(lon):
+                a, c = j * lon + i, j * lon + (i + 1) % lon
+                fs.append([a, a + lon, c + lon, c])
+        b.faces(b.a('dome'), vs, fs, smooth=True)
+    fx('fx_r_dome', dome, [('dome', '#FFC85A', 1.6, 0.18)])
     # portal swirl disc (vertical, faces -z)
     def portal(b):
         vs, fs = [], []

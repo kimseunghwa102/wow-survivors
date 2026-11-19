@@ -40,8 +40,8 @@
   "kb": 2
  },
  "fx_r_dome": {
-  "tris": 224,
-  "kb": 5
+  "tris": 160,
+  "kb": 4
  },
  "fx_r_portal": {
   "tris": 130,
@@ -67,5 +67,5 @@
   "tris": 42,
   "kb": 4
  },
- "_total_tris": 8490
+ "_total_tris": 8426
 }

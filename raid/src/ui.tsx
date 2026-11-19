@@ -2,7 +2,7 @@ import ReactEcs, { ReactEcsRenderer, UiEntity, Label, Button } from '@dcl/sdk/re
 import { Color4 } from '@dcl/sdk/math'
 import { engine, inputSystem, InputAction, PointerEventType } from '@dcl/sdk/ecs'
 import { R, bank, tier, bestLevel, serverNow, equip, nuke, openGoldShop, buyGold, cosmeticsOwned } from './game'
-import { ARMORY, NUKE_TIER, BOSS, COSMETICS, RARITY_COLOR, cosmetic, GOLD_PACKS, FIRST_BUY_BONUS, RAID } from './defs'
+import { ARMORY, NUKE_TIER, BOSS, COSMETICS, RARITY_COLOR, cosmetic, GOLD_PACKS, FIRST_BUY_BONUS, RAID, SKILLS, skillDps, skillTier } from './defs'
 import { goHome } from './world'
 
 const C = (hex: string, a = 1) => Color4.fromHexString(hex + Math.round(a * 255).toString(16).padStart(2, '0'))
@@ -82,6 +82,25 @@ function HeroCard() {
         <Label value={`${fmt((RAID.dps[t] - (t >= NUKE_TIER ? RAID.nukeDps : 0)) * RAID.levelScale(bestLevel()))} dmg/s vs the reaper · range ${w.range}m`} fontSize={10} color={DIM} uiTransform={{ height: 14 }} textAlign="middle-left" />
         {t >= NUKE_TIER ? <Label value={R.nukeCd > 0 ? `☢ nuke recharging ${Math.ceil(R.nukeCd)}s` : '☢ NUKE READY — press F'} fontSize={11} color={R.nukeCd > 0 ? DIM : C('#FF3B2E')} uiTransform={{ height: 15 }} textAlign="middle-left" /> : null}
       </UiEntity>
+      <UiEntity uiTransform={{ width: '100%', padding: { left: 12, right: 12, top: 7, bottom: 7 }, margin: { top: 6 }, flexDirection: 'column' }} uiBackground={FRAME}>
+        {R.build && R.build.weapons.length ? (
+          <UiEntity uiTransform={{ width: '100%', flexDirection: 'column' }}>
+            <Label value={`<b>YOUR BUILD</b> · Lv ${R.build.level} (latest castle run)`} fontSize={11} color={GOLD} uiTransform={{ height: 15 }} textAlign="middle-left" />
+            {R.build.weapons.map(([id, lv]) => (
+              <Label
+                key={id}
+                value={`${SKILLS[id]?.name ?? id} Lv${lv}${skillTier(R.build!, id) === 3 ? ' ★' : ''} · ${fmt(skillDps(R.build!, id))}/s`}
+                fontSize={10}
+                color={C(SKILLS[id]?.color ?? '#FFFFFF')}
+                uiTransform={{ height: 13 }}
+                textAlign="middle-left"
+              />
+            ))}
+          </UiEntity>
+        ) : (
+          <Label value="no build yet — play a run in the castle and your skills will fight here too" fontSize={10} color={C('#FFB84A')} uiTransform={{ height: 28 }} textAlign="middle-left" />
+        )}
+      </UiEntity>
     </UiEntity>
   )
 }
@@ -102,7 +121,7 @@ function GoldHud() {
 function RightMid() {
   const r = R.raid
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: '38%', right: RIGHT }, width: 250, flexDirection: 'column' }}>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: '46%', right: RIGHT }, width: 250, flexDirection: 'column' }}>
       <GoldHud />
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', padding: 10, margin: { top: 6 } }} uiBackground={FRAME}>
         <Label value="<b>TODAY'S HUNTERS</b>" fontSize={12} color={C('#FF7A4A')} uiTransform={{ height: 16 }} textAlign="middle-left" />
