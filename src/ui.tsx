@@ -182,16 +182,21 @@ function RightMid() {
 
 function BossBar() {
   const r = G.run
-  const b = r?.boss
-  if (!r || !b) return null
-  const d = bossFor(b.boss ?? 0)
+  const list = r ? r.bossesAlive() : []
+  if (!r || !list.length) return null
+  const twin = list.length > 1
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 66 }, width: '100%', justifyContent: 'center' }}>
-      <UiEntity uiTransform={{ flexDirection: 'column', alignItems: 'center', padding: { left: 16, right: 16, top: 10, bottom: 10 }, width: 600 }} uiBackground={FRAME}>
-        <Label value={`<b>${d.name}</b>  ·  ${d.title}`} fontSize={16} color={C(d.color)} uiTransform={{ height: 22 }} />
-        <TexBar frac={b.hp / b.maxHp} fill="images/ui_boss.png" w={560} h={16} />
-        <Label value={`${Math.max(0, Math.ceil(b.hp)).toLocaleString()} / ${Math.round(b.maxHp).toLocaleString()}`} fontSize={10} color={DIM} uiTransform={{ height: 14 }} />
-      </UiEntity>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 66 }, width: '100%', justifyContent: 'center', flexDirection: 'row' }}>
+      {list.map((b, i) => {
+        const d = bossFor(b.boss ?? 0)
+        return (
+          <UiEntity key={`boss${i}`} uiTransform={{ flexDirection: 'column', alignItems: 'center', padding: { left: 16, right: 16, top: 10, bottom: 10 }, width: twin ? 420 : 600, margin: { left: 6, right: 6 } }} uiBackground={FRAME}>
+            <Label value={`<b>${d.name}</b>  ·  ${d.title}`} fontSize={twin ? 14 : 16} color={C(d.color)} uiTransform={{ height: 22 }} />
+            <TexBar frac={b.hp / b.maxHp} fill="images/ui_boss.png" w={twin ? 390 : 560} h={16} />
+            <Label value={`${Math.max(0, Math.ceil(b.hp)).toLocaleString()} / ${Math.round(b.maxHp).toLocaleString()}`} fontSize={10} color={DIM} uiTransform={{ height: 14 }} />
+          </UiEntity>
+        )
+      })}
     </UiEntity>
   )
 }
@@ -200,9 +205,10 @@ function NextBoss() {
   const r = G.run
   if (!r || r.boss) return null
   const d = bossFor(r.bossIndex)
+  const twin = d.twin ? bossFor(r.bossIndex + 1) : null
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 66 }, width: '100%', justifyContent: 'center' }}>
-      <Label value={`next boss: <b>${d.name}</b> at Lv ${d.lvl}`} fontSize={12} color={C(d.color, 0.85)} />
+      <Label value={twin ? `next: <b>TWIN BOSSES</b> ${d.name} & ${twin.name} at Lv ${d.lvl}` : `next boss: <b>${d.name}</b> at Lv ${d.lvl}`} fontSize={12} color={C(d.color, 0.85)} />
     </UiEntity>
   )
 }

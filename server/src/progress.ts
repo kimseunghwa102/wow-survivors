@@ -37,7 +37,8 @@ export function weekStart(t = Date.now()) {
 export const weekKey = (t = Date.now()) => new Date(weekStart(t) + KST).toISOString().slice(0, 10)
 
 // ───────────── NIGHTSWARM slayer ─────────────
-export const SLAYER = { gold: 100_000, items: ['title_nightswarm', 'void_wings'], bosses: 10, level: 200 }
+// bosses: every ladder boss up to and including NIGHTSWARM (src/game/defs.ts NIGHTSWARM_INDEX + 1)
+export const SLAYER = { gold: 100_000, items: ['title_nightswarm', 'void_wings'], bosses: 23, level: 200 }
 
 // ───────────── weekly prizes (paid lazily when a new week's board is first read) ─────────────
 export const WEEKLY_PRIZE = [30_000, 20_000, 15_000, 6_000, 6_000, 6_000, 6_000, 6_000, 6_000, 6_000]
@@ -104,7 +105,7 @@ export async function claimQuest(db: Sql, address: string, i: number, now = Date
  * `final` = the run ended (pvp death may lower res.gold below what was already banked: nothing is taken back).
  */
 export async function trackRun(db: Sql, address: string, run: any, res: { time: number; level: number; kills: number; gold: number; flagged: boolean }, bossesClaim: number) {
-  const bosses = Math.max(0, Math.min(Math.floor(n(bossesClaim)), 1 + Math.floor(res.level / 10)))
+  const bosses = Math.max(0, Math.min(Math.floor(n(bossesClaim)), 3 + Math.floor(res.level / 8)))
   const given = n(run.gold_given)
   // clampRun already caps gold to what is physically possible; over-claims are flagged off the boards
   const bankNow = Math.max(0, res.gold - given)

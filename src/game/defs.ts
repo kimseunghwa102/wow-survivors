@@ -175,27 +175,51 @@ export const NUKE = { cd: 30, delay: 1.2, radius: 16, dmg: 40000, bossCap: 0.2, 
 export const manualLevelScale = (lvl: number) => 1 + 0.02 * (lvl - 1)
 
 // ───────────── BOSS LADDER: a boss every few levels up to 200, then endless calamities ─────────────
-export type BossDef = { lvl: number; name: string; title: string; model: string; scale: number; hp: number; dmg: number; speed: number; r: number; slam: number; adds: EnemyKind; color: string }
+export type BossDef = {
+  lvl: number; name: string; title: string; model: string; scale: number; hp: number; dmg: number; speed: number; r: number; slam: number; adds: EnemyKind; color: string
+  /** spawns together with the next entry (twin encounter) */
+  twin?: boolean
+  /** lunges at the player between slams */
+  charge?: boolean
+}
+// original creature bosses + dragons; twins arrive together and share the arena
 export const BOSSES: BossDef[] = [
   { lvl: 10, name: 'Gravemaw', title: 'Glutton of the Crypts', model: 'models/ghoul_elite.glb', scale: 2.6, hp: 1500, dmg: 25, speed: 2.0, r: 1.2, slam: 3.5, adds: 'ghoul', color: '#FF5A3D' },
-  { lvl: 20, name: 'The Hollow King', title: 'Lord of the Casino Crypt', model: 'models/lich.glb', scale: 1.5, hp: 6000, dmg: 35, speed: 1.8, r: 1.3, slam: 4.5, adds: 'skeleton', color: '#B07BFF' },
-  { lvl: 35, name: 'Wraith Matriarch', title: 'Mother of the Veil', model: 'models/wraith.glb', scale: 2.8, hp: 24000, dmg: 45, speed: 2.6, r: 1.3, slam: 5, adds: 'wraith', color: '#3FE6FF' },
+  { lvl: 16, name: 'Voltkit', title: 'The Storm Kitsune', model: 'models/boss_fox.glb', scale: 0.85, hp: 3200, dmg: 28, speed: 2.7, r: 1.3, slam: 4, adds: 'bat', color: '#5EF2FF', charge: true },
+  { lvl: 22, name: 'The Hollow King', title: 'Lord of the Casino Crypt', model: 'models/lich.glb', scale: 1.5, hp: 6500, dmg: 35, speed: 1.8, r: 1.3, slam: 4.5, adds: 'skeleton', color: '#B07BFF' },
+  { lvl: 28, name: 'Sporelord', title: 'King of the Rotting Grove', model: 'models/boss_toad.glb', scale: 0.8, hp: 12000, dmg: 40, speed: 1.6, r: 1.8, slam: 5.2, adds: 'ghoul', color: '#9DFF5A' },
+  { lvl: 35, name: 'Wraith Matriarch', title: 'Mother of the Veil', model: 'models/wraith.glb', scale: 2.8, hp: 22000, dmg: 45, speed: 2.6, r: 1.3, slam: 5, adds: 'wraith', color: '#3FE6FF' },
+  { lvl: 42, name: 'Prismhorn', title: 'The Crystal Colossus', model: 'models/boss_golem.glb', scale: 0.85, hp: 36000, dmg: 55, speed: 1.5, r: 1.8, slam: 6, adds: 'skeleton', color: '#7AF0FF' },
   { lvl: 50, name: 'Ossuary Drake', title: 'First Dragon of the Rift', model: 'models/dragon_bone.glb', scale: 1.0, hp: 60000, dmg: 60, speed: 2.0, r: 2.0, slam: 6, adds: 'skeleton', color: '#CFE8FF' },
+  { lvl: 60, name: 'Emberfang', title: 'Twin of Flame', model: 'models/boss_hound.glb', scale: 0.95, hp: 55000, dmg: 65, speed: 2.8, r: 1.5, slam: 5, adds: 'bat', color: '#FF7A1A', twin: true, charge: true },
+  { lvl: 60, name: 'Voltkit Prime', title: 'Twin of Storm', model: 'models/boss_fox.glb', scale: 1.05, hp: 55000, dmg: 65, speed: 2.9, r: 1.5, slam: 5, adds: 'bat', color: '#5EF2FF', charge: true },
   { lvl: 70, name: 'Cinderwing', title: 'The Burning Drake', model: 'models/dragon_fire.glb', scale: 1.1, hp: 130000, dmg: 80, speed: 2.2, r: 2.2, slam: 6.5, adds: 'bat', color: '#FF6A1E' },
+  { lvl: 80, name: 'Lumora', title: 'The Moth Queen', model: 'models/boss_moth.glb', scale: 1.0, hp: 170000, dmg: 85, speed: 2.5, r: 1.8, slam: 7, adds: 'bat', color: '#FFD86A' },
   { lvl: 90, name: 'Voidmaw', title: 'Wyrm Between Stars', model: 'models/dragon_void.glb', scale: 1.15, hp: 250000, dmg: 100, speed: 2.3, r: 2.3, slam: 7, adds: 'wraith', color: '#C04BFF' },
+  { lvl: 100, name: 'Prismhorn Elder', title: 'Twin of Stone', model: 'models/boss_golem.glb', scale: 1.15, hp: 220000, dmg: 105, speed: 1.7, r: 2.2, slam: 7, adds: 'skeleton', color: '#D69BFF', twin: true },
+  { lvl: 100, name: 'Sporelord Ancient', title: 'Twin of Rot', model: 'models/boss_toad.glb', scale: 1.05, hp: 220000, dmg: 105, speed: 1.8, r: 2.2, slam: 7, adds: 'ghoul', color: '#9DFF5A' },
   { lvl: 115, name: 'Elder Ossuary', title: 'The Drake Reborn', model: 'models/dragon_bone.glb', scale: 1.4, hp: 450000, dmg: 125, speed: 2.3, r: 2.6, slam: 7.5, adds: 'skeleton', color: '#CFE8FF' },
+  { lvl: 128, name: 'Magmashell', title: 'The Walking Volcano', model: 'models/boss_turtle.glb', scale: 1.1, hp: 620000, dmg: 135, speed: 1.4, r: 2.8, slam: 8.5, adds: 'skeleton', color: '#FF6A1A' },
   { lvl: 140, name: 'Cinder Tyrant', title: 'Crown of Ash', model: 'models/dragon_fire.glb', scale: 1.55, hp: 800000, dmg: 150, speed: 2.4, r: 2.9, slam: 8, adds: 'bat', color: '#FF6A1E' },
+  { lvl: 155, name: 'Lumora Eternal', title: 'Twin of Dusk', model: 'models/boss_moth.glb', scale: 1.3, hp: 700000, dmg: 160, speed: 2.6, r: 2.2, slam: 8, adds: 'wraith', color: '#FFD86A', twin: true },
+  { lvl: 155, name: 'Magmashell Titan', title: 'Twin of Dawn', model: 'models/boss_turtle.glb', scale: 1.35, hp: 700000, dmg: 160, speed: 1.6, r: 3.2, slam: 9, adds: 'skeleton', color: '#FF6A1A' },
   { lvl: 170, name: 'Abyssal Leviathan', title: 'The Sky That Bites', model: 'models/dragon_void.glb', scale: 1.7, hp: 1400000, dmg: 180, speed: 2.5, r: 3.2, slam: 8.5, adds: 'wraith', color: '#C04BFF' },
+  { lvl: 185, name: 'Ashen Twin', title: 'The Twin Calamity', model: 'models/dragon_fire.glb', scale: 1.6, hp: 1100000, dmg: 190, speed: 2.4, r: 3.0, slam: 8.5, adds: 'bat', color: '#FF6A1E', twin: true },
+  { lvl: 185, name: 'Starless Twin', title: 'The Twin Calamity', model: 'models/dragon_void.glb', scale: 1.6, hp: 1100000, dmg: 190, speed: 2.5, r: 3.0, slam: 8.5, adds: 'wraith', color: '#C04BFF' },
   { lvl: 200, name: 'NIGHTSWARM', title: 'The World Eater', model: 'models/dragon_wyrm.glb', scale: 1.0, hp: 2600000, dmg: 220, speed: 2.4, r: 3.6, slam: 10, adds: 'wraith', color: '#FFD86A' }
 ]
+/** index of NIGHTSWARM in the ladder (bosses slain to reach + kill it; server/src/progress.ts SLAYER.bosses must match) */
+export const NIGHTSWARM_INDEX = BOSSES.length - 1
 export const ENDLESS_EVERY = 20 // after level 200: a Calamity every 20 levels, 35% stronger each time
+const ENDLESS_POOL = BOSSES.filter((b) => !b.twin && b.lvl >= 50 && b.name !== 'NIGHTSWARM' && !b.name.includes('Twin'))
 export function bossFor(index: number): BossDef {
   if (index < BOSSES.length) return BOSSES[index]
   const k = index - BOSSES.length + 1
-  const base = BOSSES[3 + ((k - 1) % 7)]
+  const base = ENDLESS_POOL[(k - 1) % ENDLESS_POOL.length]
   const mul = Math.pow(1.35, k)
   return {
     ...base,
+    twin: false,
     lvl: 200 + k * ENDLESS_EVERY,
     name: `Calamity ${toRoman(k)}: ${base.name}`,
     title: 'Endless Night',

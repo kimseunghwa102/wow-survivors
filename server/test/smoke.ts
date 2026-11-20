@@ -126,10 +126,10 @@ async function main() {
     const sr = await signed(alice, 'POST', '/api/run/start', { weapon: 'lash' })
     await db.query(`UPDATE runs SET started_at = NOW() - INTERVAL '1000 seconds' WHERE id = $1`, [sr.json.runId])
     const before = (await signed(alice, 'POST', '/api/profile', {})).json.profile.bank
-    const sv = await signed(alice, 'POST', '/api/run/save', { runId: sr.json.runId, snap: { v: 1, time: 990, level: 205, kills: 14000, gold: 9000, bossesSlain: 10, weapons: [['lash', 8]], passives: [], evolved: [] } })
+    const sv = await signed(alice, 'POST', '/api/run/save', { runId: sr.json.runId, snap: { v: 1, time: 990, level: 205, kills: 14000, gold: 9000, bossesSlain: 23, weapons: [['lash', 8]], passives: [], evolved: [] } })
     assert(sv.json.slayer === true && sv.json.inv.items.title_nightswarm === 1 && sv.json.inv.items.void_wings === 1, 'NIGHTSWARM slain at Lv 200: title + Void Wings granted')
     assert(sv.json.profile.bank >= before + 100000, 'slayer bonus: +100,000 gold')
-    const sv2 = await signed(alice, 'POST', '/api/run/save', { runId: sr.json.runId, snap: { v: 1, time: 995, level: 205, kills: 14100, gold: 9050, bossesSlain: 10 } })
+    const sv2 = await signed(alice, 'POST', '/api/run/save', { runId: sr.json.runId, snap: { v: 1, time: 995, level: 205, kills: 14100, gold: 9050, bossesSlain: 23 } })
     assert(sv2.json.slayer === false, 'slayer reward only once')
     const q1 = await signed(alice, 'POST', '/api/quests', {})
     assert(q1.json.quests.every((q: any) => q.done), 'that run completed all three quests')

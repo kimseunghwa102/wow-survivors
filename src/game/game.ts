@@ -558,15 +558,18 @@ function handle(evs: Ev[]) {
         break
       case 'bossSpawn': {
         const b = bossFor(e.boss)
+        const prev = e.boss > 0 ? bossFor(e.boss - 1) : null
         play('roar')
         play('boss')
-        banner(`${b.name.toUpperCase()} — ${b.title}`, 5)
+        // twins: one banner for the pair
+        if (b.twin) banner(`⚔ TWIN BOSSES ⚔  ${b.name.toUpperCase()} & ${bossFor(e.boss + 1).name.toUpperCase()}`, 5)
+        else if (!prev?.twin || prev.lvl !== b.lvl) banner(`${b.name.toUpperCase()} — ${b.title}`, 5)
         break
       }
       case 'bossDown': {
         const b = bossFor(e.boss)
         play('evolve')
-        banner(`${b.name.toUpperCase()} HAS FALLEN!`, 4)
+        banner(G.run && G.run.bossesAlive().length ? `${b.name.toUpperCase()} HAS FALLEN! ONE MORE…` : `${b.name.toUpperCase()} HAS FALLEN!`, 4)
         break
       }
       case 'slamWarn':

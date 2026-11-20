@@ -83,13 +83,9 @@ let quakePool: Pool
 let tracerPool: Pool
 let warnPool: Pool
 let slamPool: Pool
-let bossEnt: Entity
-let bossShown = 0
-let bossModel: Entity
-let bossAcc = 0
-let bossLastId = 0
-let bossTx = 0
-let bossTz = 0
+// two boss slots (twin encounters)
+type BossVis = { ent: Entity; model: Entity; shown: number; acc: number; lastId: number; tx: number; tz: number }
+const bossVis: BossVis[] = []
 let held: Entity
 let heldTier = -1
 let swingT = 0
@@ -163,9 +159,12 @@ export function setupView() {
   divinePool = pick('models/fx_pulse_asc.glb', 3, 0)
   godAura = ent()
   deathPool = pick('models/fx_death.glb', 16, 0)
-  bossEnt = ent()
-  bossModel = engine.addEntity()
-  Transform.create(bossModel, { parent: bossEnt })
+  for (let i = 0; i < 2; i++) {
+    const be = ent()
+    const bm = engine.addEntity()
+    Transform.create(bm, { parent: be })
+    bossVis.push({ ent: be, model: bm, shown: 0, acc: 0, lastId: 0, tx: 0, tz: 0 })
+  }
   held = ent()
   for (const k of SWING_FX) swingPools[k] = pick(`models/fx_sw_${k}.glb`, 3, 0)
   quakePool = pick('models/fx_quake.glb', 3, 0)
@@ -195,28 +194,33 @@ let dmgCount = 0
 export function renderRun(run: Run | null, events: Ev[], dt: number) {
   // enemies
   const seen = new Set<number>()
-  let bossSeen = false
+  const bossSeenIds = new Set<number>()
   if (run) {
     for (const e of run.enemies) {
       if (!e.alive) continue
       if (e.kind === 'boss') {
-        bossSeen = true
-        if (bossShown !== e.id) {
-          bossShown = e.id
+        // keep each boss in its own slot
+        let bv = bossVis.find((q) => q.shown === e.id)
+        if (!bv) bv = bossVis.find((q) => !q.shown || !bossSeenIds.has(q.shown) && !run.bossIds.includes(q.shown))
+        if (!bv) continue
+        bossSeenIds.add(e.id)
+        if (bv.shown !== e.id) {
+          bv.shown = e.id
           const d = bossFor(e.boss ?? 0)
-          GltfContainer.createOrReplace(bossModel, { src: d.model })
-          Animator.createOrReplace(bossModel, { states: [{ clip: 'Idle', playing: true, loop: true, speed: 0.8 }] })
-          Transform.getMutable(bossModel).scale = V(d.scale, d.scale, d.scale)
+          GltfContainer.createOrReplace(bv.model, { src: d.model })
+          Animator.createOrReplace(bv.model, { states: [{ clip: 'Idle', playing: true, loop: true, speed: 0.8 }] })
+          Transform.getMutable(bv.model).scale = V(d.scale, d.scale, d.scale)
         }
-        bossAcc += dt
-        if (bossAcc >= MOVE_STEP || bossShown !== bossLastId) {
-          const start = bossLastId === e.id ? V(bossTx, 0, bossTz) : V(e.x, 0, e.z)
-          bossLastId = e.id
-          Tween.createOrReplace(bossEnt, { mode: Tween.Mode.Move({ start, end: V(e.x, 0, e.z) }), duration: MOVE_STEP * 1000, easingFunction: EasingFunction.EF_LINEAR })
-          bossTx = e.x
-          bossTz = e.z
-          bossAcc = 0
-          Transform.getMutable(bossModel).rotation = yawQ((Math.atan2(run.x - e.x, run.z - e.z) * 180) / Math.PI)
+        bv.acc += dt
+        if (bv.acc >= MOVE_STEP || bv.shown !== bv.lastId) {
+          const start = bv.lastId === e.id ? V(bv.tx, 0, bv.tz) : V(e.x, 0, e.z)
+          bv.lastId = e.id
+          Tween.createOrReplace(bv.ent, { mode: Tween.Mode.Move({ start, end: V(e.x, 0, e.z) }), duration: MOVE_STEP * 1000, easingFunction: EasingFunction.EF_LINEAR })
+          bv.tx = e.x
+          bv.tz = e.z
+          bv.acc = 0
+          const face = e.charging !== undefined ? (Math.atan2(e.cvx ?? 0, e.cvz ?? 1) * 180) / Math.PI : (Math.atan2(run.x - e.x, run.z - e.z) * 180) / Math.PI
+          Transform.getMutable(bv.model).rotation = yawQ(face)
         }
         continue
       }
@@ -275,12 +279,13 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
       }
     }
   }
-  if (!bossSeen && bossShown) {
-    bossShown = 0
-    bossLastId = 0
-    Tween.deleteFrom(bossEnt)
-    Transform.getMutable(bossEnt).position = HIDE
-  }
+  for (const bv of bossVis)
+    if (bv.shown && !bossSeenIds.has(bv.shown)) {
+      bv.shown = 0
+      bv.lastId = 0
+      Tween.deleteFrom(bv.ent)
+      Transform.getMutable(bv.ent).position = HIDE
+    }
   for (const [id, v] of enemyEnt)
     if (!seen.has(id)) {
       Tween.deleteFrom(v.e)
@@ -576,6 +581,15 @@ function playEvents(events: Ev[], run: Run | null, tiers?: number[]) {
       if (!e) continue
       Transform.getMutable(e).position = V(ev.x, 0.05, ev.z)
       fxs.push({ e, life: ev.dur, max: ev.dur, pool: warnPool, kind: 'warn', r: ev.r })
+    } else if (ev.t === 'charge') {
+      const e = warnPool.take()
+      if (!e) continue
+      const a = (ev.yaw * Math.PI) / 180
+      const t = Transform.getMutable(e)
+      t.position = V(ev.x + Math.sin(a) * ev.len * 0.5, 0.05, ev.z + Math.cos(a) * ev.len * 0.5)
+      t.rotation = yawQ(ev.yaw)
+      t.scale = V(2.2, 1, ev.len + 2)
+      fxs.push({ e, life: 0.5, max: 0.5, pool: warnPool, kind: 'tracer', r: ev.len })
     } else if (ev.t === 'slam') {
       const e = slamPool.take()
       if (!e) continue
@@ -805,8 +819,12 @@ export function clearView() {
   renderRun(null, [], 0)
   nukeFlight = null
   Transform.getMutable(missile).position = HIDE
-  Transform.getMutable(bossEnt).position = HIDE
-  bossShown = 0
+  for (const bv of bossVis) {
+    Tween.deleteFrom(bv.ent)
+    Transform.getMutable(bv.ent).position = HIDE
+    bv.shown = 0
+    bv.lastId = 0
+  }
 }
 
 

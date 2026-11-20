@@ -1,0 +1,26 @@
+{
+ "boss_fox": {
+  "tris": 3362,
+  "kb": 164
+ },
+ "boss_hound": {
+  "tris": 1476,
+  "kb": 83
+ },
+ "boss_toad": {
+  "tris": 3514,
+  "kb": 121
+ },
+ "boss_golem": {
+  "tris": 346,
+  "kb": 44
+ },
+ "boss_moth": {
+  "tris": 1734,
+  "kb": 99
+ },
+ "boss_turtle": {
+  "tris": 1552,
+  "kb": 90
+ }
+}

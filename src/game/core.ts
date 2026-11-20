@@ -42,6 +42,10 @@ export type Enemy = {
   wind?: number // slam wind-up timer
   slow?: number // seconds of chill left (Frost Comet)
   frozen?: number // seconds fully frozen (Glacier Cataclysm)
+  chargeCd?: number
+  charging?: number
+  cvx?: number
+  cvz?: number
 }
 export type PickKind = 'gem' | 'coin' | 'chest' | 'heal'
 export type Pickup = { id: number; kind: PickKind; x: number; z: number; value: number; alive: boolean; flying: boolean; big?: boolean; born: number }
@@ -77,6 +81,7 @@ export type Ev =
   | { t: 'bossDown'; boss: number }
   | { t: 'slamWarn'; x: number; z: number; r: number; dur: number }
   | { t: 'slam'; x: number; z: number; r: number }
+  | { t: 'charge'; x: number; z: number; yaw: number; len: number }
   | { t: 'comet'; x: number; z: number; r: number }
   | { t: 'frostHit'; x: number; z: number; r: number }
   | { t: 'arc'; pts: [number, number][] }
@@ -141,7 +146,7 @@ export class Run {
   // boss ladder
   bossIndex = 0 // next boss to come
   bossQueue = 0 // bosses earned but not yet spawned
-  bossId = 0 // enemy id of the boss on the field (0 = none)
+  bossIds: number[] = [] // enemy ids of the bosses on the field (twins = 2)
   bossesSlain = 0
   // endless boosts
   boostDmg = 0
@@ -178,13 +183,13 @@ export class Run {
 
   /** everything needed to resume this run later (enemies respawn; an alive boss comes back at full hp) */
   snapshot(): RunSnap {
-    const boss = this.boss
     return {
       v: 1,
       time: Math.floor(this.time), level: this.level, xp: Math.floor(this.xp), kills: this.kills, gold: Math.floor(this.gold),
       hp: Math.ceil(this.hp), maxHp: this.maxHp, pendingLevels: this.pendingLevels, rerolls: this.rerolls, pvpKills: this.pvpKills,
       weapons: [...this.weapons.entries()], passives: [...this.passives.entries()], evolved: [...this.evolved],
-      bossIndex: boss ? this.bossIndex - 1 : this.bossIndex, bossQueue: this.bossQueue + (boss ? 1 : 0), bossesSlain: this.bossesSlain,
+      // bosses on the field come back (twins: both, so the pair stays together)
+      bossIndex: this.bossIndex - this.bossesAlive().length, bossQueue: this.bossQueue + this.bossesAlive().length, bossesSlain: this.bossesSlain,
       boostDmg: this.boostDmg, boostArea: this.boostArea, boostRegen: this.boostRegen,
       nextElite: this.nextElite, nextRing: this.nextRing
     }
@@ -300,7 +305,7 @@ export class Run {
       this.spawnEnemy('elite')
       this.events.push({ t: 'elite' })
     }
-    if (this.bossQueue > 0 && !this.bossId) this.spawnBoss()
+    if (this.bossQueue > 0 && !this.bossIds.length) this.spawnBoss()
     if (t >= this.nextRing) {
       this.nextRing += TUNING.ringEvery
       const n = 26
@@ -434,7 +439,7 @@ export class Run {
     this.events.push({ t: 'kill', kind: e.kind, x: e.x, z: e.z })
     if (e.kind === 'boss') {
       const bi = e.boss ?? 0
-      this.bossId = 0
+      this.bossIds = this.bossIds.filter((id) => id !== e.id)
       this.bossesSlain++
       this.drop('chest', e.x, e.z, 1, true)
       this.drop('gem', e.x + 0.8, e.z, Math.round(this.need * 1.2))
@@ -1002,8 +1007,16 @@ export class Run {
   }
 
   // ───────── boss ladder ─────────
+  bossesAlive(): Enemy[] {
+    const out: Enemy[] = []
+    for (const id of this.bossIds) {
+      const e = this.enemies.find((q) => q.id === id && q.alive)
+      if (e) out.push(e)
+    }
+    return out
+  }
   get boss(): Enemy | undefined {
-    return this.bossId ? this.enemies.find((e) => e.id === this.bossId && e.alive) : undefined
+    return this.bossesAlive()[0]
   }
   bossDef(): BossDef | undefined {
     const b = this.boss
@@ -1011,28 +1024,42 @@ export class Run {
   }
 
   private spawnBoss() {
-    const idx = this.bossIndex++
-    this.bossQueue--
-    const d = bossFor(idx)
-    const e = this.spawnEnemy('boss')
-    e.boss = idx
-    e.hp = e.maxHp = d.hp
-    e.dmg = d.dmg
-    e.speed = d.speed
-    e.r = d.r
-    e.sc = d.scale
-    e.xp = 0
-    e.slamCd = 3
-    this.bossId = e.id
-    this.events.push({ t: 'bossSpawn', boss: idx })
+    // twins: spawn the pair together, on opposite sides of the hunter
+    const group = [this.bossIndex]
+    while (bossFor(group[group.length - 1]).twin && this.bossQueue > group.length) group.push(group[group.length - 1] + 1)
+    group.forEach((idx, i) => {
+      this.bossIndex++
+      this.bossQueue--
+      const d = bossFor(idx)
+      let x: number | undefined
+      let z: number | undefined
+      if (group.length > 1) {
+        const a = rand() * Math.PI * 2 + i * Math.PI
+        const c = clampArena(this.x + Math.sin(a) * 11, this.z + Math.cos(a) * 11, 1)
+        x = c.x
+        z = c.z
+      }
+      const e = this.spawnEnemy('boss', x, z)
+      e.boss = idx
+      e.hp = e.maxHp = d.hp
+      e.dmg = d.dmg
+      e.speed = d.speed
+      e.r = d.r
+      e.sc = d.scale
+      e.xp = 0
+      e.slamCd = 3 + i * 1.5
+      this.bossIds.push(e.id)
+      this.events.push({ t: 'bossSpawn', boss: idx })
+    })
   }
 
   private bossStep(dt: number) {
-    const b = this.boss
-    if (!b) {
-      if (this.bossId) this.bossId = 0
-      return
-    }
+    const alive = this.bossesAlive()
+    if (alive.length !== this.bossIds.length) this.bossIds = alive.map((e) => e.id)
+    for (const b of alive) this.bossAct(b, dt)
+  }
+
+  private bossAct(b: Enemy, dt: number) {
     const d = bossFor(b.boss!)
     if (b.wind !== undefined) {
       b.wind -= dt
@@ -1047,13 +1074,38 @@ export class Run {
           this.events.push({ t: 'hurt', dmg })
           if (this.hp <= 0) this.die('')
         }
-        for (let i = 0; i < 4 + Math.min(6, b.boss!); i++) {
+        const adds = this.bossIds.length > 1 ? 3 : 4 + Math.min(6, b.boss!)
+        for (let i = 0; i < adds; i++) {
           const a = (i / 6) * Math.PI * 2
           const c = clampArena(b.x + Math.sin(a) * (r + 1), b.z + Math.cos(a) * (r + 1), 0.8)
           this.spawnEnemy(d.adds, c.x, c.z)
         }
       }
       return
+    }
+    // chargers lunge across the arena (a red line warns first)
+    if (d.charge) {
+      b.chargeCd = (b.chargeCd ?? 5) - dt
+      if (b.charging !== undefined) {
+        b.charging -= dt
+        const step = d.speed * 4.2 * dt
+        b.x += (b.cvx ?? 0) * step
+        b.z += (b.cvz ?? 0) * step
+        const c = clampArena(b.x, b.z, 0.5)
+        b.x = c.x
+        b.z = c.z
+        if (b.charging <= 0) b.charging = undefined
+        return
+      }
+      const dist = Math.hypot(this.x - b.x, this.z - b.z)
+      if (b.chargeCd <= 0 && dist > 4 && dist < 16) {
+        b.chargeCd = 6.5
+        b.cvx = (this.x - b.x) / dist
+        b.cvz = (this.z - b.z) / dist
+        b.charging = Math.min(1.1, (dist + 3) / (d.speed * 4.2))
+        this.events.push({ t: 'charge', x: b.x, z: b.z, yaw: (Math.atan2(b.cvx, b.cvz) * 180) / Math.PI, len: d.speed * 4.2 * b.charging })
+        return
+      }
     }
     b.slamCd = (b.slamCd ?? 4) - dt
     if (b.slamCd <= 0 && Math.hypot(this.x - b.x, this.z - b.z) < d.slam * 1.6) {
