@@ -3,6 +3,7 @@ import { verify } from '@dcl/platform-crypto-middleware'
 import { GOLD_PACK, GOLD_PACKS, FIRST_BUY_BONUS, hasBought, createQuote, confirmPurchase, settlePending, Rpc, PriceFeed, coingecko, Currency } from './payments'
 import { Sql, getOrCreate, toProfile, startRun, getOpenRun, finishRun, buy, leaderboard, rankOf, buyArmory, claimDaily, getResume, saveCheckpoint, bankAbandoned } from './db'
 import { raidRoutes, inventory } from './raid'
+import { boards, questState, claimQuest } from './progress'
 import { META_KEYS, META_MAX, MetaKey, metaCost, clampRun, LIMITS } from './rules'
 
 export type Auth = { address: string; guest: boolean; meta: Record<string, any> }
@@ -73,7 +74,8 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
 
   app.get('/api/leaderboard', async (_req, res, next) => {
     try {
-      res.json({ ok: true, ...(await leaderboard(db)) })
+      // legacy fields (runs/pvp/players) + live all-time, weekly, slayers
+      res.json({ ok: true, ...(await leaderboard(db)), ...(await boards(db)) })
     } catch (e) {
       next(e)
     }
@@ -105,8 +107,10 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
     '/api/run/save',
     authed(async (req, res, a) => {
       const b = req.body || {}
-      const ok = await saveCheckpoint(db, String(b.runId || ''), a.address, b.snap)
-      res.status(ok ? 200 : 404).json({ ok, error: ok ? undefined : 'run not found or already finished' })
+      const r = await saveCheckpoint(db, String(b.runId || ''), a.address, b.snap)
+      if (!r) return res.status(404).json({ ok: false, error: 'run not found or already finished' })
+      const p = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
+      res.json({ ok: true, banked: r.banked, slayer: r.slayer, profile: p ? toProfile(p) : null, inv: r.slayer ? await inventory(db, a.address) : undefined })
     })
   )
 
@@ -133,9 +137,9 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
         { time: num(b.time), level: num(b.level), kills: num(b.kills), gold: num(b.gold), pvpKills: num(b.pvpKills), killedByPlayer: !!killer },
         elapsed
       )
-      const fin = await finishRun(db, run, a.address, result, Math.floor(num(b.gold)), killer)
+      const fin = await finishRun(db, run, a.address, result, Math.floor(num(b.gold)), killer, num(b.bossesSlain))
       const p = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
-      res.json({ ok: true, granted: result.gold + fin.bonus, bonus: fin.bonus, newBest: fin.newBest, rank: await rankOf(db, p.best_time), profile: toProfile(p) })
+      res.json({ ok: true, granted: result.gold + fin.bonus, paid: fin.paid, bonus: fin.bonus, newBest: fin.newBest, slayer: fin.slayer, rank: await rankOf(db, p.best_time), profile: toProfile(p), inv: await inventory(db, a.address) })
     })
   )
 
@@ -204,6 +208,22 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
   )
 
   raidRoutes(app as any, db, authed as any, getOrCreate)
+
+  // daily quests (reset at midnight KST)
+  app.post(
+    '/api/quests',
+    authed(async (_req, res, a) => {
+      res.json({ ok: true, ...(await questState(db, a.address)) })
+    })
+  )
+  app.post(
+    '/api/quests/claim',
+    authed(async (req, res, a) => {
+      const got = await claimQuest(db, a.address, Math.floor(Number(req.body?.i)))
+      const p = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
+      res.status(got ? 200 : 400).json({ ok: !!got, reward: got, ...(await questState(db, a.address)), profile: p ? toProfile(p) : null, error: got ? undefined : 'not finished or already claimed' })
+    })
+  )
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     console.error(err)

@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import { PAY_SCHEMA } from './payments'
 import { RAID_SCHEMA } from './raid'
+import { PROGRESS_SCHEMA, trackRun } from './progress'
 import { META_KEYS, MetaKey, ARMORY_COST, DAILY_REWARD, dayKey, clampRun } from './rules'
 
 /** minimal pg-compatible client (pg.Pool in production, pg-mem in tests) */
@@ -54,7 +55,7 @@ ALTER TABLE runs ADD COLUMN IF NOT EXISTS checkpoint_at TIMESTAMPTZ;
 `
 
 export async function migrate(db: Sql) {
-  for (const stmt of (SCHEMA + ';' + PAY_SCHEMA + ';' + RAID_SCHEMA).split(';').map((s) => s.trim()).filter(Boolean)) await db.query(stmt)
+  for (const stmt of (SCHEMA + ';' + PAY_SCHEMA + ';' + RAID_SCHEMA + ';' + PROGRESS_SCHEMA).split(';').map((s) => s.trim()).filter(Boolean)) await db.query(stmt)
 }
 
 export type Profile = {
@@ -170,20 +171,25 @@ export async function getResume(db: Sql, address: string) {
   }
 }
 
-/** store a mid-run checkpoint (no gold is granted until the run ends or is abandoned) */
+/** mid-run checkpoint: saves the run for resume AND banks the gold earned so far (live gold) */
 export async function saveCheckpoint(db: Sql, id: string, address: string, snap: any) {
   const text = JSON.stringify(snap ?? {})
-  if (text.length > 16000) return false
-  const r = await db.query(
-    'UPDATE runs SET snapshot = $1, checkpoint_at = NOW(), time_sec = $2, level = $3, kills = $4, gold_claim = $5, pvp_kills = $6 WHERE id = $7 AND address = $8 AND ended_at IS NULL',
-    [text, Math.floor(num(snap?.time)), Math.floor(num(snap?.level)), Math.floor(num(snap?.kills)), Math.floor(num(snap?.gold)), Math.floor(num(snap?.pvpKills)), id, address]
+  if (text.length > 16000) return null
+  const run = (await db.query('SELECT * FROM runs WHERE id = $1 AND address = $2 AND ended_at IS NULL', [id, address])).rows[0]
+  if (!run) return null
+  await db.query(
+    'UPDATE runs SET snapshot = $1, checkpoint_at = NOW(), time_sec = $2, level = $3, kills = $4, gold_claim = $5, pvp_kills = $6 WHERE id = $7',
+    [text, Math.floor(num(snap?.time)), Math.floor(num(snap?.level)), Math.floor(num(snap?.kills)), Math.floor(num(snap?.gold)), Math.floor(num(snap?.pvpKills)), id]
   )
-  if ((r.rowCount ?? 0) > 0) {
-    // the latest build follows the hunter into the raid at -91,71
-    const build = JSON.stringify({ level: snap?.level, weapons: snap?.weapons, passives: snap?.passives, evolved: snap?.evolved })
-    if (build.length < 4000) await db.query('UPDATE players SET last_build = $1 WHERE address = $2', [build, address])
-  }
-  return (r.rowCount ?? 0) > 0
+  // the latest build follows the hunter into the raid at -91,71
+  const build = JSON.stringify({ level: snap?.level, weapons: snap?.weapons, passives: snap?.passives, evolved: snap?.evolved })
+  if (build.length < 4000) await db.query('UPDATE players SET last_build = $1 WHERE address = $2', [build, address])
+  const elapsed = (Date.now() - ms(run.started_at)) / 1000
+  const res = clampRun({ time: num(snap?.time), level: num(snap?.level), kills: num(snap?.kills), gold: num(snap?.gold), pvpKills: num(snap?.pvpKills), killedByPlayer: false }, elapsed)
+  const t = await trackRun(db, address, run, res, num(snap?.bossesSlain))
+  // keep the stored (unclamped) values honest for the live boards
+  await db.query('UPDATE runs SET time_sec = $1, level = $2, kills = $3 WHERE id = $4', [res.time, res.level, res.kills, id])
+  return t
 }
 
 /** pay out checkpointed runs that were abandoned (clamped by the same anti-cheat rules as a normal finish) */
@@ -198,7 +204,7 @@ export async function bankAbandoned(db: Sql, address: string) {
       elapsed
     )
     const fin = await finishRun(db, run, address, res, num(run.gold_claim), null)
-    total += res.gold + fin.bonus
+    total += fin.paid + fin.bonus
   }
   return total
 }
@@ -210,16 +216,16 @@ export async function getOpenRun(db: Sql, id: string, address: string) {
 
 export async function finishRun(
   db: Sql,
-  run: { id: string },
+  run: any,
   address: string,
   res: { time: number; level: number; kills: number; gold: number; pvpKills: number; flagged: boolean },
   claimGold: number,
-  killer: string | null
+  killer: string | null,
+  bossesClaim = 0
 ) {
-  await db.query(
-    'UPDATE runs SET ended_at = NOW(), time_sec = $1, level = $2, kills = $3, gold_claim = $4, gold_given = $5, pvp_kills = $6, killer = $7, flagged = $8 WHERE id = $9',
-    [res.time, res.level, res.kills, claimGold, res.gold, res.pvpKills, killer, res.flagged, run.id]
-  )
+  // live gold: whatever checkpoints have not banked yet (nothing already banked is taken back)
+  const fresh = (await db.query('SELECT * FROM runs WHERE id = $1', [run.id])).rows[0] ?? run
+  const t = await trackRun(db, address, fresh, res, Math.max(bossesClaim, num(fresh.bosses)))
   const p = (await db.query('SELECT * FROM players WHERE address = $1', [address])).rows[0]
   const newBest = res.time > p.best_time
   // first finished run of the day banks double gold
@@ -230,15 +236,19 @@ export async function finishRun(
     await db.query('UPDATE players SET double_last = $1 WHERE address = $2', [today, address])
   }
   await db.query(
+    'UPDATE runs SET ended_at = NOW(), time_sec = $1, level = $2, kills = $3, gold_claim = $4, pvp_kills = $5, killer = $6, flagged = $7 WHERE id = $8',
+    [res.time, res.level, res.kills, claimGold, res.pvpKills, killer, res.flagged, run.id]
+  )
+  await db.query(
     `UPDATE players SET bank = bank + $1, total_gold = total_gold + $1, total_runs = total_runs + 1, total_kills = total_kills + $2,
        pvp_kills = pvp_kills + $3, flags = flags + $4,
        best_time = $5, best_level = $6, best_kills = $7, updated_at = NOW() WHERE address = $8`,
     [
-      res.gold + bonus, res.kills, res.pvpKills, res.flagged ? 1 : 0,
+      bonus, res.kills, res.pvpKills, res.flagged ? 1 : 0,
       newBest ? res.time : p.best_time, newBest ? res.level : p.best_level, newBest ? res.kills : p.best_kills, address
     ]
   )
-  return { newBest, bonus }
+  return { newBest, bonus, paid: t.banked, slayer: t.slayer }
 }
 
 export async function buy(db: Sql, address: string, key: MetaKey, cost: number) {

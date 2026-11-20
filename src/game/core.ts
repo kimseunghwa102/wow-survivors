@@ -40,6 +40,8 @@ export type Enemy = {
   boss?: number // index into the boss ladder
   slamCd?: number
   wind?: number // slam wind-up timer
+  slow?: number // seconds of chill left (Frost Comet)
+  frozen?: number // seconds fully frozen (Glacier Cataclysm)
 }
 export type PickKind = 'gem' | 'coin' | 'chest' | 'heal'
 export type Pickup = { id: number; kind: PickKind; x: number; z: number; value: number; alive: boolean; flying: boolean; big?: boolean; born: number }
@@ -75,6 +77,14 @@ export type Ev =
   | { t: 'bossDown'; boss: number }
   | { t: 'slamWarn'; x: number; z: number; r: number; dur: number }
   | { t: 'slam'; x: number; z: number; r: number }
+  | { t: 'comet'; x: number; z: number; r: number }
+  | { t: 'frostHit'; x: number; z: number; r: number }
+  | { t: 'arc'; pts: [number, number][] }
+  | { t: 'chakram'; x: number; z: number; yaw: number; d: number; dur: number }
+  | { t: 'mine'; id: number; x: number; z: number }
+  | { t: 'boom'; id: number; x: number; z: number; r: number }
+  | { t: 'sweep'; x: number; z: number; yaw: number; len: number; dur: number; n: number }
+  | { t: 'dash'; x0: number; z0: number; x1: number; z1: number }
 
 export type Option =
   | { kind: 'weapon'; id: WeaponId; to: number }
@@ -137,6 +147,13 @@ export class Run {
   boostDmg = 0
   boostArea = 0
   boostRegen = 0
+
+  // new auto-skills
+  comets: { x: number; z: number; r: number; dmg: number; t: number; chill: number; freeze: number }[] = []
+  chakrams: { ox: number; oz: number; fx: number; fz: number; d: number; t: number; dur: number; dmg: number; out: number[]; back: number[]; pv: number }[] = []
+  mines: { id: number; x: number; z: number; arm: number; life: number; dmg: number; r: number }[] = []
+  sweeps: { t: number; dur: number; yaw: number; len: number; n: number; dmg: number; hit: Set<number>; pv: Set<string> }[] = []
+  wisps: { x: number; z: number; cd: number; ph: number; dash: number; tx: number; tz: number }[] = []
 
   enemies: Enemy[] = []
   pickups: Pickup[] = []
@@ -342,7 +359,15 @@ export class Run {
       const ml = Math.hypot(mx, mz) || 1
       // stop at touching distance so the horde forms a ring around the player instead of stacking on top
       const reach = e.r + 0.45
-      const stepLen = Math.min(e.speed * dt, Math.max(0, dist - reach))
+      let chill = 1
+      if (e.frozen && e.frozen > 0) {
+        e.frozen -= dt
+        chill = e.boss !== undefined ? 0.5 : 0
+      } else if (e.slow && e.slow > 0) {
+        e.slow -= dt
+        chill = e.boss !== undefined ? 0.75 : 0.45
+      }
+      const stepLen = Math.min(e.speed * chill * dt, Math.max(0, dist - reach))
       e.x += (mx / ml) * stepLen + e.kx * dt
       e.z += (mz / ml) * stepLen + e.kz * dt
       if (e.boss !== undefined) {
@@ -597,6 +622,215 @@ export class Run {
         }
         for (const p of remotes) if (Math.hypot(p.x - this.x, p.z - this.z) < r) this.pvpDamage(p, dmg)
       }
+    }
+    this.fire2(dt, foes, remotes)
+  }
+
+  // ───────── second wave of auto-skills ─────────
+  private fire2(dt: number, foes: Enemy[], remotes: Remote[]) {
+    const near = (x: number, z: number, max: number) => {
+      let best: Enemy | null = null
+      let bd = max
+      for (const e of foes) {
+        if (!e.alive) continue
+        const d = Math.hypot(e.x - x, e.z - z)
+        if (d < bd) (bd = d), (best = e)
+      }
+      return best
+    }
+    // FROST COMET — comets fall on the densest nearby foes, chill (evo: freeze)
+    const fv = this.w('frost')
+    if (fv && this.ready('frost', this.evo('frost') ? 1.5 : 2.8, dt)) {
+      const n = 1 + Math.floor(fv / 3) + this.amount + (this.evo('frost') ? 2 : 0)
+      const r = 1.5 * this.area * (1 + 0.07 * fv) * (this.evo('frost') ? 1.4 : 1)
+      const dmg = (26 + 7 * (fv - 1)) * (this.evo('frost') ? 1.5 : 1)
+      const pool = foes.filter((e) => Math.hypot(e.x - this.x, e.z - this.z) < 12)
+      for (let i = 0; i < n && pool.length; i++) {
+        const e = pool[Math.floor(rand() * pool.length)]
+        this.comets.push({ x: e.x, z: e.z, r, dmg, t: 0.38, chill: fv >= 8 ? 3 : 2, freeze: this.evo('frost') ? 1.2 : 0 })
+        this.events.push({ t: 'comet', x: e.x, z: e.z, r })
+      }
+    }
+    for (const c of this.comets) {
+      c.t -= dt
+      if (c.t > 0) continue
+      this.events.push({ t: 'frostHit', x: c.x, z: c.z, r: c.r })
+      for (const e of foes)
+        if (e.alive && Math.hypot(e.x - c.x, e.z - c.z) < c.r + e.r) {
+          e.slow = Math.max(e.slow ?? 0, c.chill)
+          if (c.freeze) e.frozen = Math.max(e.frozen ?? 0, c.freeze)
+          this.hitEnemy(e, c.dmg)
+        }
+      for (const p of remotes) if (Math.hypot(p.x - c.x, p.z - c.z) < c.r) this.pvpDamage(p, c.dmg)
+    }
+    this.comets = this.comets.filter((c) => c.t > 0)
+
+    // ARC CHAIN — lightning leaps from foe to foe
+    const cv = this.w('chain')
+    if (cv && this.ready('chain', this.evo('chain') ? 0.8 : 1.15, dt)) {
+      const jumps = 3 + cv + (cv >= 8 ? 1 : 0) + (this.evo('chain') ? 5 : 0)
+      let dmg = (22 + 6 * (cv - 1)) * (this.evo('chain') ? 1.4 : 1)
+      let cur = near(this.x, this.z, 9)
+      const pts: [number, number][] = [[this.x, this.z]]
+      const used = new Set<number>()
+      let px = this.x
+      let pz = this.z
+      while (cur && pts.length <= jumps) {
+        used.add(cur.id)
+        pts.push([cur.x, cur.z])
+        px = cur.x
+        pz = cur.z
+        this.hitEnemy(cur, dmg)
+        if (!this.evo('chain')) dmg *= 0.92
+        let next: Enemy | null = null
+        let bd = 4.8 * this.area
+        for (const e of foes) {
+          if (!e.alive || used.has(e.id)) continue
+          const d = Math.hypot(e.x - px, e.z - pz)
+          if (d < bd) (bd = d), (next = e)
+        }
+        cur = next
+      }
+      for (const p of remotes) if (p.attackable && Math.hypot(p.x - this.x, p.z - this.z) < 4) this.pvpDamage(p, dmg)
+      if (pts.length > 1) this.events.push({ t: 'arc', pts: pts.slice(0, 12) })
+    }
+
+    // MOON CHAKRAM — out and back, cuts every foe on both passes
+    const kv = this.w('chakram')
+    if (kv && this.ready('chakram', this.evo('chakram') ? 1.4 : 2.2, dt)) {
+      const n = 1 + (kv >= 4 ? 1 : 0) + (kv >= 7 ? 1 : 0) + this.amount + (this.evo('chakram') ? 1 : 0)
+      const d = (6 + 0.5 * Math.floor(kv / 3)) * this.area * (this.evo('chakram') ? 1.3 : 1)
+      const dmg = (20 + 5 * (kv - 1)) * (this.evo('chakram') ? 1.5 : 1)
+      const tg = near(this.x, this.z, 14)
+      const base = tg ? (Math.atan2(tg.x - this.x, tg.z - this.z) * 180) / Math.PI : this.yaw
+      for (let i = 0; i < n; i++) {
+        const yaw = base + (i - (n - 1) / 2) * (360 / Math.max(n, 3)) * (n > 2 ? 1 : 0.25)
+        const a = (yaw * Math.PI) / 180
+        this.chakrams.push({ ox: this.x, oz: this.z, fx: Math.sin(a), fz: Math.cos(a), d, t: 0, dur: 1.1, dmg, out: [], back: [], pv: -9 })
+        this.events.push({ t: 'chakram', x: this.x, z: this.z, yaw, d, dur: 1.1 })
+      }
+    }
+    for (const c of this.chakrams) {
+      c.t += dt
+      const k = Math.min(1, c.t / c.dur)
+      const going = k < 0.5
+      const s = Math.sin(k * Math.PI) * c.d
+      // the way back homes on the player
+      const bx = going ? c.ox : this.x
+      const bz = going ? c.oz : this.z
+      const x = bx + c.fx * s
+      const z = bz + c.fz * s
+      const list = going ? c.out : c.back
+      for (const e of foes)
+        if (e.alive && !list.includes(e.id) && Math.hypot(e.x - x, e.z - z) < e.r + 0.7) {
+          list.push(e.id)
+          this.hitEnemy(e, c.dmg, c.fx * 2, c.fz * 2)
+        }
+      if (this.time - c.pv > 0.5) for (const p of remotes) if (Math.hypot(p.x - x, p.z - z) < 0.8) (this.pvpDamage(p, c.dmg), (c.pv = this.time))
+    }
+    this.chakrams = this.chakrams.filter((c) => c.t < c.dur)
+
+    // HEX MINE — runes that blow up under foes
+    const mv = this.w('mine')
+    if (mv) {
+      const max = 3 + Math.floor(mv / 2) + (mv >= 8 ? 1 : 0) + (this.evo('mine') ? 4 : 0)
+      const r = 1.9 * this.area * (1 + 0.06 * mv) * (this.evo('mine') ? 1.3 : 1)
+      const dmg = (36 + 11 * (mv - 1)) * (this.evo('mine') ? 1.6 : 1)
+      if (this.ready('mine', this.evo('mine') ? 1.0 : 1.8, dt) && this.mines.length < max) {
+        const a = rand() * Math.PI * 2
+        const rr = 1.6 + rand() * 2.8
+        const c = clampArena(this.x + Math.sin(a) * rr, this.z + Math.cos(a) * rr, 0.6)
+        const id = this.nextId++
+        this.mines.push({ id, x: c.x, z: c.z, arm: 0.4, life: 9, dmg, r })
+        this.events.push({ t: 'mine', id, x: c.x, z: c.z })
+      }
+      for (const m of this.mines) {
+        m.arm -= dt
+        m.life -= dt
+        if (m.arm > 0) continue
+        const trip = m.life <= 0 || foes.some((e) => e.alive && Math.hypot(e.x - m.x, e.z - m.z) < e.r + 0.8) || remotes.some((p) => p.attackable && Math.hypot(p.x - m.x, p.z - m.z) < 0.8)
+        if (!trip) continue
+        m.life = -1
+        this.events.push({ t: 'boom', id: m.id, x: m.x, z: m.z, r: m.r })
+        for (const e of foes) {
+          const d = Math.hypot(e.x - m.x, e.z - m.z)
+          if (e.alive && d < m.r + e.r) this.hitEnemy(e, m.dmg, ((e.x - m.x) / (d || 1)) * 5, ((e.z - m.z) / (d || 1)) * 5)
+        }
+        for (const p of remotes) if (Math.hypot(p.x - m.x, p.z - m.z) < m.r) this.pvpDamage(p, m.dmg)
+        if (this.evo('mine')) this.hp = Math.min(this.maxHp, this.hp + 3)
+      }
+      this.mines = this.mines.filter((m) => m.life > 0 || m.arm > 0)
+    } else this.mines = []
+
+    // PRISM RAY — beams sweep a full circle
+    const yv = this.w('beam')
+    if (yv && this.ready('beam', (this.evo('beam') ? 2.0 : 3.0) * (yv >= 4 ? 0.85 : 1), dt)) {
+      const n = 1 + (yv >= 5 ? 1 : 0) + (this.evo('beam') ? 1 : 0)
+      const len = (5.2 + 0.5 * Math.floor(yv / 3)) * this.area * (this.evo('beam') ? 1.3 : 1)
+      const dmg = (22 + 6 * (yv - 1)) * (this.evo('beam') ? 1.5 : 1)
+      const yaw = rand() * 360
+      this.sweeps.push({ t: 0, dur: 0.8, yaw, len, n, dmg, hit: new Set(), pv: new Set() })
+      this.events.push({ t: 'sweep', x: this.x, z: this.z, yaw, len, dur: 0.8, n })
+    }
+    for (const b of this.sweeps) {
+      b.t += dt
+      const ang = b.yaw + Math.min(1, b.t / b.dur) * 360
+      for (let i = 0; i < b.n; i++) {
+        const a = ((ang + (i * 360) / b.n) * Math.PI) / 180
+        const fx = Math.sin(a)
+        const fz = Math.cos(a)
+        const inBeam = (x: number, z: number, r: number) => {
+          const rx = x - this.x
+          const rz = z - this.z
+          const along = rx * fx + rz * fz
+          return along > 0 && along < b.len + r && Math.abs(rx * fz - rz * fx) < 0.45 + r
+        }
+        for (const e of foes) if (e.alive && !b.hit.has(e.id) && inBeam(e.x, e.z, e.r)) (b.hit.add(e.id), this.hitEnemy(e, b.dmg))
+        for (const p of remotes) if (!b.pv.has(p.id) && inBeam(p.x, p.z, 0.3)) (b.pv.add(p.id), this.pvpDamage(p, b.dmg))
+      }
+    }
+    this.sweeps = this.sweeps.filter((b) => b.t < b.dur)
+
+    // SPIRIT WISPS — familiars that hover and dart
+    const wv = this.w('wisp')
+    const want = wv ? 1 + Math.floor(wv / 3) + this.amount + (this.evo('wisp') ? 2 : 0) : 0
+    while (this.wisps.length < want) this.wisps.push({ x: this.x, z: this.z, cd: 0.4 * this.wisps.length, ph: this.wisps.length * 2.1, dash: 0, tx: 0, tz: 0 })
+    if (this.wisps.length > want) this.wisps.length = want
+    if (wv) {
+      const dmg = (18 + 5 * (wv - 1)) * (this.evo('wisp') ? 1.5 : 1)
+      const cd = (wv >= 4 ? 1.1 : 1.3) * (wv >= 7 ? 0.85 : 1) * (this.evo('wisp') ? 0.65 : 1) * this.cdMul
+      const splash = this.evo('wisp') ? 1.5 * this.area : 0
+      this.wisps.forEach((w, i) => {
+        w.ph += dt * 2.2
+        if (w.dash > 0) {
+          w.dash -= dt
+          const k = Math.min(1, dt / Math.max(0.01, w.dash + dt))
+          w.x += (w.tx - w.x) * k
+          w.z += (w.tz - w.z) * k
+          if (w.dash <= 0) {
+            for (const e of foes)
+              if (e.alive && Math.hypot(e.x - w.tx, e.z - w.tz) < e.r + 0.5 + splash) this.hitEnemy(e, dmg)
+            for (const p of remotes) if (Math.hypot(p.x - w.tx, p.z - w.tz) < 0.6 + splash) this.pvpDamage(p, dmg)
+          }
+          return
+        }
+        // hover around the hunter
+        const a = w.ph + (i * Math.PI * 2) / Math.max(1, want)
+        const hx = this.x + Math.sin(a) * 1.3
+        const hz = this.z + Math.cos(a) * 1.3
+        const k = Math.min(1, dt * 6)
+        w.x += (hx - w.x) * k
+        w.z += (hz - w.z) * k
+        w.cd -= dt
+        if (w.cd > 0) return
+        const tg = near(w.x, w.z, 8)
+        if (!tg) return
+        w.cd = cd
+        w.dash = 0.18
+        w.tx = tg.x
+        w.tz = tg.z
+        this.events.push({ t: 'dash', x0: w.x, z0: w.z, x1: tg.x, z1: tg.z })
+      })
     }
   }
 

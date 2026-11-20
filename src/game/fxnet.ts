@@ -19,6 +19,13 @@ export function encodeFx(e: Ev, x: number, z: number): [number, number[]] | null
     case 'levelup': return [12, [x, z]]
     case 'bossSpawn': return [13, [e.boss, x, z]]
     case 'bossDown': return [14, [e.boss, x, z]]
+    case 'comet': return [15, [e.x, e.z, e.r]]
+    case 'frostHit': return [16, [e.x, e.z, e.r]]
+    case 'arc': return [17, e.pts.slice(0, 9).flat()]
+    case 'chakram': return [18, [e.x, e.z, e.yaw, e.d, e.dur]]
+    case 'boom': return [19, [e.x, e.z, e.r]]
+    case 'sweep': return [20, [e.x, e.z, e.yaw, e.len, e.dur, e.n]]
+    case 'dash': return [21, [e.x0, e.z0, e.x1, e.z1]]
   }
   return null
 }
@@ -46,6 +53,17 @@ export function decodeFx(p: number[]): Ev | null {
     case 12: return { t: 'levelup', x: a, z: b } as any
     case 13: return { t: 'bossSpawn', boss: Math.max(0, Math.round(a)) }
     case 14: return { t: 'bossDown', boss: Math.max(0, Math.round(a)) }
+    case 15: return { t: 'comet', x: a, z: b, r: Math.min(6, d) }
+    case 16: return { t: 'frostHit', x: a, z: b, r: Math.min(6, d) }
+    case 17: {
+      const pts: [number, number][] = []
+      for (let i = 1; i + 1 < p.length && pts.length < 9; i += 2) pts.push([p[i], p[i + 1]])
+      return { t: 'arc', pts }
+    }
+    case 18: return { t: 'chakram', x: a, z: b, yaw: d, d: Math.min(14, f), dur: Math.min(2, g) }
+    case 19: return { t: 'boom', id: 0, x: a, z: b, r: Math.min(8, d) }
+    case 20: return { t: 'sweep', x: a, z: b, yaw: d, len: Math.min(16, f), dur: Math.min(1.5, g), n: Math.max(1, Math.min(3, Math.round(h))) }
+    case 21: return { t: 'dash', x0: a, z0: b, x1: d, z1: f }
   }
   return null
 }

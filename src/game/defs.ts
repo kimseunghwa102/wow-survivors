@@ -1,6 +1,6 @@
 // Pure data: weapons, passives, enemies, evolutions. No Decentraland imports (used by the headless sim too).
 
-export type WeaponId = 'lash' | 'bolt' | 'orbit' | 'aura' | 'thunder' | 'nova'
+export type WeaponId = 'lash' | 'bolt' | 'orbit' | 'aura' | 'thunder' | 'nova' | 'frost' | 'chain' | 'chakram' | 'mine' | 'beam' | 'wisp'
 export type PassiveId = 'might' | 'haste' | 'expanse' | 'duplicator' | 'plating' | 'vitality' | 'bloodstone' | 'magnet' | 'swiftness' | 'fortune'
 export type EnemyKind = 'bat' | 'ghoul' | 'skeleton' | 'wraith' | 'elite' | 'boss'
 
@@ -51,6 +51,48 @@ export const WEAPONS: Record<WeaponId, { name: string; evo: string; evoWith: Pas
     evoWith: 'plating',
     color: '#FF8A1E',
     desc: ['Pulses fire around you', '+radius', '+9 damage', '-10% cooldown', '+9 damage', '+radius', '+9 damage', '+radius']
+  },
+  frost: {
+    name: 'Frost Comet',
+    evo: 'Glacier Cataclysm',
+    evoWith: 'magnet',
+    color: '#8FE3FF',
+    desc: ['Ice comets crash into the horde and slow it', '+damage', '+radius', '+1 comet', '+damage', '+radius', '+1 comet', '+damage, longer chill']
+  },
+  chain: {
+    name: 'Arc Chain',
+    evo: 'Tesla Storm',
+    evoWith: 'swiftness',
+    color: '#7DF9FF',
+    desc: ['Lightning leaps from foe to foe', '+1 jump', '+damage', '+1 jump', '+damage', '+1 jump', '+damage', '+2 jumps']
+  },
+  chakram: {
+    name: 'Moon Chakram',
+    evo: 'Twin Eclipse',
+    evoWith: 'fortune',
+    color: '#E6E9FF',
+    desc: ['A chakram flies out and comes back, cutting everything twice', '+damage', '+range', '+1 chakram', '+damage', '+range', '+1 chakram', '+damage']
+  },
+  mine: {
+    name: 'Hex Mine',
+    evo: 'Soul Detonator',
+    evoWith: 'bloodstone',
+    color: '#FF4A8A',
+    desc: ['Leaves cursed runes that explode under foes', '+1 rune', '+damage', '+radius', '+1 rune', '+damage', '+radius', '+2 runes']
+  },
+  beam: {
+    name: 'Prism Ray',
+    evo: 'Solar Lance',
+    evoWith: 'expanse',
+    color: '#FFF27A',
+    desc: ['A light beam sweeps a full circle around you', '+length', '+damage', '-cooldown', '+1 beam', '+damage', '+length', '+damage']
+  },
+  wisp: {
+    name: 'Spirit Wisps',
+    evo: 'Phoenix Choir',
+    evoWith: 'duplicator',
+    color: '#7BFFB2',
+    desc: ['Spirit wisps dart at foes on their own', '+damage', '+1 wisp', '+speed', '+damage', '+1 wisp', '+speed', '+damage']
   }
 }
 

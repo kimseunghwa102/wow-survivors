@@ -1,0 +1,154 @@
+{
+ "fx_comet": {
+  "tris": 38,
+  "kb": 43
+ },
+ "fx_frost": {
+  "tris": 42,
+  "kb": 167
+ },
+ "fx_arc": {
+  "tris": 4,
+  "kb": 77
+ },
+ "fx_chakram": {
+  "tris": 38,
+  "kb": 63
+ },
+ "fx_hex": {
+  "tris": 10,
+  "kb": 140
+ },
+ "fx_boom": {
+  "tris": 46,
+  "kb": 156
+ },
+ "fx_beam": {
+  "tris": 10,
+  "kb": 32
+ },
+ "fx_wisp": {
+  "tris": 90,
+  "kb": 38
+ },
+ "fx_comet_t2": {
+  "tris": 38,
+  "kb": 43
+ },
+ "fx_frost_t2": {
+  "tris": 58,
+  "kb": 175
+ },
+ "fx_arc_t2": {
+  "tris": 4,
+  "kb": 73
+ },
+ "fx_chakram_t2": {
+  "tris": 40,
+  "kb": 82
+ },
+ "fx_hex_t2": {
+  "tris": 10,
+  "kb": 137
+ },
+ "fx_boom_t2": {
+  "tris": 46,
+  "kb": 178
+ },
+ "fx_beam_t2": {
+  "tris": 10,
+  "kb": 33
+ },
+ "fx_wisp_t2": {
+  "tris": 90,
+  "kb": 38
+ },
+ "fx_comet_t3": {
+  "tris": 54,
+  "kb": 44
+ },
+ "fx_frost_t3": {
+  "tris": 74,
+  "kb": 183
+ },
+ "fx_arc_t3": {
+  "tris": 4,
+  "kb": 89
+ },
+ "fx_chakram_t3": {
+  "tris": 40,
+  "kb": 89
+ },
+ "fx_hex_t3": {
+  "tris": 10,
+  "kb": 157
+ },
+ "fx_boom_t3": {
+  "tris": 46,
+  "kb": 187
+ },
+ "fx_beam_t3": {
+  "tris": 10,
+  "kb": 35
+ },
+ "fx_wisp_t3": {
+  "tris": 90,
+  "kb": 42
+ },
+ "fx_comet_asc": {
+  "tris": 54,
+  "kb": 42
+ },
+ "fx_frost_asc": {
+  "tris": 90,
+  "kb": 186
+ },
+ "fx_arc_asc": {
+  "tris": 4,
+  "kb": 97
+ },
+ "fx_chakram_asc": {
+  "tris": 40,
+  "kb": 95
+ },
+ "fx_hex_asc": {
+  "tris": 10,
+  "kb": 155
+ },
+ "fx_boom_asc": {
+  "tris": 46,
+  "kb": 191
+ },
+ "fx_beam_asc": {
+  "tris": 10,
+  "kb": 37
+ },
+ "fx_wisp_asc": {
+  "tris": 94,
+  "kb": 110
+ },
+ "fx_up_frost": {
+  "tris": 86,
+  "kb": 154
+ },
+ "fx_up_chain": {
+  "tris": 86,
+  "kb": 153
+ },
+ "fx_up_chakram": {
+  "tris": 86,
+  "kb": 150
+ },
+ "fx_up_mine": {
+  "tris": 86,
+  "kb": 160
+ },
+ "fx_up_beam": {
+  "tris": 86,
+  "kb": 155
+ },
+ "fx_up_wisp": {
+  "tris": 86,
+  "kb": 157
+ }
+}

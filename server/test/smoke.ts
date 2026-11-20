@@ -83,15 +83,21 @@ async function main() {
   const s3 = await signed(alice, 'POST', '/api/run/start', { weapon: 'lash' })
   await db.query(`UPDATE runs SET started_at = NOW() - INTERVAL '300 seconds' WHERE id = $1`, [s3.json.runId])
   const snap = { v: 1, time: 290, level: 20, kills: 500, gold: 800, pvpKills: 0, weapons: [['lash', 5]], passives: [['might', 2]] }
+  const pre = (await signed(alice, 'POST', '/api/profile', {})).json.profile.bank
   const c1 = await signed(alice, 'POST', '/api/run/save', { runId: s3.json.runId, snap })
   assert(c1.status === 200 && c1.json.ok, 'mid-run checkpoint saved')
+  assert(c1.json.banked === 800 && c1.json.profile.bank === pre + 800, 'LIVE GOLD: checkpoint banks the 800 gold immediately')
+  const c1b = await signed(alice, 'POST', '/api/run/save', { runId: s3.json.runId, snap })
+  assert(c1b.json.banked === 0 && c1b.json.profile.bank === pre + 800, 'same checkpoint twice banks nothing extra')
+  const lbLive = await (await fetch(base + '/api/leaderboard')).json()
+  assert(lbLive.weekly.some((r: any) => r.live && r.n === 'Alice') && lbLive.live === 1 && lbLive.allTime.some((r: any) => r.live), `LIVE RANKING: running hunter appears on weekly + all-time boards (${lbLive.live} live)`)
   const c2 = await signed(alice, 'POST', '/api/run/save', { runId: 'nope', snap })
   assert(c2.status === 404, 'checkpoint for unknown run rejected')
   const r1 = await signed(alice, 'POST', '/api/profile', {})
   assert(r1.json.resume?.runId === s3.json.runId && r1.json.resume.snap.level === 20 && r1.json.resume.snap.weapons[0][1] === 5, 'profile offers the saved run (skills intact)')
   const bankBefore = r1.json.profile.bank
   const ab = await signed(alice, 'POST', '/api/run/abandon', {})
-  assert(ab.json.ok && ab.json.banked === 800 && ab.json.profile.bank === bankBefore + 800, 'abandoned run banks its checkpoint gold (800)')
+  assert(ab.json.ok && ab.json.profile.bank === bankBefore + ab.json.banked && ab.json.banked === 0, 'abandoning adds nothing already banked live')
   const r2 = await signed(alice, 'POST', '/api/profile', {})
   assert(!r2.json.resume, 'nothing to resume after banking')
   const ab2 = await signed(alice, 'POST', '/api/run/abandon', {})
@@ -100,15 +106,44 @@ async function main() {
   await new Promise((r) => setTimeout(r, 4200))
   const s4 = await signed(alice, 'POST', '/api/run/start', { weapon: 'bolt' })
   await db.query(`UPDATE runs SET started_at = NOW() - INTERVAL '60 seconds' WHERE id = $1`, [s4.json.runId])
-  await signed(alice, 'POST', '/api/run/save', { runId: s4.json.runId, snap: { time: 55, level: 5, kills: 50, gold: 99999 } })
+  const cx = await signed(alice, 'POST', '/api/run/save', { runId: s4.json.runId, snap: { time: 55, level: 5, kills: 50, gold: 99999 } })
+  assert(cx.json.banked > 0 && cx.json.banked <= 25 * 72, `live gold is still clamped by anti-cheat (${cx.json.banked})`)
   await new Promise((r) => setTimeout(r, 4200))
   await signed(alice, 'POST', '/api/run/start', { weapon: 'bolt' })
   const r3 = await signed(alice, 'POST', '/api/profile', {})
   const gained = r3.json.profile.bank - ab.json.profile.bank
-  assert(gained > 0 && gained <= 25 * 72, `new run banks the left run, clamped (${gained})`)
+  assert(gained > 0 && gained <= 25 * 72, `left run's gold stays banked, clamped (${gained})`)
+
+  console.log('daily quests + NIGHTSWARM slayer')
+  {
+    const q0 = await signed(alice, 'POST', '/api/quests', {})
+    assert(q0.json.quests.length === 3 && new Set(q0.json.quests.map((q: any) => q.kind)).size === 3, `3 different daily quests: ${q0.json.quests.map((q: any) => q.text).join(' | ')}`)
+    const qs = q0.json.quests
+    const bad0 = await signed(alice, 'POST', '/api/quests/claim', { i: 0 })
+    assert(bad0.status === 400 || qs[0].done, 'cannot claim an unfinished quest')
+    // a long honest run that slays NIGHTSWARM
+    await new Promise((r) => setTimeout(r, 4200))
+    const sr = await signed(alice, 'POST', '/api/run/start', { weapon: 'lash' })
+    await db.query(`UPDATE runs SET started_at = NOW() - INTERVAL '1000 seconds' WHERE id = $1`, [sr.json.runId])
+    const before = (await signed(alice, 'POST', '/api/profile', {})).json.profile.bank
+    const sv = await signed(alice, 'POST', '/api/run/save', { runId: sr.json.runId, snap: { v: 1, time: 990, level: 205, kills: 14000, gold: 9000, bossesSlain: 10, weapons: [['lash', 8]], passives: [], evolved: [] } })
+    assert(sv.json.slayer === true && sv.json.inv.items.title_nightswarm === 1 && sv.json.inv.items.void_wings === 1, 'NIGHTSWARM slain at Lv 200: title + Void Wings granted')
+    assert(sv.json.profile.bank >= before + 100000, 'slayer bonus: +100,000 gold')
+    const sv2 = await signed(alice, 'POST', '/api/run/save', { runId: sr.json.runId, snap: { v: 1, time: 995, level: 205, kills: 14100, gold: 9050, bossesSlain: 10 } })
+    assert(sv2.json.slayer === false, 'slayer reward only once')
+    const q1 = await signed(alice, 'POST', '/api/quests', {})
+    assert(q1.json.quests.every((q: any) => q.done), 'that run completed all three quests')
+    let got = bad0.json.reward || 0
+    for (let i = 0; i < 3; i++) got += (await signed(alice, 'POST', '/api/quests/claim', { i })).json.reward || 0
+    assert(got === 600 + 1200 + 2500, `quest rewards claimed (${got})`)
+    const again = await signed(alice, 'POST', '/api/quests/claim', { i: 2 })
+    assert(again.status === 400, 'quest reward only once')
+    const board = await (await fetch(base + '/api/leaderboard')).json()
+    assert(board.slayers.includes(alice.name) || board.slayers.length === 1, 'Hall of Slayers lists the slayer')
+  }
 
   console.log('shop')
-  const bank0 = r3.json.profile.bank
+  const bank0 = (await signed(alice, 'POST', '/api/profile', {})).json.profile.bank
   const b1 = await signed(alice, 'POST', '/api/shop/buy', { key: 'might' })
   assert(b1.json.ok && b1.json.profile.meta.might === 1 && b1.json.profile.bank === bank0 - 80, 'bought Power Lv1 for 80')
   const b2 = await signed(alice, 'POST', '/api/shop/buy', { key: 'might' })

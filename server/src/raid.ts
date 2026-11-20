@@ -56,7 +56,11 @@ export const COSMETICS = [
   { id: 'crown', rarity: 'rare', w: 12 },
   { id: 'hourglass', rarity: 'epic', w: 6 },
   { id: 'shroud', rarity: 'epic', w: 4.5 },
-  { id: 'scythe_skin', rarity: 'legendary', w: 1.5 }
+  { id: 'scythe_skin', rarity: 'legendary', w: 1.5 },
+  // not dropped by the reaper: NIGHTSWARM slayers and weekly champions
+  { id: 'title_nightswarm', rarity: 'legendary', w: 0 },
+  { id: 'void_wings', rarity: 'legendary', w: 0 },
+  { id: 'title_champion', rarity: 'epic', w: 0 }
 ] as const
 export type CosmeticId = (typeof COSMETICS)[number]['id']
 const COS_IDS = new Set<string>(COSMETICS.map((c) => c.id))

@@ -134,7 +134,7 @@ const fxOut: number[][] = []
 const fxCount = new Map<number, number>()
 let fxTiers: number[] = [0, 0, 0]
 /** per-flush caps so a minigun or a maxed build never floods the channel */
-const FX_CAP: Record<number, number> = { 0: 3, 1: 2, 2: 4, 3: 2, 4: 2, 5: 3, 6: 2, 7: 2, 8: 1, 9: 1, 10: 1, 11: 1, 12: 1, 13: 1, 14: 1 }
+const FX_CAP: Record<number, number> = { 0: 3, 1: 2, 2: 4, 3: 2, 4: 2, 5: 3, 6: 2, 7: 2, 8: 1, 9: 1, 10: 1, 11: 1, 12: 1, 13: 1, 14: 1, 15: 2, 16: 2, 17: 2, 18: 2, 19: 2, 20: 1, 21: 3 }
 export function sendFx(code: number, nums: number[], tiers: number[]) {
   const c = fxCount.get(code) ?? 0
   if (c >= (FX_CAP[code] ?? 1)) return

@@ -151,6 +151,7 @@ export function setupView() {
   aura = ent()
   GltfContainer.create(aura, { src: fxSrc('bloom', 0) })
   Tween.setRotateContinuous(aura, Quaternion.fromEulerDegrees(0, -1, 0), 40)
+  setupSkills2()
   slashPool = fxPool('slash', 4)
   novaPool = fxPool('pulse', 4)
   strikePool = fxPool('sigil', 10)
@@ -378,6 +379,7 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
 
   playEvents(events, run)
   for (const q of remoteQ.splice(0)) playEvents(q.evs, null, q.tiers)
+  renderSkills2(run, dt)
   renderHalos(run, dt)
   for (let i = fxs.length - 1; i >= 0; i--) {
     const f = fxs[i]
@@ -487,7 +489,7 @@ export function haloTiersOf(run: Run) {
 }
 /** my skill tiers for slash / nova / strike, sent along with my effects */
 export function fxTiers(run: Run) {
-  return [tierOf(run, 'lash'), tierOf(run, 'nova'), tierOf(run, 'thunder')]
+  return [tierOf(run, 'lash'), tierOf(run, 'nova'), tierOf(run, 'thunder'), ...SK2.map((id) => tierOf(run, id))]
 }
 
 function playEvents(events: Ev[], run: Run | null, tiers?: number[]) {
@@ -516,6 +518,8 @@ function playEvents(events: Ev[], run: Run | null, tiers?: number[]) {
       t.rotation = yawQ(Math.random() * 360)
       t.scale = V(ev.r * 2, 1, ev.r * 2)
       active.push({ e, life: 0.28, max: 0.28, kind: 'strike', r: ev.r, asc })
+    } else if (playSkill2(ev, run, tiers)) {
+      // handled
     } else if (ev.t === 'kill') {
       deathPuff(ev.x, ev.z, ev.kind === 'elite' ? 2.2 : ev.kind === 'boss' ? 4 : 1)
     } else if (ev.t === 'swing') {
@@ -602,7 +606,7 @@ function playEvents(events: Ev[], run: Run | null, tiers?: number[]) {
 }
 
 // ───────── upgrade feedback: burst + big floating title ─────────
-const UP_KEYS = ['lash', 'bolt', 'orbit', 'aura', 'thunder', 'nova', 'passive', 'asc'] as const
+const UP_KEYS = ['lash', 'bolt', 'orbit', 'aura', 'thunder', 'nova', 'frost', 'chain', 'chakram', 'mine', 'beam', 'wisp', 'passive', 'asc'] as const
 const upPools = {} as Record<(typeof UP_KEYS)[number], Pool>
 let upText: Entity
 let upTextT = 0
@@ -797,9 +801,259 @@ export function setAim(y: number) {
 
 /** clear everything (run ended) */
 export function clearView() {
+  clearSkills2()
   renderRun(null, [], 0)
   nukeFlight = null
   Transform.getMutable(missile).position = HIDE
   Transform.getMutable(bossEnt).position = HIDE
   bossShown = 0
+}
+
+
+// ───────── second wave of auto-skills: Frost Comet, Arc Chain, Moon Chakram, Hex Mine, Prism Ray, Spirit Wisps ─────────
+const SK2: WeaponId[] = ['frost', 'chain', 'chakram', 'mine', 'beam', 'wisp']
+type K2 = 'comet' | 'frost' | 'arc' | 'chakram' | 'hex' | 'boom' | 'beam' | 'wisp'
+const P2 = {} as Record<K2, Pool[]>
+const src2 = (k: K2, t: number) => `models/fx_${k}${TIER_SUFFIX[t]}.glb`
+function pools2(k: K2, n: number, max: number, spin = 0) {
+  P2[k] = [0, 1, 2, 3].map(
+    (t) =>
+      new Pool(() => {
+        const e = ent()
+        GltfContainer.create(e, { src: src2(k, t) })
+        if (spin) Tween.setRotateContinuous(e, Quaternion.fromEulerDegrees(0, 1, 0), spin)
+        return e
+      }, t === 0 ? n : 1, max)
+  )
+}
+type Anim = { e: Entity; pool: Pool; life: number; max: number; upd: (k: number, t: Transform_) => void }
+type Transform_ = ReturnType<typeof Transform.getMutable>
+const anims: Anim[] = []
+const mineEnt = new Map<number, { e: Entity; t: number }>()
+let wispEnt: { e: Entity; t: number }[] = []
+const chakLocal: { e: Entity; t: number }[] = []
+const chakRemote: { x: number; z: number; fx: number; fz: number; d: number; t: number; dur: number; e: Entity; pool: Pool }[] = []
+
+function setupSkills2() {
+  pools2('comet', 4, 16)
+  pools2('frost', 4, 16)
+  pools2('arc', 12, 36)
+  pools2('chakram', 3, 10, 900)
+  pools2('hex', 4, 12, 60)
+  pools2('boom', 4, 14)
+  pools2('beam', 3, 6)
+  pools2('wisp', 4, 14)
+}
+const tier2 = (run: Run | null, tiers: number[] | undefined, id: WeaponId) => {
+  const i = 3 + SK2.indexOf(id)
+  return Math.max(0, Math.min(3, tiers ? tiers[i] ?? 0 : run ? tierOf(run, id) : 0))
+}
+function anim(k: K2, t: number, life: number, upd: Anim['upd']) {
+  const pool = P2[k][t]
+  const e = pool.take()
+  if (!e) return null
+  const a = { e, pool, life, max: life, upd }
+  anims.push(a)
+  upd(0, Transform.getMutable(e))
+  return a
+}
+
+/** returns true if the event belongs to the new skills */
+function playSkill2(ev: Ev, run: Run | null, tiers?: number[]): boolean {
+  switch (ev.t) {
+    case 'comet': {
+      const t = tier2(run, tiers, 'frost')
+      const s = 0.8 + ev.r * 0.35
+      anim('comet', t, 0.38, (k, tr) => {
+        tr.position = V(ev.x - 2.2 * (1 - k), 9 * (1 - k) + 0.1, ev.z - 1.2 * (1 - k))
+        tr.rotation = Quaternion.fromEulerDegrees(-14, 60, 0)
+        tr.scale = V(s, s, s)
+      })
+      return true
+    }
+    case 'frostHit': {
+      const t = tier2(run, tiers, 'frost')
+      anim('frost', t, 0.55, (k, tr) => {
+        const d = ev.r * 2 * (0.35 + 0.65 * Math.sqrt(k))
+        tr.position = V(ev.x, 0.04, ev.z)
+        tr.scale = V(d, 0.6 + (1 - k) * 1.4, d)
+      })
+      return true
+    }
+    case 'arc': {
+      const t = tier2(run, tiers, 'chain')
+      for (let i = 0; i + 1 < ev.pts.length; i++) {
+        const [x0, z0] = ev.pts[i]
+        const [x1, z1] = ev.pts[i + 1]
+        const len = Math.hypot(x1 - x0, z1 - z0) || 0.1
+        const yaw = (Math.atan2(x1 - x0, z1 - z0) * 180) / Math.PI
+        const roll = Math.random() * 180
+        anim('arc', t, 0.2 + i * 0.015, (k, tr) => {
+          tr.position = V(x0, 1.0, z0)
+          tr.rotation = Quaternion.multiply(yawQ(yaw), Quaternion.fromEulerDegrees(0, 0, roll + k * 40))
+          tr.scale = V(1 + (1 - k) * 0.4, 1 + (1 - k) * 0.4, len)
+        })
+      }
+      return true
+    }
+    case 'chakram': {
+      if (run && !tiers) return true // my own chakrams are drawn from the simulation
+      const t = tier2(run, tiers, 'chakram')
+      const e = P2.chakram[t].take()
+      if (!e) return true
+      const a = (ev.yaw * Math.PI) / 180
+      chakRemote.push({ x: ev.x, z: ev.z, fx: Math.sin(a), fz: Math.cos(a), d: Math.min(14, ev.d), t: 0, dur: Math.min(2, ev.dur), e, pool: P2.chakram[t] })
+      return true
+    }
+    case 'mine':
+      return true // drawn from the simulation
+    case 'boom': {
+      const t = tier2(run, tiers, 'mine')
+      anim('boom', t, 0.5, (k, tr) => {
+        const d = ev.r * 2 * (0.3 + 0.7 * Math.sqrt(k))
+        tr.position = V(ev.x, 0.04, ev.z)
+        tr.scale = V(d, 1 + (1 - k) * 2.5, d)
+      })
+      return true
+    }
+    case 'sweep': {
+      const t = tier2(run, tiers, 'beam')
+      const mine = !!run && !tiers
+      for (let i = 0; i < Math.min(3, ev.n); i++)
+        anim('beam', t, ev.dur, (k, tr) => {
+          const cx = mine && run ? run.x : ev.x
+          const cz = mine && run ? run.z : ev.z
+          tr.position = V(cx, 1.0, cz)
+          tr.rotation = yawQ(ev.yaw + k * 360 + (i * 360) / ev.n)
+          const w = 1 + Math.sin(k * Math.PI) * 0.5
+          tr.scale = V(w, w, Math.min(16, ev.len) * (0.4 + 0.6 * Math.min(1, k * 5)))
+        })
+      return true
+    }
+    case 'dash': {
+      if (run && !tiers) return true // my wisps are drawn from the simulation
+      const t = tier2(run, tiers, 'wisp')
+      const yaw = (Math.atan2(ev.x1 - ev.x0, ev.z1 - ev.z0) * 180) / Math.PI
+      anim('wisp', t, 0.22, (k, tr) => {
+        tr.position = V(ev.x0 + (ev.x1 - ev.x0) * k, 1.1, ev.z0 + (ev.z1 - ev.z0) * k)
+        tr.rotation = yawQ(yaw)
+        tr.scale = V(1, 1, 1)
+      })
+      return true
+    }
+  }
+  return false
+}
+
+function renderSkills2(run: Run | null, dt: number) {
+  for (let i = anims.length - 1; i >= 0; i--) {
+    const a = anims[i]
+    a.life -= dt
+    if (a.life <= 0) {
+      a.pool.give(a.e)
+      anims.splice(i, 1)
+      continue
+    }
+    a.upd(1 - a.life / a.max, Transform.getMutable(a.e))
+  }
+  // remote chakrams fly out and back from where they were thrown
+  for (let i = chakRemote.length - 1; i >= 0; i--) {
+    const c = chakRemote[i]
+    c.t += dt
+    if (c.t >= c.dur) {
+      c.pool.give(c.e)
+      chakRemote.splice(i, 1)
+      continue
+    }
+    const s = Math.sin((c.t / c.dur) * Math.PI) * c.d
+    Transform.getMutable(c.e).position = V(c.x + c.fx * s, 1.0, c.z + c.fz * s)
+  }
+  const live = run && run.alive ? run : null
+  // my chakrams (from the simulation, so hits line up)
+  const ct = live ? tierOf(live, 'chakram') : 0
+  const want = live ? live.chakrams.length : 0
+  while (chakLocal.length > want) {
+    const c = chakLocal.pop()!
+    P2.chakram[c.t].give(c.e)
+  }
+  if (live)
+    live.chakrams.forEach((c, i) => {
+      let v = chakLocal[i]
+      if (v && v.t !== ct) {
+        P2.chakram[v.t].give(v.e)
+        chakLocal[i] = undefined as any
+        v = undefined as any
+      }
+      if (!v) {
+        const e = P2.chakram[ct].take()
+        if (!e) return
+        v = chakLocal[i] = { e, t: ct }
+      }
+      const k = Math.min(1, c.t / c.dur)
+      const s = Math.sin(k * Math.PI) * c.d
+      const bx = k < 0.5 ? c.ox : live.x
+      const bz = k < 0.5 ? c.oz : live.z
+      const sz = lvlSize(live, 'chakram')
+      const tr = Transform.getMutable(v.e)
+      tr.position = V(bx + c.fx * s, 1.0, bz + c.fz * s)
+      tr.scale = V(sz, sz, sz)
+    })
+  // my hex mines
+  const seen = new Set<number>()
+  const mt = live ? tierOf(live, 'mine') : 0
+  if (live)
+    for (const m of live.mines) {
+      seen.add(m.id)
+      let v = mineEnt.get(m.id)
+      if (!v) {
+        const e = P2.hex[mt].take()
+        if (!e) continue
+        v = { e, t: mt }
+        mineEnt.set(m.id, v)
+        const sz = 0.9 + 0.08 * live.w('mine')
+        const tr = Transform.getMutable(e)
+        tr.position = V(m.x, 0.02, m.z)
+        tr.scale = V(sz, sz, sz)
+      }
+    }
+  for (const [id, v] of mineEnt)
+    if (!seen.has(id)) {
+      P2.hex[v.t].give(v.e)
+      mineEnt.delete(id)
+    }
+  // my spirit wisps
+  const wt = live ? tierOf(live, 'wisp') : 0
+  const ws = live ? live.wisps : []
+  while (wispEnt.length > ws.length) {
+    const w = wispEnt.pop()!
+    P2.wisp[w.t].give(w.e)
+  }
+  ws.forEach((w, i) => {
+    let v = wispEnt[i]
+    if (v && v.t !== wt) {
+      P2.wisp[v.t].give(v.e)
+      v = undefined as any
+    }
+    if (!v) {
+      const e = P2.wisp[wt].take()
+      if (!e) return
+      v = wispEnt[i] = { e, t: wt }
+    }
+    const tr = Transform.getMutable(v.e)
+    const dx = w.dash > 0 ? w.tx - w.x : Math.cos(w.ph)
+    const dz = w.dash > 0 ? w.tz - w.z : -Math.sin(w.ph)
+    tr.position = V(w.x, 1.3 + Math.sin(w.ph * 2) * 0.15, w.z)
+    tr.rotation = yawQ((Math.atan2(dx, dz) * 180) / Math.PI)
+    const sz = live ? lvlSize(live, 'wisp') : 1
+    tr.scale = V(sz, sz, sz)
+  })
+}
+
+function clearSkills2() {
+  for (const a of anims.splice(0)) a.pool.give(a.e)
+  for (const c of chakRemote.splice(0)) c.pool.give(c.e)
+  for (const c of chakLocal.splice(0)) if (c) P2.chakram[c.t].give(c.e)
+  for (const [, v] of mineEnt) P2.hex[v.t].give(v.e)
+  mineEnt.clear()
+  for (const w of wispEnt.splice(0)) if (w) P2.wisp[w.t].give(w.e)
 }
