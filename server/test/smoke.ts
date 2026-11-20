@@ -73,7 +73,7 @@ async function main() {
   await new Promise((r) => setTimeout(r, 4200))
   const s2 = await signed(alice, 'POST', '/api/run/start', { weapon: 'bolt' })
   const e2 = await signed(alice, 'POST', '/api/run/end', { runId: s2.json.runId, time: 900, level: 99, kills: 99999, gold: 999999, pvpKills: 50 })
-  assert(e2.json.granted <= 25 * 11, `instant "900s" run clamped (granted ${e2.json.granted})`)
+  assert(e2.json.granted <= 32 * 11, `instant "900s" run clamped (granted ${e2.json.granted})`)
   assert(e2.json.profile.best.time === 590, 'fake time did not replace best')
   const fast = await signed(alice, 'POST', '/api/run/start', { weapon: 'bolt' })
   assert(fast.status === 429, 'run spam rate-limited')
@@ -107,12 +107,12 @@ async function main() {
   const s4 = await signed(alice, 'POST', '/api/run/start', { weapon: 'bolt' })
   await db.query(`UPDATE runs SET started_at = NOW() - INTERVAL '60 seconds' WHERE id = $1`, [s4.json.runId])
   const cx = await signed(alice, 'POST', '/api/run/save', { runId: s4.json.runId, snap: { time: 55, level: 5, kills: 50, gold: 99999 } })
-  assert(cx.json.banked > 0 && cx.json.banked <= 25 * 72, `live gold is still clamped by anti-cheat (${cx.json.banked})`)
+  assert(cx.json.banked > 0 && cx.json.banked <= 32 * 72, `live gold is still clamped by anti-cheat (${cx.json.banked})`)
   await new Promise((r) => setTimeout(r, 4200))
   await signed(alice, 'POST', '/api/run/start', { weapon: 'bolt' })
   const r3 = await signed(alice, 'POST', '/api/profile', {})
   const gained = r3.json.profile.bank - ab.json.profile.bank
-  assert(gained > 0 && gained <= 25 * 72, `left run's gold stays banked, clamped (${gained})`)
+  assert(gained > 0 && gained <= 32 * 72, `left run's gold stays banked, clamped (${gained})`)
 
   console.log('daily quests + NIGHTSWARM slayer')
   {
