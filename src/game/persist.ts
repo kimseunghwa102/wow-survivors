@@ -18,7 +18,14 @@ export type ServerProfile = {
   daily?: { streak: number; claimable: boolean; next: number; doubleReady: boolean }
   firstPurchase?: boolean
 }
-export type GlobalBoard = { runs: { n: string; t: number; l: number; k: number }[]; pvp: [string, number][]; players: number }
+export type BoardRow = { n: string; t: number; l: number; k: number; live?: boolean }
+export type GlobalBoard = {
+  runs: BoardRow[]; pvp: [string, number][]; players: number
+  // live boards (players mid-run are merged in, flagged live)
+  allTime?: BoardRow[]; weekly?: BoardRow[]; slayers?: string[]; live?: number; week?: string; weekEndsAt?: number; prizes?: number[]
+}
+export type Quest = { kind: string; tier: number; target: number; reward: number; text: string; progress: number; done: boolean; claimed: boolean }
+export type QuestState = { day: string; resetsAt: number; quests: Quest[] }
 
 export const save = {
   online: false,
@@ -77,14 +84,14 @@ export async function serverStartRun(weapon: string, name: string) {
   }
 }
 
-export async function serverEndRun(result: { time: number; level: number; kills: number; gold: number; pvpKills: number; killer?: string }) {
+export async function serverEndRun(result: { time: number; level: number; kills: number; gold: number; pvpKills: number; killer?: string; bossesSlain?: number }) {
   if (!save.online || !save.runId) return null
   const runId = save.runId
   save.runId = ''
   try {
     const r = await call('POST', '/api/run/end', { runId, ...result })
     save.profile = r.profile
-    return r as { granted: number; bonus?: number; newBest: boolean; rank: number; profile: ServerProfile }
+    return r as { granted: number; paid?: number; bonus?: number; newBest: boolean; slayer?: boolean; rank: number; profile: ServerProfile; inv?: any }
   } catch (e) {
     console.log('run/end failed', e)
     return null
@@ -139,14 +146,32 @@ export async function loadBoard() {
 
 /** mid-run checkpoint so leaving the scene never loses skills or gold */
 export async function serverSaveRun(snap: RunSnap) {
-  if (!save.online || !save.runId) return false
+  if (!save.online || !save.runId) return null
   try {
-    await call('POST', '/api/run/save', { runId: save.runId, snap })
-    return true
+    const r = await call('POST', '/api/run/save', { runId: save.runId, snap })
+    if (r.profile) save.profile = r.profile
+    return r as { ok: boolean; banked: number; slayer: boolean; profile: ServerProfile | null; inv?: any }
   } catch (e) {
     console.log('run/save failed', e)
-    return false
+    return null
   }
+}
+
+/** today's 3 quests (reset at midnight KST) */
+export async function serverQuests() {
+  if (!save.online) return null
+  try {
+    const r = await call('POST', '/api/quests', {})
+    return r as QuestState
+  } catch (e) {
+    console.log('quests failed', e)
+    return null
+  }
+}
+export async function serverClaimQuest(i: number) {
+  const r = await call('POST', '/api/quests/claim', { i })
+  if (r.profile) save.profile = r.profile
+  return r as QuestState & { reward: number; profile: ServerProfile | null }
 }
 
 /** bank a saved run instead of resuming it */

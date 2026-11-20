@@ -82,6 +82,9 @@ export type Ev =
   | { t: 'slamWarn'; x: number; z: number; r: number; dur: number }
   | { t: 'slam'; x: number; z: number; r: number }
   | { t: 'charge'; x: number; z: number; yaw: number; len: number }
+  | { t: 'combo'; n: number; name: string }
+  | { t: 'comboBreak'; n: number }
+  | { t: 'arena'; kind: ArenaKind; on: boolean; dur: number }
   | { t: 'comet'; x: number; z: number; r: number }
   | { t: 'frostHit'; x: number; z: number; r: number }
   | { t: 'arc'; pts: [number, number][] }
@@ -90,6 +93,25 @@ export type Ev =
   | { t: 'boom'; id: number; x: number; z: number; r: number }
   | { t: 'sweep'; x: number; z: number; yaw: number; len: number; dur: number; n: number }
   | { t: 'dash'; x0: number; z0: number; x1: number; z1: number }
+
+export type ArenaKind = 'bloodmoon' | 'goldrush' | 'elitehunt'
+export const ARENA_EVENTS: Record<ArenaKind, { name: string; desc: string; dur: number; color: string }> = {
+  bloodmoon: { name: 'BLOOD MOON', desc: 'twice the monsters · gold ×1.5', dur: 40, color: '#FF2A3D' },
+  goldrush: { name: 'GOLD RUSH', desc: 'gold rains from the sky — grab it!', dur: 25, color: '#FFD86A' },
+  elitehunt: { name: 'ELITE HUNT', desc: '3 bounty brutes — each carries a vault', dur: 60, color: '#B07BFF' }
+}
+/** kill-streak milestones (the announcer calls them out) */
+export const COMBO_TIERS: [number, string][] = [
+  [25, 'KILLING SPREE'], [50, 'RAMPAGE'], [100, 'UNSTOPPABLE'], [200, 'GODLIKE'], [400, 'LEGENDARY'], [800, 'BEYOND GODLIKE']
+]
+export type VaultPrize = 'jackpot' | 'relic' | 'double' | 'heal' | 'magnet'
+export const VAULT_PRIZES: Record<VaultPrize, { name: string; sym: string; desc: string; color: string; w: number }> = {
+  jackpot: { name: 'GOLD JACKPOT', sym: '7', desc: 'a pile of gold', color: '#FFD86A', w: 22 },
+  relic: { name: 'RIFT RELIC', sym: '♦', desc: '+15% damage for the rest of the run', color: '#FF5468', w: 22 },
+  double: { name: 'DOUBLE ROLL', sym: '★', desc: '+2 extra upgrades', color: '#A26BFF', w: 26 },
+  heal: { name: 'LIFE SPRING', sym: '♥', desc: 'full heal + 30 max HP', color: '#3DFF8E', w: 16 },
+  magnet: { name: 'SOUL MAGNET', sym: '●', desc: 'every gem on the floor flies to you', color: '#4AA8FF', w: 14 }
+}
 
 export type Option =
   | { kind: 'weapon'; id: WeaponId; to: number }
@@ -159,6 +181,17 @@ export class Run {
   mines: { id: number; x: number; z: number; arm: number; life: number; dmg: number; r: number }[] = []
   sweeps: { t: number; dur: number; yaw: number; len: number; n: number; dmg: number; hit: Set<number>; pv: Set<string> }[] = []
   wisps: { x: number; z: number; cd: number; ph: number; dash: number; tx: number; tz: number }[] = []
+
+  // kill combo
+  combo = 0
+  comboT = 0
+  bestCombo = 0
+  private comboTier = 0
+  // arena events
+  arena: { kind: ArenaKind; t: number; dur: number } | null = null
+  nextArena = 150
+  private rushAcc = 0
+  bounties: number[] = []
 
   enemies: Enemy[] = []
   pickups: Pickup[] = []
@@ -255,7 +288,11 @@ export class Run {
     return 1 + 0.05 * this.meta.xp
   }
   get goldMul() {
-    return 1 + 0.2 * this.p('fortune')
+    return (1 + 0.12 * this.p('fortune')) * this.comboMul * (this.arena?.kind === 'bloodmoon' ? 1.5 : 1)
+  }
+  /** gold ×1 → ×1.5: +10% every 50 kills in a streak */
+  get comboMul() {
+    return 1 + Math.min(0.5, Math.floor(this.combo / 50) * 0.1)
   }
   get need() {
     return xpNeed(this.level)
@@ -283,6 +320,8 @@ export class Run {
     this.collect(dt)
     this.bossStep(dt)
     this.manualStep(dt)
+    this.arenaStep(dt)
+    if (this.combo && (this.comboT -= dt) <= 0) this.breakCombo()
     this.flushPvp(dt)
     return this.events
   }
@@ -291,7 +330,7 @@ export class Run {
   private spawn(dt: number) {
     const t = this.time
     // ramps to 12/s by ~5 min, then keeps creeping up to 17/s for the deep game
-    const rate = Math.min(12, 0.7 + t / 25) + Math.min(5, Math.max(0, t - 600) / 300)
+    const rate = (Math.min(12, 0.7 + t / 25) + Math.min(5, Math.max(0, t - 600) / 300)) * (this.arena?.kind === 'bloodmoon' ? 1.8 : 1)
     this.spawnAcc += rate * dt
     let alive = this.enemies.filter((e) => e.alive).length
     while (this.spawnAcc >= 1) {
@@ -391,6 +430,7 @@ export class Run {
         this.lastAttacker = ''
         this.hurtCd = 0.6
         this.events.push({ t: 'hurt', dmg })
+        this.breakCombo(true)
       }
     }
     if (this.hp <= 0) this.die('')
@@ -411,6 +451,7 @@ export class Run {
     if (this.hurtCd <= 0) {
       this.hurtCd = 0.3
       this.events.push({ t: 'hurt', dmg })
+      this.breakCombo(true)
     }
     if (this.hp <= 0) this.die(from)
   }
@@ -436,6 +477,19 @@ export class Run {
   private killEnemy(e: Enemy) {
     e.alive = false
     this.kills++
+    this.combo++
+    this.comboT = 3
+    if (this.combo > this.bestCombo) this.bestCombo = this.combo
+    const tier = COMBO_TIERS.filter(([n]) => this.combo >= n).length
+    if (tier > this.comboTier) {
+      this.comboTier = tier
+      this.events.push({ t: 'combo', n: this.combo, name: COMBO_TIERS[tier - 1][1] })
+    }
+    const bi = this.bounties.indexOf(e.id)
+    if (bi >= 0) {
+      this.bounties.splice(bi, 1)
+      for (let i = 0; i < 6; i++) this.drop('coin', e.x + (rand() - 0.5) * 2, e.z + (rand() - 0.5) * 2, 1)
+    }
     this.events.push({ t: 'kill', kind: e.kind, x: e.x, z: e.z })
     if (e.kind === 'boss') {
       const bi = e.boss ?? 0
@@ -451,7 +505,7 @@ export class Run {
     } else {
       this.drop('gem', e.x, e.z, e.xp)
       const r = rand()
-      if (r < 0.028 * (1 + 0.2 * this.p('fortune'))) this.drop('coin', e.x + 0.3, e.z, 1)
+      if (r < 0.02 * (1 + 0.12 * this.p('fortune'))) this.drop('coin', e.x + 0.3, e.z, 1)
       else if (r > 0.996) this.drop('heal', e.x, e.z + 0.3, 30)
     }
   }
@@ -918,7 +972,7 @@ export class Run {
           this.gainXp(p.value)
           this.events.push({ t: 'gem' })
         } else if (p.kind === 'coin') {
-          this.gold += Math.round(5 * this.goldMul * (1 + this.time / 1200))
+          this.gold += Math.round(5 * this.goldMul * (1 + this.time / 2400))
           this.events.push({ t: 'coin' })
         } else if (p.kind === 'heal') {
           this.hp = Math.min(this.maxHp, this.hp + p.value)
@@ -1006,6 +1060,56 @@ export class Run {
     }
   }
 
+  /** timeout ends the streak; getting hit (soft) halves it */
+  breakCombo(soft = false) {
+    const before = this.combo
+    this.combo = soft ? Math.floor(this.combo / 2) : 0
+    if (!this.combo) this.comboT = 0
+    this.comboTier = COMBO_TIERS.filter(([n]) => this.combo >= n).length
+    if (before >= 25 && (!soft || before - this.combo >= 25)) this.events.push({ t: 'comboBreak', n: before })
+  }
+
+  // ───────── random arena events (every ~3 min) ─────────
+  private arenaStep(dt: number) {
+    const a = this.arena
+    if (!a) {
+      if (this.time < this.nextArena || this.bossIds.length) return
+      const kinds: ArenaKind[] = ['bloodmoon', 'goldrush', 'elitehunt']
+      const kind = kinds[Math.floor(rand() * kinds.length)]
+      const dur = ARENA_EVENTS[kind].dur
+      this.arena = { kind, t: dur, dur }
+      this.events.push({ t: 'arena', kind, on: true, dur })
+      if (kind === 'elitehunt')
+        for (let i = 0; i < 3; i++) {
+          const ang = rand() * Math.PI * 2
+          const c = clampArena(this.x + Math.sin(ang) * 10, this.z + Math.cos(ang) * 10, 1)
+          const e = this.spawnEnemy('elite', c.x, c.z)
+          e.hp = e.maxHp = e.maxHp * 1.6
+          e.sc = 1.25
+          this.bounties.push(e.id)
+        }
+      return
+    }
+    a.t -= dt
+    if (a.kind === 'goldrush') {
+      this.rushAcc += dt
+      while (this.rushAcc >= 0.35) {
+        this.rushAcc -= 0.35
+        const ang = rand() * Math.PI * 2
+        const r = 2 + rand() * 6
+        const c = clampArena(this.x + Math.sin(ang) * r, this.z + Math.cos(ang) * r, 0.8)
+        this.drop('coin', c.x, c.z, 1)
+      }
+    }
+    if (a.kind === 'elitehunt') this.bounties = this.bounties.filter((id) => this.enemies.some((e) => e.id === id && e.alive))
+    if (a.t <= 0 || (a.kind === 'elitehunt' && !this.bounties.length)) {
+      this.events.push({ t: 'arena', kind: a.kind, on: false, dur: 0 })
+      this.arena = null
+      this.bounties = []
+      this.nextArena = this.time + 150 + rand() * 60
+    }
+  }
+
   // ───────── boss ladder ─────────
   bossesAlive(): Enemy[] {
     const out: Enemy[] = []
@@ -1072,6 +1176,7 @@ export class Run {
           this.hp -= dmg
           this.lastAttacker = ''
           this.events.push({ t: 'hurt', dmg })
+          this.breakCombo(true)
           if (this.hp <= 0) this.die('')
         }
         const adds = this.bossIds.length > 1 ? 3 : 4 + Math.min(6, b.boss!)
@@ -1276,13 +1381,29 @@ export class Run {
   }
 
   /** open a treasure chest: evolution if possible, else 1/3/5 random upgrades (slot-machine) */
-  openChest(big: boolean): { rolls: Option[]; gold: number } {
+  openChest(big: boolean): { rolls: Option[]; gold: number; prize?: VaultPrize } {
     const rolls: Option[] = []
     const evo = this.canEvolve()
     if (evo.length) rolls.push({ kind: 'evolve', id: evo[0] })
     const luck = 0.05 * this.p('fortune')
     const r = rand()
-    const count = big ? (r < 0.5 + luck ? 5 : 3) : r < 0.06 + luck ? 5 : r < 0.3 + luck ? 3 : 1
+    let count = big ? (r < 0.5 + luck ? 5 : 3) : r < 0.06 + luck ? 5 : r < 0.3 + luck ? 3 : 1
+    // boss vaults also spin the prize roulette
+    let prize: VaultPrize | undefined
+    if (big) {
+      const ids = Object.keys(VAULT_PRIZES) as VaultPrize[]
+      const total = ids.reduce((s, k) => s + VAULT_PRIZES[k].w, 0)
+      let x = rand() * total
+      prize = ids[ids.length - 1]
+      for (const k of ids) {
+        if (x < VAULT_PRIZES[k].w) {
+          prize = k
+          break
+        }
+        x -= VAULT_PRIZES[k].w
+      }
+      if (prize === 'double') count += 2
+    }
     while (rolls.length < count) {
       const owned = this.allUpgrades().filter((o) => (o.kind === 'weapon' ? this.w(o.id) : o.kind === 'passive' ? this.p(o.id) : 0) > 0)
       const pool = owned.length ? owned : this.allUpgrades()
@@ -1298,9 +1419,16 @@ export class Run {
       rolls.push(o)
     }
     if (rolls[0]?.kind === 'evolve') this.apply(rolls[0])
-    const gold = Math.round((big ? 120 : 40) * count * this.goldMul * 0.4)
+    let gold = Math.round((big ? 120 : 40) * count * this.goldMul * 0.4)
+    if (prize === 'jackpot') gold += Math.round((300 + this.time * 0.6) * (1 + 0.2 * this.p('fortune')))
+    if (prize === 'relic') this.boostDmg += 0.15
+    if (prize === 'heal') {
+      this.maxHp += 30
+      this.hp = this.maxHp
+    }
+    if (prize === 'magnet') for (const p of this.pickups) if (p.alive && p.kind === 'gem') p.flying = true
     this.gold += gold
-    return { rolls, gold }
+    return { rolls, gold, prize }
   }
 }
 

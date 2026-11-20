@@ -134,6 +134,8 @@ export async function grantSlayer(db: Sql, address: string) {
     const u = await db.query('UPDATE player_items SET qty = qty + 1 WHERE address = $1 AND item = $2', [address, it])
     if (!u.rowCount) await db.query('INSERT INTO player_items (address, item, qty) VALUES ($1, $2, 1)', [address, it])
   }
+  // wear them right away
+  await db.query("UPDATE players SET cosmetic = 'void_wings', title = 'title_nightswarm' WHERE address = $1", [address])
   return true
 }
 
@@ -201,6 +203,7 @@ export async function payWeekly(db: Sql, now = Date.now()) {
     if (i < 3) {
       const u = await db.query('UPDATE player_items SET qty = qty + 1 WHERE address = $1 AND item = $2', [address, 'title_champion'])
       if (!u.rowCount) await db.query('INSERT INTO player_items (address, item, qty) VALUES ($1, $2, 1)', [address, 'title_champion'])
+      await db.query("UPDATE players SET title = 'title_champion' WHERE address = $1 AND title IS NULL", [address])
     }
   }
   return true

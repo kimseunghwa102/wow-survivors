@@ -12,7 +12,7 @@ export const dayKey = (t = Date.now()) => new Date(t).toISOString().slice(0, 10)
 
 /** Anti-cheat ceilings. The game runs on the player's client, so the server only accepts plausible results. */
 export const LIMITS = {
-  goldPerSecond: 25, // deep runs (bosses, scaled coins) peak around ~15 gold/s
+  goldPerSecond: 32, // deep runs (bosses, combos, events) peak around ~24 gold/s
   goldPerPvpKill: 150,
   goldBase: 0, // no free allowance, otherwise run-spam would farm gold
   killsPerSecond: 20,
@@ -31,6 +31,7 @@ export function clampRun(claim: { time: number; level: number; kills: number; go
   const gold = Math.floor(rawGold * (claim.killedByPlayer ? LIMITS.pvpDeathKeep : 1))
   const kills = Math.max(0, Math.min(Math.floor(claim.kills), Math.ceil(LIMITS.killsPerSecond * time) + 50))
   const level = Math.max(1, Math.min(Math.floor(claim.level), 1 + Math.ceil(time / 4) + 5 * pvpKills))
-  const flagged = claim.time > elapsedSec + LIMITS.timeSlackSec || claim.gold > goldCap || claim.kills > kills
+  // gold over the cap is clamped; only a wild over-claim (×1.5) marks the run as suspicious
+  const flagged = claim.time > elapsedSec + LIMITS.timeSlackSec || claim.gold > goldCap * 1.5 || claim.kills > kills
   return { time: Math.floor(time), level, kills, gold, pvpKills, flagged }
 }

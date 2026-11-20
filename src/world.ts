@@ -154,31 +154,37 @@ export function buildWorld() {
   // ── Hall of Legends leaderboard ──
   const [lx, , lz] = LAYOUT.leaderboard
   text(V(lx, 6.1, lz - 0.22), 'HALL OF LEGENDS', 5.5, '#FFD86A', { outline: '#2A1A00' })
-  text(V(lx - 3.9, 5.35, lz - 0.22), 'LONGEST SURVIVAL (ALL-TIME)', 2.8, '#5EF2FF', { align: TextAlignMode.TAM_MIDDLE_LEFT })
-  text(V(lx + 1.2, 5.35, lz - 0.22), 'TOP PvP SLAYERS', 2.8, '#FF5468', { align: TextAlignMode.TAM_MIDDLE_LEFT })
-  const runsT = text(V(lx - 3.9, 3.0, lz - 0.22), '', 2.3, '#FFFFFF', { align: TextAlignMode.TAM_MIDDLE_LEFT })
-  const pvpT = text(V(lx + 1.2, 3.6, lz - 0.22), '', 2.3, '#FFFFFF', { align: TextAlignMode.TAM_MIDDLE_LEFT })
+  text(V(lx - 4.6, 5.35, lz - 0.22), 'THIS WEEK (LIVE)', 2.6, '#3DFF8E', { align: TextAlignMode.TAM_MIDDLE_LEFT })
+  text(V(lx - 1.3, 5.35, lz - 0.22), 'ALL-TIME (LIVE)', 2.6, '#5EF2FF', { align: TextAlignMode.TAM_MIDDLE_LEFT })
+  text(V(lx + 2.0, 5.35, lz - 0.22), 'PvP · SLAYERS', 2.6, '#FF5468', { align: TextAlignMode.TAM_MIDDLE_LEFT })
+  const weekT = text(V(lx - 4.6, 3.0, lz - 0.22), '', 2.0, '#FFFFFF', { align: TextAlignMode.TAM_MIDDLE_LEFT })
+  const runsT = text(V(lx - 1.3, 3.0, lz - 0.22), '', 2.0, '#FFFFFF', { align: TextAlignMode.TAM_MIDDLE_LEFT })
+  const pvpT = text(V(lx + 2.0, 3.0, lz - 0.22), '', 2.0, '#FFFFFF', { align: TextAlignMode.TAM_MIDDLE_LEFT })
   let acc = 2
   let boardT = 0
   engine.addSystem((dt) => {
     acc += dt
     boardT += dt
-    if (boardT > 30) {
+    // live boards: refresh every 15 s (players mid-run show up with a red dot)
+    if (boardT > 15) {
       boardT = 0
       void loadBoard()
     }
     if (acc < 2) return
     acc = 0
+    const row = (r: { n: string; t: number; l: number; live?: boolean }, i: number) => `${i + 1}. ${r.live ? '● ' : ''}${r.n.substring(0, 11)}  ${mmss(r.t)}  Lv${r.l}`
+    const wk = save.board?.weekly ?? []
+    setText(weekT, wk.length ? wk.slice(0, 8).map(row).join('\n') : 'Nobody yet this week.\nTop 10 win gold!')
     // all-time board from the save server; falls back to this session's synced board
-    const runs = save.board?.runs?.length ? save.board.runs : topRuns()
-    setText(
-      runsT,
-      runs.length
-        ? runs.slice(0, 8).map((r, i) => `${i + 1}. ${r.n.substring(0, 12)}  ${mmss(r.t)}  Lv${r.l}`).join('\n')
-        : 'No legends yet.\nBe the first!'
-    )
+    const runs = save.board?.allTime?.length ? save.board.allTime : save.board?.runs?.length ? save.board.runs : topRuns()
+    setText(runsT, runs.length ? runs.slice(0, 8).map(row).join('\n') : 'No legends yet.\nBe the first!')
     const pv = save.board?.pvp?.length ? save.board.pvp : topPvp()
-    setText(pvpT, pv.length ? pv.map(([n, k], i) => `${i + 1}. ${n.substring(0, 12)}  ${k}`).join('\n') : 'No duels yet.')
+    const sl = save.board?.slayers ?? []
+    setText(
+      pvpT,
+      (pv.length ? pv.map(([n, k], i) => `${i + 1}. ${n.substring(0, 11)}  ${k}`).join('\n') : 'No duels yet.') +
+        `\n\n✦ NIGHTSWARM SLAYERS\n${sl.length ? sl.slice(0, 4).join('\n') : '— none yet —'}`
+    )
   })
 }
 

@@ -8,9 +8,11 @@ import type { Entity } from '@dcl/sdk/ecs'
 import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS } from './defs'
 import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm, queueRemoteFx, fxTiers, haloTiersOf } from './view'
 import { encodeFx, decodeFx } from './fxnet'
+import { ARENA_EVENTS, VaultPrize, VAULT_PRIZES } from './core'
 import { attachCosmetic } from './cosmetics'
 import { play, setupSfx, musicLevel } from './sfx'
 import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf, sendFx, pushFeed } from './net'
+import { serverQuests, serverClaimQuest, QuestState } from './persist'
 import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile, serverArmoryBuy, serverClaimDaily, shopConfig, shopQuote, shopConfirm, serverSaveRun, serverAbandon, pingServer } from './persist'
 import { getUserAccount, sendAsync, requirePayment } from '~system/EthereumController'
 import { getPlayer } from '@dcl/sdk/players'
@@ -29,7 +31,7 @@ export const G = {
   run: null as Run | null,
   phase: 'idle' as Phase,
   choices: [] as Option[],
-  chest: null as null | { rolls: Option[]; gold: number; spin: number; big: boolean },
+  chest: null as null | { rolls: Option[]; gold: number; spin: number; big: boolean; prize?: VaultPrize },
   chestQueue: [] as boolean[],
   bank: 0,
   meta: { might: 0, hp: 0, magnet: 0, xp: 0 } as Record<MetaKey, number>,
@@ -65,7 +67,19 @@ export const G = {
   buyConfirmT: 0,
   doubleBonus: 0,
   goldPulse: 0, // bank counter flash when gold comes in
-  lastBank: -1
+  lastBank: -1,
+  /** run gold the server already banked live (checkpoints) */
+  runBanked: 0,
+  // kill combo + arena events
+  comboFlash: 0,
+  comboName: '',
+  // quests / rankings / slayer
+  quests: null as QuestState | null,
+  questOpen: false,
+  questBusy: false,
+  boardOpen: false,
+  boardTab: 'weekly' as 'weekly' | 'allTime' | 'slayers',
+  slayerReveal: 0
 }
 
 export const equipped = () => {
@@ -313,6 +327,7 @@ export function resumeRun() {
   save.resume = null
   save.runId = s.runId
   G.run = Run.restore(s.snap, { ...G.meta }, G.armory, equipped())
+  G.runBanked = s.snap.gold
   G.doubleBonus = 0
   G.armoryOpen = false
   G.pvpKills = s.snap.pvpKills ?? 0
@@ -334,6 +349,7 @@ export function startRun(w: WeaponId) {
     })
   })
   G.run = new Run(w, { ...G.meta }, G.armory, equipped())
+  G.runBanked = 0
   G.doubleBonus = 0
   G.armoryOpen = false
   G.pvpKills = 0
@@ -388,6 +404,54 @@ export function skipLevel() {
   nextModal()
 }
 
+/** live checkpoint: banks gold + updates the live rankings */
+function checkpoint() {
+  const r = G.run
+  if (!r) return
+  void serverSaveRun(r.snapshot()).then((res) => {
+    if (!res) return
+    G.runBanked += res.banked ?? 0
+    if (res.inv) save.inv = res.inv
+    if (res.profile) applyProfile(res.profile)
+    if (res.slayer) slayerReveal()
+  })
+}
+
+/** the NIGHTSWARM reward lands (once per wallet) */
+function slayerReveal() {
+  G.slayerReveal = 9
+  G.flash = 0.7
+  play('evolve')
+  play('jackpot')
+  banner('✦ NIGHTSWARM SLAYER ✦  +100,000 GOLD · VOID WINGS', 7)
+}
+
+export async function refreshQuests() {
+  const q = await serverQuests()
+  if (q) G.quests = q
+}
+export function claimQuest(i: number) {
+  if (G.questBusy) return
+  G.questBusy = true
+  void serverClaimQuest(i)
+    .then((r) => {
+      G.quests = r
+      if (r.profile) applyProfile(r.profile)
+      play('jackpot')
+      banner(`QUEST COMPLETE  +${r.reward.toLocaleString()} GOLD`, 3)
+    })
+    .catch((e) => banner(String(e?.message ?? e), 3))
+    .finally(() => (G.questBusy = false))
+}
+export function openQuests() {
+  G.questOpen = !G.questOpen
+  if (G.questOpen) void refreshQuests()
+}
+export function openBoard() {
+  G.boardOpen = !G.boardOpen
+  if (G.boardOpen) void loadBoard()
+}
+
 export function collectChest() {
   if (G.phase !== 'chest') return
   const best = G.chest?.rolls.find((o) => o.kind === 'evolve') ?? G.chest?.rolls.find((o) => o.kind === 'weapon' || o.kind === 'passive')
@@ -407,7 +471,7 @@ function nextModal() {
   const big = G.chestQueue.shift()
   if (big !== undefined) {
     const res = r.openChest(big)
-    G.chest = { ...res, spin: 2.2, big }
+    G.chest = { ...res, spin: big ? 3.2 : 2.2, big }
     G.phase = 'chest'
     play('jackpot')
     if (res.rolls.some((o) => o.kind === 'evolve')) play('evolve')
@@ -460,21 +524,26 @@ function endRun(killer?: string) {
   const gold = Math.floor(r.gold * keep)
   G.summary = { t, l: r.level, k: r.kills, gold, killer, pvpKills: G.pvpKills, newBest, saving: save.online }
   submitRun({ n: me().name, t, l: r.level, k: r.kills })
+  const banked = G.runBanked
   if (save.online) {
-    void serverEndRun({ time: r.time, level: r.level, kills: r.kills, gold: r.gold, pvpKills: G.pvpKills, killer }).then((res) => {
+    void serverEndRun({ time: r.time, level: r.level, kills: r.kills, gold: r.gold, pvpKills: G.pvpKills, killer, bossesSlain: r.bossesSlain }).then((res) => {
       if (res) {
+        if (res.inv) save.inv = res.inv
         applyProfile(res.profile)
+        if (res.slayer) slayerReveal()
         if (G.summary) {
           G.summary.gold = res.granted
           G.doubleBonus = res.bonus ?? 0
           G.summary.rank = res.rank
           G.summary.newBest = res.newBest
         }
-      } else G.bank += gold
+      } else G.bank += Math.max(0, gold - banked)
       if (G.summary) G.summary.saving = false
       void loadBoard()
     })
-  } else G.bank += gold
+  } else G.bank += Math.max(0, gold - banked)
+  G.runBanked = 0
+  void refreshQuests()
   if (killer && G.lastAttackerId) sendKo(G.lastAttackerId, killer, r.level)
   G.phase = 'dead'
   G.run = null
@@ -579,8 +648,34 @@ function handle(evs: Ev[]) {
         play('slam')
         break
       case 'elite':
+        if (r.arena?.kind === 'elitehunt') break
         play('elite')
         banner('A BRUTE appears — it carries a vault!', 4)
+        break
+      case 'combo':
+        G.comboName = e.name
+        G.comboFlash = 1.6
+        play('evolve', 1 + Math.min(0.4, e.n / 2000))
+        play('roar', 1.4)
+        break
+      case 'comboBreak':
+        G.comboName = `COMBO BROKEN · ${e.n}`
+        G.comboFlash = 1.0
+        break
+      case 'arena': {
+        const d = ARENA_EVENTS[e.kind]
+        if (e.on) {
+          play('boss')
+          banner(`${d.name}!  ${d.desc}`, 5)
+          musicLevel(0.22)
+        } else {
+          banner(`${d.name} is over`, 2.5)
+          musicLevel(0.16)
+        }
+        break
+      }
+      case 'charge':
+        play('warn', 0.8)
         break
       case 'ring':
         play('ring')
@@ -606,6 +701,7 @@ export function setupGame() {
     loadProfile(me().name).then((p) => {
       if (p) {
         applyProfile(p)
+        void refreshQuests()
         // a run that started while the server was still waking up: register it now so it gets saved
         if (G.run && !save.runId && G.phase !== 'dead') void serverStartRun([...G.run.weapons.keys()][0], me().name)
         if (save.resume && !G.run) banner(`Your run is saved (Lv ${save.resume.snap.level}) — enter the rift to RESUME`, 6)
@@ -622,11 +718,11 @@ export function setupGame() {
   let pingT = 0
   engine.addSystem((dt) => {
     loadT += dt
-    // mid-run checkpoint every 15s → leaving the scene never loses skills or gold
+    // live checkpoint every 10s → gold is banked and rankings update while you play
     ckT += dt
-    if (G.run && G.phase !== 'dead' && G.run.alive && ckT > 15) {
+    if (G.run && G.phase !== 'dead' && G.run.alive && ckT > 10) {
       ckT = 0
-      void serverSaveRun(G.run.snapshot())
+      checkpoint()
     }
     // keep the free-tier save server awake while someone is here
     pingT += dt
@@ -717,6 +813,8 @@ export function setupGame() {
   engine.addSystem((dt) => {
     dt = Math.min(dt, 0.1)
     if (G.bannerT > 0) G.bannerT -= dt
+    if (G.comboFlash > 0) G.comboFlash -= dt
+    if (G.slayerReveal > 0) G.slayerReveal -= dt
     if (G.hurtFlash > 0) G.hurtFlash -= dt
     if (G.flash > 0) G.flash -= dt
     const pt = Transform.getOrNull(engine.PlayerEntity)
@@ -732,7 +830,7 @@ export function setupGame() {
     if (G.phase === 'start' && !G.inArena) G.phase = 'idle'
     if (G.run && wasIn && !G.inArena && G.phase !== 'dead') {
       banner('SANCTUARY — your run is paused & saved', 3)
-      void serverSaveRun(G.run.snapshot())
+      checkpoint()
     }
 
     const r = G.run

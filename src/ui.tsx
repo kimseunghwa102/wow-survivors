@@ -1,7 +1,7 @@
 import ReactEcs, { ReactEcsRenderer, UiEntity, Label, Button } from '@dcl/sdk/react-ecs'
 import { Color4 } from '@dcl/sdk/math'
-import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun } from './game/game'
-import { optionLabel, Option } from './game/core'
+import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard } from './game/game'
+import { optionLabel, Option, ARENA_EVENTS, VAULT_PRIZES, COMBO_TIERS } from './game/core'
 import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable } from './game/defs'
 import { feed, topRuns } from './game/net'
 import { save } from './game/persist'
@@ -121,6 +121,9 @@ function SidePanel() {
   )
 }
 
+/** bank + run gold not yet banked by the last checkpoint (gold shows up the moment you pick it up) */
+const liveBank = () => G.bank + (G.run ? Math.max(0, Math.floor(G.run.gold) - G.runBanked) : 0)
+
 /** the bank, always visible at the right-center of the screen */
 function GoldHud() {
   const r = G.run
@@ -134,9 +137,9 @@ function GoldHud() {
       <UiEntity uiTransform={{ width: pulse ? 64 : 56, height: pulse ? 64 : 56, flexShrink: 0 }} uiBackground={{ texture: { src: 'images/coin.png' }, textureMode: 'stretch' }} />
       <UiEntity uiTransform={{ flexDirection: 'column', margin: { left: 10 }, flexGrow: 1 }}>
         <Label value="<b>GOLD</b>" fontSize={11} color={C('#E8C670')} uiTransform={{ height: 14 }} textAlign="middle-left" />
-        <Label value={save.online ? `<b>${G.bank.toLocaleString()}</b>` : '<b>···</b>'} fontSize={pulse ? 30 : 27} color={pulse ? C('#FFF6C8') : GOLD} uiTransform={{ height: 34 }} textAlign="middle-left" />
+        <Label value={save.online ? `<b>${liveBank().toLocaleString()}</b>` : '<b>···</b>'} fontSize={pulse ? 30 : 27} color={pulse ? C('#FFF6C8') : GOLD} uiTransform={{ height: 34 }} textAlign="middle-left" />
         {r && r.gold > 0 ? (
-          <Label value={`+${Math.floor(r.gold).toLocaleString()} this run`} fontSize={11} color={C('#3DFF8E')} uiTransform={{ height: 14 }} textAlign="middle-left" />
+          <Label value={`+${Math.floor(r.gold).toLocaleString()} this run · ● LIVE`} fontSize={11} color={C('#3DFF8E')} uiTransform={{ height: 14 }} textAlign="middle-left" />
         ) : (
           <Label value={status} fontSize={10} color={save.online && !save.profile?.guest ? C('#3DFF8E') : C('#FFB347')} uiTransform={{ height: 14 }} textAlign="middle-left" />
         )}
@@ -248,6 +251,14 @@ function Dock() {
           onMouseDown={toggleAuto}
         />
       ) : null}
+      <Button
+        value={G.boardOpen ? '✕ CLOSE RANKINGS' : '🏆 LIVE RANKINGS'}
+        fontSize={15}
+        color={WHITE}
+        uiTransform={{ width: 210, height: 40, margin: { bottom: 6, top: 6 } }}
+        uiBackground={BTN(G.boardOpen ? C('#7B3BFF') : C('#2A1A40'))}
+        onMouseDown={tap(openBoard)}
+      />
       <Label value="keys: 1 upgrades · 2 switch weapon · 3 buy next · 4 gold shop · E auto · F nuke" fontSize={11} color={DIM} uiTransform={{ height: 16 }} />
     </UiEntity>
   )
@@ -438,6 +449,15 @@ function LobbyHint() {
             />
           ) : null}
           <Button value="⚔ ARMORY" fontSize={13} color={WHITE} uiTransform={{ width: 140, height: 32, margin: 4 }} uiBackground={BTN(C('#7B3BFF'))} onMouseDown={tap(() => (G.armoryOpen = true))} />
+          <Button
+            value={`📜 QUESTS${G.quests ? ` ${G.quests.quests.filter((q) => q.claimed).length}/3` : ''}${G.quests?.quests.some((q) => q.done && !q.claimed) ? ' !' : ''}`}
+            fontSize={13}
+            color={WHITE}
+            uiTransform={{ width: 150, height: 32, margin: 4 }}
+            uiBackground={BTN(G.quests?.quests.some((q) => q.done && !q.claimed) ? C('#1FA85A') : C('#3A2A5A'))}
+            onMouseDown={tap(openQuests)}
+          />
+          <Button value="🏆 RANKINGS" fontSize={13} color={WHITE} uiTransform={{ width: 150, height: 32, margin: 4 }} uiBackground={BTN(C('#3A2A5A'))} onMouseDown={tap(openBoard)} />
         </UiEntity>
         {G.daily?.doubleReady ? <Label value="First run today banks DOUBLE gold!" fontSize={12} color={C('#3DFF8E')} /> : null}
         <Label value={save.status} fontSize={11} color={save.online ? C('#3DFF8E') : DIM} />
@@ -528,18 +548,22 @@ function ChestModal() {
   const c = G.chest!
   const spinning = c.spin > 0
   const reel = () => REEL[Math.floor(Math.random() * REEL.length)]
+  const pz = c.prize ? VAULT_PRIZES[c.prize] : null
+  // boss vaults: reels lock one by one on the prize symbol
+  const locked = (i: number) => !!pz && c.spin < 2.4 - i * 0.8
   return (
-    <Modal title={spinning ? 'JACKPOT VAULT' : c.rolls.length >= 5 ? 'MEGA JACKPOT!!' : c.rolls.length >= 3 ? 'BIG WIN!' : 'VAULT OPENED'} color={spinning ? GOLD : C('#3DFF8E')}>
+    <Modal title={spinning ? (c.big ? 'BOSS VAULT ROULETTE' : 'JACKPOT VAULT') : pz ? pz.name + '!' : c.rolls.length >= 5 ? 'MEGA JACKPOT!!' : c.rolls.length >= 3 ? 'BIG WIN!' : 'VAULT OPENED'} color={spinning ? GOLD : pz ? C(pz.color) : C('#3DFF8E')}>
       {spinning ? (
         <UiEntity uiTransform={{ flexDirection: 'row', margin: 10 }}>
           {[0, 1, 2].map((i) => (
-            <UiEntity key={i} uiTransform={{ width: 110, height: 110, margin: 8, justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: C('#000000') }}>
-              <Label value={reel()} fontSize={64} color={GOLD} />
+            <UiEntity key={i} uiTransform={{ width: 110, height: 110, margin: 8, justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: locked(i) ? C(pz!.color, 0.25) : C('#000000') }}>
+              <Label value={locked(i) ? pz!.sym : reel()} fontSize={64} color={locked(i) ? C(pz!.color) : GOLD} />
             </UiEntity>
           ))}
         </UiEntity>
       ) : (
         <UiEntity uiTransform={{ flexDirection: 'column', alignItems: 'center' }}>
+          {pz ? <Label value={`<b>${pz.sym} ${pz.sym} ${pz.sym}  ${pz.name}</b> — ${pz.desc}`} fontSize={18} color={C(pz.color)} uiTransform={{ height: 30, margin: { bottom: 6 } }} /> : null}
           {c.rolls.map((o, i) => {
             const l = optionLabel(o)
             return <Label key={i} value={`<b>${l.title}</b>  ·  ${l.sub}`} fontSize={o.kind === 'evolve' ? 24 : 17} color={C(l.color)} uiTransform={{ height: o.kind === 'evolve' ? 34 : 26 }} />
@@ -559,7 +583,7 @@ function DeadModal() {
   return (
     <Modal title={s.killer ? `SLAIN BY ${s.killer.toUpperCase()}` : 'YOU DIED'} color={C('#FF5468')} sub={s.newBest ? 'NEW PERSONAL BEST!' : `Best: ${mmss(G.best.t)}`}>
       <Label value={`Survived ${mmss(s.t)}   ·   Level ${s.l}   ·   ${s.k} kills   ·   ${s.pvpKills} hunters slain`} fontSize={18} color={WHITE} uiTransform={{ height: 28 }} />
-      <Label value={s.saving ? 'Saving to your wallet…' : `+${s.gold} gold banked${G.doubleBonus ? ' (DAILY DOUBLE!)' : ''}${s.killer ? ' (30% taken by your killer)' : ''}${rank ? `   ·   Hall of Legends #${rank}` : ''}`} fontSize={15} color={GOLD} uiTransform={{ height: 24 }} />
+      <Label value={s.saving ? 'Saving to your wallet…' : `+${s.gold} gold banked${G.doubleBonus ? ' (DAILY DOUBLE!)' : ''}${s.killer ? ' (your killer took 30% of the unbanked part)' : ''}${rank ? `   ·   Hall of Legends #${rank}` : ''}`} fontSize={15} color={GOLD} uiTransform={{ height: 24 }} />
       <UiEntity uiTransform={{ flexDirection: 'row', margin: { top: 12 } }}>
         <Button value="PLAY AGAIN" fontSize={18} color={WHITE} uiTransform={{ width: 200, height: 44, margin: 6 }} uiBackground={BTN(C('#7B3BFF'))} onMouseDown={tap(playAgain)} />
         <Button value="⚔ ARMORY" fontSize={16} color={WHITE} uiTransform={{ width: 150, height: 44, margin: 6 }} uiBackground={BTN(C('#C08A00'))} onMouseDown={tap(() => (G.armoryOpen = true))} />
@@ -641,11 +665,163 @@ function Hurt() {
   return <UiEntity uiTransform={{ positionType: 'absolute', width: '100%', height: '100%' }} uiBackground={{ color: C('#FF0000', 0.18 * (G.hurtFlash / 0.25)) }} />
 }
 
+// ───────────────────────── combo · arena events ─────────────────────────
+function ComboHud() {
+  const r = G.run
+  const show = r && r.combo >= 10
+  const flash = G.comboFlash > 0
+  if (!show && !flash) return null
+  const n = r?.combo ?? 0
+  const tier = COMBO_TIERS.filter(([k]) => n >= k).length
+  const col = tier >= 5 ? '#FFFFFF' : tier >= 4 ? '#FFD86A' : tier >= 3 ? '#FF4FD2' : tier >= 2 ? '#FF7A1A' : '#5EF2FF'
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: '38%', left: 24 }, flexDirection: 'column', alignItems: 'flex-start' }}>
+      {show ? (
+        <UiEntity uiTransform={{ flexDirection: 'column', padding: { left: 14, right: 14, top: 8, bottom: 8 }, width: 210 }} uiBackground={FRAME}>
+          <Label value={`<b>${n.toLocaleString()}</b>`} fontSize={n >= 100 ? 40 : 34} color={C(col)} uiTransform={{ height: 44 }} textAlign="middle-left" />
+          <Label value={`COMBO  ·  gold ×${r!.comboMul.toFixed(1)}`} fontSize={12} color={WHITE} uiTransform={{ height: 16 }} textAlign="middle-left" />
+          <Bar frac={Math.max(0, r!.comboT) / 3} color={C(col)} w="100%" h={5} />
+        </UiEntity>
+      ) : null}
+      {flash ? <Label value={`<b>${G.comboName}</b>`} fontSize={G.comboName.startsWith('COMBO BROKEN') ? 16 : 26} color={G.comboName.startsWith('COMBO BROKEN') ? C('#FF5468') : C(col)} uiTransform={{ height: 34, margin: { top: 6 } }} textAlign="middle-left" /> : null}
+    </UiEntity>
+  )
+}
+
+function ArenaHud() {
+  const a = G.run?.arena
+  if (!a) return null
+  const d = ARENA_EVENTS[a.kind]
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 112 }, width: '100%', justifyContent: 'center' }}>
+      <UiEntity uiTransform={{ flexDirection: 'column', alignItems: 'center', padding: { left: 18, right: 18, top: 6, bottom: 6 } }} uiBackground={MODAL}>
+        <Label value={`<b>${d.name}</b>  ${a.kind === 'elitehunt' ? `${G.run!.bounties.length} bounties left` : mmss(Math.max(0, a.t))}`} fontSize={18} color={C(d.color)} uiTransform={{ height: 24 }} />
+        <Label value={d.desc} fontSize={12} color={WHITE} uiTransform={{ height: 16 }} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+// ───────────────────────── quests · attendance · rankings ─────────────────────────
+const ATTEND = [100, 150, 250, 400, 600, 800, 1200]
+function QuestModal() {
+  const q = G.quests
+  const d = G.daily
+  const streak = d ? (d.claimable ? d.streak : Math.max(0, d.streak - 1)) % 7 : 0
+  return (
+    <Modal title="DAILY QUESTS" color={GOLD} sub={q ? `new quests in ${mmss(Math.max(0, (q.resetsAt - Date.now()) / 1000))}` : save.online ? 'loading…' : 'connect to the save server to get quests'}>
+      <UiEntity uiTransform={{ flexDirection: 'column', width: 620 }}>
+        {(q?.quests ?? []).map((x, i) => (
+          <UiEntity key={`q${i}`} uiTransform={{ flexDirection: 'row', alignItems: 'center', width: '100%', height: 54, margin: 3, padding: { left: 10, right: 10 } }} uiBackground={BTN(x.claimed ? C('#1A2A1F') : C('#2A1F3A'))}>
+            <UiEntity uiTransform={{ flexDirection: 'column', flexGrow: 1 }}>
+              <Label value={`<b>${x.text}</b>`} fontSize={14} color={x.claimed ? DIM : WHITE} uiTransform={{ height: 18 }} textAlign="middle-left" />
+              <Bar frac={x.progress / x.target} color={x.done ? C('#3DFF8E') : GOLD} w={360} h={8} />
+              <Label value={`${x.progress.toLocaleString()} / ${x.target.toLocaleString()}`} fontSize={10} color={DIM} uiTransform={{ height: 13 }} textAlign="middle-left" />
+            </UiEntity>
+            <Button
+              value={x.claimed ? '✓ CLAIMED' : x.done ? `CLAIM ● ${x.reward.toLocaleString()}` : `● ${x.reward.toLocaleString()}`}
+              fontSize={13}
+              color={WHITE}
+              uiTransform={{ width: 150, height: 34 }}
+              uiBackground={BTN(x.claimed ? C('#2A2A2A') : x.done ? C('#1FA85A') : C('#3A2A4A'))}
+              onMouseDown={tap(() => x.done && !x.claimed && claimQuest(i))}
+            />
+          </UiEntity>
+        ))}
+        <Label value="<b>ATTENDANCE</b>  ·  come back every day — day 7 is the big one" fontSize={14} color={GOLD} uiTransform={{ height: 22, margin: { top: 10 } }} textAlign="middle-left" />
+        <UiEntity uiTransform={{ flexDirection: 'row', width: '100%', justifyContent: 'space-between' }}>
+          {ATTEND.map((g, i) => {
+            const got = i < streak
+            const today = d?.claimable && i === streak
+            return (
+              <UiEntity key={`a${i}`} uiTransform={{ width: 82, height: 74, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', margin: 2 }} uiBackground={BTN(got ? C('#1A3A24') : today ? C('#C08A00') : i === 6 ? C('#4A2A6A') : C('#241A30'))}>
+                <Label value={`DAY ${i + 1}`} fontSize={11} color={DIM} uiTransform={{ height: 14 }} />
+                <Label value={got ? '✓' : i === 6 ? '👑' : '●'} fontSize={18} color={got ? C('#3DFF8E') : GOLD} uiTransform={{ height: 22 }} />
+                <Label value={`<b>${g}</b>`} fontSize={13} color={WHITE} uiTransform={{ height: 16 }} />
+              </UiEntity>
+            )
+          })}
+        </UiEntity>
+        <UiEntity uiTransform={{ flexDirection: 'row', justifyContent: 'center', width: '100%', margin: { top: 10 } }}>
+          {d?.claimable ? <Button value={`🎁 CLAIM DAY ${streak + 1}  ● ${d.next}`} fontSize={14} color={WHITE} uiTransform={{ width: 240, height: 38, margin: 4 }} uiBackground={BTN(C('#C08A00'))} onMouseDown={tap(claimDaily)} /> : null}
+          <Button value="CLOSE" fontSize={14} color={WHITE} uiTransform={{ width: 140, height: 38, margin: 4 }} uiBackground={BTN(C('#2A2A3A'))} onMouseDown={tap(openQuests)} />
+        </UiEntity>
+      </UiEntity>
+    </Modal>
+  )
+}
+
+function BoardModal() {
+  const b = save.board
+  const tab = G.boardTab
+  const rows = tab === 'weekly' ? b?.weekly ?? [] : tab === 'allTime' ? b?.allTime ?? b?.runs ?? [] : []
+  const left = b?.weekEndsAt ? Math.max(0, (b.weekEndsAt - Date.now()) / 1000) : 0
+  const prizes = b?.prizes ?? []
+  const tabBtn = (k: typeof tab, label: string) => (
+    <Button key={k} value={label} fontSize={13} color={WHITE} uiTransform={{ width: 170, height: 32, margin: 3 }} uiBackground={BTN(tab === k ? C('#7B3BFF') : C('#2A1F3A'))} onMouseDown={tap(() => (G.boardTab = k))} />
+  )
+  return (
+    <Modal title="RANKINGS" color={GOLD} sub={`${b?.live ?? 0} hunting right now · updates live`}>
+      <UiEntity uiTransform={{ flexDirection: 'column', width: 620, alignItems: 'center' }}>
+        <UiEntity uiTransform={{ flexDirection: 'row' }}>
+          {tabBtn('weekly', '📅 THIS WEEK')}
+          {tabBtn('allTime', '🏆 ALL-TIME')}
+          {tabBtn('slayers', '✦ SLAYERS')}
+        </UiEntity>
+        {tab === 'weekly' ? <Label value={`resets Monday 00:00 KST · ${Math.floor(left / 86400)}d ${Math.floor((left % 86400) / 3600)}h left · top 10 win gold, top 3 get ♛ Champion`} fontSize={11} color={DIM} uiTransform={{ height: 16 }} /> : null}
+        {tab === 'slayers' ? (
+          <UiEntity uiTransform={{ flexDirection: 'column', width: '100%', alignItems: 'center', margin: { top: 6 } }}>
+            <Label value="Hunters who slew NIGHTSWARM at Lv 200 — Void Wings + 100,000 gold" fontSize={12} color={GOLD} uiTransform={{ height: 18 }} />
+            {(b?.slayers ?? []).length ? (
+              (b?.slayers ?? []).map((n, i) => <Label key={`s${i}`} value={`${i + 1}. <b>${n}</b>`} fontSize={15} color={C('#C9A8FF')} uiTransform={{ height: 22 }} />)
+            ) : (
+              <Label value="Nobody yet. Will you be the first?" fontSize={14} color={DIM} uiTransform={{ height: 22 }} />
+            )}
+          </UiEntity>
+        ) : (
+          <UiEntity uiTransform={{ flexDirection: 'column', width: '100%', margin: { top: 4 } }}>
+            {rows.length ? (
+              rows.map((x, i) => (
+                <UiEntity key={`r${i}`} uiTransform={{ flexDirection: 'row', width: '100%', height: 26, alignItems: 'center', padding: { left: 8, right: 8 } }} uiBackground={{ color: i % 2 ? C('#FFFFFF', 0.03) : C('#FFFFFF', 0.07) }}>
+                  <Label value={`<b>${i + 1}</b>`} fontSize={14} color={i < 3 ? GOLD : WHITE} uiTransform={{ width: 34 }} textAlign="middle-left" />
+                  <Label value={`${x.n.substring(0, 16)}${x.live ? '  🔴 LIVE' : ''}`} fontSize={14} color={x.live ? C('#FF7A7A') : WHITE} uiTransform={{ width: 250 }} textAlign="middle-left" />
+                  <Label value={mmss(x.t)} fontSize={14} color={C('#5EF2FF')} uiTransform={{ width: 80 }} textAlign="middle-left" />
+                  <Label value={`Lv ${x.l}`} fontSize={13} color={DIM} uiTransform={{ width: 70 }} textAlign="middle-left" />
+                  <Label value={tab === 'weekly' && prizes[i] ? `● ${prizes[i].toLocaleString()}` : `${x.k.toLocaleString()} kills`} fontSize={12} color={tab === 'weekly' ? GOLD : DIM} uiTransform={{ width: 110 }} textAlign="middle-right" />
+                </UiEntity>
+              ))
+            ) : (
+              <Label value="No runs yet — be the first on the board!" fontSize={14} color={DIM} uiTransform={{ height: 24 }} />
+            )}
+          </UiEntity>
+        )}
+        <Button value="CLOSE" fontSize={14} color={WHITE} uiTransform={{ width: 160, height: 36, margin: { top: 8 } }} uiBackground={BTN(C('#2A2A3A'))} onMouseDown={tap(openBoard)} />
+      </UiEntity>
+    </Modal>
+  )
+}
+
+function SlayerReveal() {
+  if (G.slayerReveal <= 0) return null
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: '22%' }, width: '100%', justifyContent: 'center' }}>
+      <UiEntity uiTransform={{ flexDirection: 'column', alignItems: 'center', padding: 22, width: 640 }} uiBackground={MODAL}>
+        <Label value="<b>✦ NIGHTSWARM SLAYER ✦</b>" fontSize={36} color={C('#FFD86A')} uiTransform={{ height: 46 }} />
+        <Label value="You slew the World Eater at Lv 200. The rift will remember." fontSize={15} color={WHITE} uiTransform={{ height: 22 }} />
+        <Label value="<b>+100,000 GOLD</b>  ·  <b>VOID WINGS</b> (worn now)  ·  title on your name tag" fontSize={15} color={C('#C9A8FF')} uiTransform={{ height: 24, margin: { top: 6 } }} />
+        <Label value="Your name is now in the Hall of Slayers forever." fontSize={12} color={DIM} uiTransform={{ height: 18 }} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
 const Root = () => (
   <UiEntity uiTransform={{ width: '100%', height: '100%', positionType: 'absolute' }}>
     <Hurt />
     <Flash />
     <TopHud />
+    <ArenaHud />
+    <ComboHud />
     <BossBar />
     <Dock />
     <InfoPanel />
@@ -660,7 +836,10 @@ const Root = () => (
     {G.phase === 'dead' ? <DeadModal /> : null}
     {G.shopOpen && G.phase !== 'levelup' && G.phase !== 'chest' ? <ShopModal /> : null}
     {G.armoryOpen && !G.shopOpen && (G.phase === 'idle' || G.phase === 'dead' || G.phase === 'start') ? <ArmoryModal /> : null}
+    {G.questOpen && (G.phase === 'idle' || G.phase === 'dead' || G.phase === 'start') ? <QuestModal /> : null}
+    {G.boardOpen && G.phase !== 'levelup' && G.phase !== 'chest' && !G.questOpen ? <BoardModal /> : null}
     <GoldShop />
+    <SlayerReveal />
     <Banner />
   </UiEntity>
 )

@@ -106,7 +106,7 @@ export const PASSIVES: Record<PassiveId, { name: string; desc: string; color: st
   bloodstone: { name: 'Lifebloom', desc: '+0.4 HP regen / sec', color: '#FF2A3D' },
   magnet: { name: 'Lodestar', desc: '+35% pickup range', color: '#4AA8FF' },
   swiftness: { name: 'Wind Treads', desc: '+8% move speed', color: '#FFFFFF' },
-  fortune: { name: 'Lucky Chip', desc: '+20% gold, luckier vaults', color: '#FFD86A' }
+  fortune: { name: 'Lucky Chip', desc: '+12% gold & coins, luckier vaults', color: '#FFD86A' }
 }
 
 export type EnemyDef = { hp: number; speed: number; dmg: number; xp: number; r: number; model: string; scale: number; hover: number }
@@ -256,7 +256,7 @@ export const GOLD_PACKS = [
 export const FIRST_BUY_BONUS = 0.5
 
 /** relics dropped by THE PALE SOVEREIGN (raid at -91,71); must match raid/src/defs.ts + server/src/raid.ts */
-export type CosmeticDef = { id: string; name: string; model?: string; anchor?: 'head' | 'hand_l' | 'hand_r' | 'feet' | 'over'; title?: string }
+export type CosmeticDef = { id: string; name: string; model?: string; anchor?: 'head' | 'hand_l' | 'hand_r' | 'feet' | 'over' | 'back'; title?: string; anim?: boolean }
 export const COSMETICS: CosmeticDef[] = [
   { id: 'title_slayer', name: 'Reaper Slayer', title: 'Reaper Slayer' },
   { id: 'title_bane', name: "Death's Bane", title: "Death's Bane" },
@@ -264,6 +264,10 @@ export const COSMETICS: CosmeticDef[] = [
   { id: 'crown', name: 'Bone Crown', model: 'models/cos_crown.glb', anchor: 'head' },
   { id: 'hourglass', name: 'Hourglass of Ages', model: 'models/cos_hourglass.glb', anchor: 'over' },
   { id: 'shroud', name: "Reaper's Shroud", model: 'models/cos_shroud.glb', anchor: 'feet' },
-  { id: 'scythe_skin', name: 'Scythe of the Pale Sovereign', model: 'models/cos_scythe.glb', anchor: 'hand_r' }
+  { id: 'scythe_skin', name: 'Scythe of the Pale Sovereign', model: 'models/cos_scythe.glb', anchor: 'hand_r' },
+  // NIGHTSWARM slayers (Lv 200) and weekly champions
+  { id: 'title_nightswarm', name: 'Nightswarm Slayer', title: '✦ NIGHTSWARM SLAYER ✦' },
+  { id: 'void_wings', name: 'Void Wings', model: 'models/cos_void_wings.glb', anchor: 'back', anim: true },
+  { id: 'title_champion', name: 'Weekly Champion', title: '♛ Weekly Champion' }
 ]
 export const RAID_PARCEL = { x: -91, y: 71 }
