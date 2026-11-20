@@ -148,6 +148,7 @@ export function setupView() {
   GltfContainer.create(aura, { src: fxSrc('bloom', 0) })
   Tween.setRotateContinuous(aura, Quaternion.fromEulerDegrees(0, -1, 0), 40)
   setupSkills2()
+  setupGods()
   slashPool = fxPool('slash', 4)
   novaPool = fxPool('pulse', 4)
   strikePool = fxPool('sigil', 10)
@@ -213,9 +214,10 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
         }
         bv.acc += dt
         if (bv.acc >= MOVE_STEP || bv.shown !== bv.lastId) {
-          const start = bv.lastId === e.id ? V(bv.tx, 0, bv.tz) : V(e.x, 0, e.z)
+          const fy = bossFor(e.boss ?? 0).fly ?? 0
+          const start = bv.lastId === e.id ? V(bv.tx, fy, bv.tz) : V(e.x, fy, e.z)
           bv.lastId = e.id
-          Tween.createOrReplace(bv.ent, { mode: Tween.Mode.Move({ start, end: V(e.x, 0, e.z) }), duration: MOVE_STEP * 1000, easingFunction: EasingFunction.EF_LINEAR })
+          Tween.createOrReplace(bv.ent, { mode: Tween.Mode.Move({ start, end: V(e.x, fy, e.z) }), duration: MOVE_STEP * 1000, easingFunction: EasingFunction.EF_LINEAR })
           bv.tx = e.x
           bv.tz = e.z
           bv.acc = 0
@@ -328,12 +330,14 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
       seenB.add(b.id)
       let v = boltEnt.get(b.id)
       if (!v) {
-        const t = tierOf(run, 'bolt')
-        const e = boltPool[t].take()
+        const feather = b.k === 'feather'
+        const t = feather ? 4 + (run.g('wings') >= 5 ? 1 : 0) : tierOf(run, 'bolt')
+        const e = feather ? featherPool[t - 4].take() : boltPool[t].take()
         if (!e) continue
         v = { e, t }
+        if (feather) Transform.getMutable(e).rotation = yawQ((Math.atan2(b.vx, b.vz) * 180) / Math.PI)
         boltEnt.set(b.id, v)
-        const sz = lvlSize(run, 'bolt')
+        const sz = b.k === 'feather' ? 1.3 : lvlSize(run, 'bolt')
         Transform.getMutable(e).scale = V(sz, sz, sz)
         Tween.createOrReplace(e, {
           mode: Tween.Mode.Move({ start: V(b.x, 1.1, b.z), end: V(b.x + b.vx * b.life, 1.1, b.z + b.vz * b.life) }),
@@ -345,7 +349,8 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
   for (const [id, v] of boltEnt)
     if (!seenB.has(id)) {
       Tween.deleteFrom(v.e)
-      boltPool[v.t].give(v.e)
+      if (v.t >= 4) featherPool[v.t - 4].give(v.e)
+      else boltPool[v.t].give(v.e)
       boltEnt.delete(id)
     }
 
@@ -385,6 +390,7 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
   playEvents(events, run)
   for (const q of remoteQ.splice(0)) playEvents(q.evs, null, q.tiers)
   renderSkills2(run, dt)
+  renderGods(run, dt)
   renderHalos(run, dt)
   for (let i = fxs.length - 1; i >= 0; i--) {
     const f = fxs[i]
@@ -523,6 +529,8 @@ function playEvents(events: Ev[], run: Run | null, tiers?: number[]) {
       t.rotation = yawQ(Math.random() * 360)
       t.scale = V(ev.r * 2, 1, ev.r * 2)
       active.push({ e, life: 0.28, max: 0.28, kind: 'strike', r: ev.r, asc })
+    } else if (playGod(ev, run, tiers)) {
+      // handled
     } else if (playSkill2(ev, run, tiers)) {
       // handled
     } else if (ev.t === 'kill') {
@@ -816,6 +824,7 @@ export function setAim(y: number) {
 /** clear everything (run ended) */
 export function clearView() {
   clearSkills2()
+  clearGods()
   renderRun(null, [], 0)
   nukeFlight = null
   Transform.getMutable(missile).position = HIDE
@@ -1074,4 +1083,137 @@ function clearSkills2() {
   for (const [, v] of mineEnt) P2.hex[v.t].give(v.e)
   mineEnt.clear()
   for (const w of wispEnt.splice(0)) if (w) P2.wisp[w.t].give(w.e)
+}
+
+
+// ───────── GOD POWERS + sky-god boss attacks ─────────
+let featherPool: Pool[]
+const GP = {} as Record<'kame' | 'meteor' | 'hole' | 'lsword' | 'nuke' | 'bbeam' | 'borb', Pool[]>
+const gAnims: Anim[] = []
+const orbEnt = new Map<number, Entity>()
+function setupGods() {
+  const mk = (src: string, n: number, max: number, spin = 0) =>
+    new Pool(() => {
+      const e = ent()
+      GltfContainer.create(e, { src })
+      if (spin) Tween.setRotateContinuous(e, Quaternion.fromEulerDegrees(0, 1, 0), spin)
+      return e
+    }, n, max)
+  featherPool = [mk('models/fx_feather.glb', 6, 24), mk('models/fx_feather_max.glb', 1, 24)]
+  GP.kame = [mk('models/fx_kame.glb', 1, 3), mk('models/fx_kame_max.glb', 1, 3)]
+  GP.meteor = [mk('models/fx_meteor.glb', 2, 10), mk('models/fx_meteor_max.glb', 1, 3)]
+  GP.hole = [mk('models/fx_hole.glb', 1, 3, 240), mk('models/fx_hole_max.glb', 1, 3, 240)]
+  GP.lsword = [mk('models/fx_lsword.glb', 4, 14), mk('models/fx_lsword_max.glb', 1, 14)]
+  GP.nuke = [mk('models/fx_nuke.glb', 1, 4)]
+  GP.bbeam = [mk('models/fx_bbeam.glb', 1, 3)]
+  GP.borb = [mk('models/fx_borb.glb', 12, 40, 300)]
+}
+function gAnim(pool: Pool, life: number, upd: Anim['upd']) {
+  const e = pool.take()
+  if (!e) return
+  gAnims.push({ e, pool, life, max: life, upd })
+  upd(0, Transform.getMutable(e))
+}
+function playGod(ev: Ev, run: Run | null, tiers?: number[]): boolean {
+  const mine = !!run && !tiers
+  switch (ev.t) {
+    case 'kame':
+      gAnim(GP.kame[ev.max ? 1 : 0], ev.dur, (k, tr) => {
+        const x = mine && run ? run.x : ev.x
+        const z = mine && run ? run.z : ev.z
+        tr.position = V(x, 1.3, z)
+        tr.rotation = yawQ(ev.yaw)
+        const grow = Math.min(1, k * 6)
+        const w = ev.w * (1 + Math.sin(k * 40) * 0.08) * (k > 0.85 ? (1 - k) / 0.15 : 1)
+        tr.scale = V(w, w, ev.len * grow)
+      })
+      return true
+    case 'meteorFall': {
+      const pool = GP.meteor[ev.big ? 1 : 0]
+      const s = ev.big ? 1.6 : 1.1
+      gAnim(pool, ev.delay, (k, tr) => {
+        tr.position = V(ev.x - 7 * (1 - k), 0.2 + 20 * (1 - k), ev.z - 4 * (1 - k))
+        tr.rotation = Quaternion.fromEulerDegrees(-28, 60, 0)
+        tr.scale = V(s, s, s)
+      })
+      return true
+    }
+    case 'gnuke':
+      gAnim(GP.nuke[0], 1.6, (k, tr) => {
+        const d = ev.r * 2 * Math.min(1, 0.2 + k * 1.8)
+        tr.position = V(ev.x, 0, ev.z)
+        tr.scale = V(d, ev.r * (0.4 + k * 0.9), d)
+      })
+      return true
+    case 'hole':
+      gAnim(GP.hole[ev.max ? 1 : 0], ev.dur, (k, tr) => {
+        const d = ev.r * (0.3 + 0.7 * Math.min(1, k * 4)) * (k > 0.9 ? (1 - k) / 0.1 : 1)
+        tr.position = V(ev.x, 0.1, ev.z)
+        tr.scale = V(d, d * 0.8, d)
+      })
+      return true
+    case 'gsword':
+      gAnim(GP.lsword[ev.max ? 1 : 0], ev.delay + 0.35, (k, tr) => {
+        const fall = Math.min(1, (k * (ev.delay + 0.35)) / ev.delay)
+        tr.position = V(ev.x, 0.05 + 12 * (1 - fall), ev.z)
+        tr.rotation = yawQ(ev.x * 37)
+        tr.scale = V(1.3, 1.3, 1.3)
+      })
+      return true
+    case 'bbeamWarn': {
+      const e = warnPool.take()
+      if (!e) return true
+      const a = (ev.yaw * Math.PI) / 180
+      const t = Transform.getMutable(e)
+      t.position = V(ev.x + Math.sin(a) * ev.len * 0.5, 0.05, ev.z + Math.cos(a) * ev.len * 0.5)
+      t.rotation = yawQ(ev.yaw)
+      t.scale = V(ev.w, 1, ev.len)
+      fxs.push({ e, life: ev.dur, max: ev.dur, pool: warnPool, kind: 'tracer', r: ev.len })
+      return true
+    }
+    case 'bbeam':
+      gAnim(GP.bbeam[0], ev.dur, (k, tr) => {
+        tr.position = V(ev.x, 2.2, ev.z)
+        tr.rotation = Quaternion.multiply(yawQ(ev.yaw), Quaternion.fromEulerDegrees(4, 0, 0))
+        const w = ev.w * (1 + Math.sin(k * 50) * 0.1)
+        tr.scale = V(w, w, ev.len * Math.min(1, k * 8))
+      })
+      return true
+  }
+  return false
+}
+function renderGods(run: Run | null, dt: number) {
+  for (let i = gAnims.length - 1; i >= 0; i--) {
+    const a = gAnims[i]
+    a.life -= dt
+    if (a.life <= 0) {
+      a.pool.give(a.e)
+      gAnims.splice(i, 1)
+      continue
+    }
+    a.upd(1 - a.life / a.max, Transform.getMutable(a.e))
+  }
+  // boss orbs (hostile projectiles), positioned every frame
+  const seen = new Set<number>()
+  if (run)
+    for (const h of run.hostile) {
+      seen.add(h.id)
+      let e = orbEnt.get(h.id)
+      if (!e) {
+        e = GP.borb[0].take()
+        if (!e) continue
+        orbEnt.set(h.id, e)
+      }
+      Transform.getMutable(e).position = V(h.x, 1.1, h.z)
+    }
+  for (const [id, e] of orbEnt)
+    if (!seen.has(id)) {
+      GP.borb[0].give(e)
+      orbEnt.delete(id)
+    }
+}
+function clearGods() {
+  for (const a of gAnims.splice(0)) a.pool.give(a.e)
+  for (const [, e] of orbEnt) GP.borb[0].give(e)
+  orbEnt.clear()
 }

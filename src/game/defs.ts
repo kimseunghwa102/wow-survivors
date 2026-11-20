@@ -181,7 +181,12 @@ export type BossDef = {
   twin?: boolean
   /** lunges at the player between slams */
   charge?: boolean
+  /** hover height (sky gods fly) */
+  fly?: number
+  /** ranged patterns: energy beam, orb barrage, meteor rain */
+  attacks?: BossAttack[]
 }
+export type BossAttack = 'beam' | 'orbs' | 'meteors'
 // original creature bosses + dragons; twins arrive together and share the arena
 export const BOSSES: BossDef[] = [
   { lvl: 10, name: 'Gravemaw', title: 'Glutton of the Crypts', model: 'models/ghoul_elite.glb', scale: 2.6, hp: 1500, dmg: 25, speed: 2.0, r: 1.2, slam: 3.5, adds: 'ghoul', color: '#FF5A3D' },
@@ -206,26 +211,36 @@ export const BOSSES: BossDef[] = [
   { lvl: 170, name: 'Abyssal Leviathan', title: 'The Sky That Bites', model: 'models/dragon_void.glb', scale: 1.7, hp: 1400000, dmg: 180, speed: 2.5, r: 3.2, slam: 8.5, adds: 'wraith', color: '#C04BFF' },
   { lvl: 185, name: 'Ashen Twin', title: 'The Twin Calamity', model: 'models/dragon_fire.glb', scale: 1.6, hp: 1100000, dmg: 190, speed: 2.4, r: 3.0, slam: 8.5, adds: 'bat', color: '#FF6A1E', twin: true },
   { lvl: 185, name: 'Starless Twin', title: 'The Twin Calamity', model: 'models/dragon_void.glb', scale: 1.6, hp: 1100000, dmg: 190, speed: 2.5, r: 3.0, slam: 8.5, adds: 'wraith', color: '#C04BFF' },
-  { lvl: 200, name: 'NIGHTSWARM', title: 'The World Eater', model: 'models/dragon_wyrm.glb', scale: 1.0, hp: 2600000, dmg: 220, speed: 2.4, r: 3.6, slam: 10, adds: 'wraith', color: '#FFD86A' }
+  { lvl: 200, name: 'NIGHTSWARM', title: 'The World Eater', model: 'models/dragon_wyrm.glb', scale: 1.0, hp: 2600000, dmg: 220, speed: 2.4, r: 3.6, slam: 10, adds: 'wraith', color: '#FFD86A' },
+  // ── the SKY GODS (Lv 220-300): they fly, fire energy beams, orb barrages and meteor rain ──
+  { lvl: 220, name: 'Seraph of Ruin', title: 'The Light That Burns', model: 'models/boss_seraph.glb', scale: 1.0, hp: 6000000, dmg: 240, speed: 3.0, r: 2.4, slam: 9, adds: 'wraith', color: '#FFF2B0', fly: 3.5, attacks: ['beam', 'orbs'] },
+  { lvl: 240, name: 'Stormheart', title: 'Wings of the Last Storm', model: 'models/boss_stormbird.glb', scale: 1.1, hp: 9000000, dmg: 260, speed: 3.6, r: 2.6, slam: 9, adds: 'bat', color: '#7DF9FF', fly: 5, charge: true, attacks: ['orbs', 'meteors'] },
+  { lvl: 260, name: 'Oculus Prime', title: 'The Eye Above All', model: 'models/boss_oculus.glb', scale: 1.1, hp: 13500000, dmg: 280, speed: 2.2, r: 3.0, slam: 10, adds: 'wraith', color: '#FF2A6A', fly: 4, attacks: ['beam', 'orbs'] },
+  { lvl: 280, name: 'Azure Leviathan', title: 'Serpent of the Upper Sky', model: 'models/boss_skywyrm.glb', scale: 1.3, hp: 20000000, dmg: 300, speed: 3.2, r: 3.0, slam: 10, adds: 'skeleton', color: '#3FE6FF', fly: 4.5, charge: true, attacks: ['beam', 'meteors'] },
+  { lvl: 300, name: 'AETHERION', title: 'The God-Eater', model: 'models/boss_aetherion.glb', scale: 1.2, hp: 33000000, dmg: 340, speed: 2.4, r: 3.8, slam: 12, adds: 'wraith', color: '#B05BFF', fly: 2.5, attacks: ['beam', 'orbs', 'meteors'] }
 ]
 /** index of NIGHTSWARM in the ladder (bosses slain to reach + kill it; server/src/progress.ts SLAYER.bosses must match) */
-export const NIGHTSWARM_INDEX = BOSSES.length - 1
-export const ENDLESS_EVERY = 20 // after level 200: a Calamity every 20 levels, 35% stronger each time
-const ENDLESS_POOL = BOSSES.filter((b) => !b.twin && b.lvl >= 50 && b.name !== 'NIGHTSWARM' && !b.name.includes('Twin'))
+export const NIGHTSWARM_INDEX = BOSSES.findIndex((b) => b.name === 'NIGHTSWARM')
+export const ENDLESS_EVERY = 20 // after level 300: a Calamity every 20 levels, 30% stronger each time
+const ENDLESS_POOL = BOSSES.filter((b) => !b.twin && b.lvl >= 70 && b.name !== 'NIGHTSWARM' && b.name !== 'AETHERION' && !b.name.includes('Twin'))
+const LAST = BOSSES[BOSSES.length - 1]
 export function bossFor(index: number): BossDef {
   if (index < BOSSES.length) return BOSSES[index]
   const k = index - BOSSES.length + 1
   const base = ENDLESS_POOL[(k - 1) % ENDLESS_POOL.length]
-  const mul = Math.pow(1.35, k)
+  const mul = Math.pow(1.3, k)
   return {
     ...base,
     twin: false,
-    lvl: 200 + k * ENDLESS_EVERY,
+    lvl: LAST.lvl + k * ENDLESS_EVERY,
     name: `Calamity ${toRoman(k)}: ${base.name}`,
     title: 'Endless Night',
     scale: Math.min(2.0, base.scale * 1.15),
-    hp: Math.round(BOSSES[BOSSES.length - 1].hp * mul),
-    dmg: Math.round(BOSSES[BOSSES.length - 1].dmg * Math.pow(1.12, k))
+    hp: Math.round(LAST.hp * mul),
+    dmg: Math.round(LAST.dmg * Math.pow(1.1, k)),
+    // every calamity flies and uses the sky-god patterns
+    fly: base.fly ?? 3,
+    attacks: base.attacks ?? ['beam', 'orbs', 'meteors']
   }
 }
 function toRoman(n: number) {
@@ -233,6 +248,19 @@ function toRoman(n: number) {
   let s = ''
   for (const [v, c] of r) while (n >= v) (s += c), (n -= v)
   return s
+}
+
+// ───────────── GOD POWERS: unlocked at Lv 200 (own slots, up to Lv 5) ─────────────
+export type GodId = 'kame' | 'nuke' | 'hole' | 'swords' | 'wings'
+export const GOD_UNLOCK = 200
+export const MAX_GODS = 3
+export const MAX_GOD_LVL = 5
+export const GODS: Record<GodId, { name: string; color: string; desc: string[] }> = {
+  kame: { name: 'Celestial Cannon', color: '#5EF2FF', desc: ['Fire a colossal energy wave at the horde', '+damage, wider', '+damage, faster', '+damage, wider', 'MAX: golden beam'] },
+  nuke: { name: "Heaven's Nuke", color: '#FF6A1A', desc: ['Call down a nuclear meteor', '+damage, bigger blast', '+damage, faster', '+damage, bigger blast', 'MAX: annihilation'] },
+  hole: { name: 'Singularity', color: '#B05BFF', desc: ['Open a black hole that swallows and crushes', '+damage, stronger pull', '+damage, faster', '+damage, stronger pull', 'MAX: event horizon'] },
+  swords: { name: 'Judgment Blades', color: '#FFF2B0', desc: ['Giant swords of light rain from heaven', '+2 blades, +damage', '+damage, faster', '+2 blades, +damage', 'MAX: golden judgment'] },
+  wings: { name: 'Seraph Wings', color: '#FFD86A', desc: ['Grow wings: FLY (big jumps, glide), +15% speed, feather storm', '+feathers, +damage', '+damage, faster', '+feathers, +damage', 'MAX: golden storm'] }
 }
 
 // ───────────── endless level-ups once every skill is maxed ─────────────
@@ -268,6 +296,8 @@ export const COSMETICS: CosmeticDef[] = [
   // NIGHTSWARM slayers (Lv 200) and weekly champions
   { id: 'title_nightswarm', name: 'Nightswarm Slayer', title: '✦ NIGHTSWARM SLAYER ✦' },
   { id: 'void_wings', name: 'Void Wings', model: 'models/cos_void_wings.glb', anchor: 'back', anim: true },
-  { id: 'title_champion', name: 'Weekly Champion', title: '♛ Weekly Champion' }
+  { id: 'title_champion', name: 'Weekly Champion', title: '♛ Weekly Champion' },
+  // worn automatically while the Seraph Wings god power is active (not an item)
+  { id: 'seraph_wings', name: 'Seraph Wings', model: 'models/cos_seraph_wings.glb', anchor: 'back', anim: true }
 ]
 export const RAID_PARCEL = { x: -91, y: 71 }

@@ -26,6 +26,11 @@ export function encodeFx(e: Ev, x: number, z: number): [number, number[]] | null
     case 'boom': return [19, [e.x, e.z, e.r]]
     case 'sweep': return [20, [e.x, e.z, e.yaw, e.len, e.dur, e.n]]
     case 'dash': return [21, [e.x0, e.z0, e.x1, e.z1]]
+    case 'kame': return [22, [e.x, e.z, e.yaw, e.len, e.w, e.dur, e.max ? 1 : 0]]
+    case 'meteorFall': return [23, [e.x, e.z, e.delay, e.big ? 1 : 0]]
+    case 'gnuke': return [24, [e.x, e.z, e.r]]
+    case 'hole': return [25, [e.x, e.z, e.r, e.dur, e.max ? 1 : 0]]
+    case 'gsword': return [26, [e.x, e.z, e.delay, e.max ? 1 : 0]]
   }
   return null
 }
@@ -64,6 +69,11 @@ export function decodeFx(p: number[]): Ev | null {
     case 19: return { t: 'boom', id: 0, x: a, z: b, r: Math.min(8, d) }
     case 20: return { t: 'sweep', x: a, z: b, yaw: d, len: Math.min(16, f), dur: Math.min(1.5, g), n: Math.max(1, Math.min(3, Math.round(h))) }
     case 21: return { t: 'dash', x0: a, z0: b, x1: d, z1: f }
+    case 22: return { t: 'kame', x: a, z: b, yaw: d, len: Math.min(40, f), w: Math.min(8, g), dur: Math.min(2, h), max: !!p[7] }
+    case 23: return { t: 'meteorFall', x: a, z: b, delay: Math.min(3, d), big: !!f }
+    case 24: return { t: 'gnuke', x: a, z: b, r: Math.min(12, d) }
+    case 25: return { t: 'hole', x: a, z: b, r: Math.min(12, d), dur: Math.min(3, f), max: !!g }
+    case 26: return { t: 'gsword', x: a, z: b, delay: Math.min(2, d), max: !!f }
   }
   return null
 }

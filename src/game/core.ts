@@ -3,7 +3,7 @@ import LAYOUT from '../../layout.json'
 import {
   WeaponId, PassiveId, EnemyKind, WEAPONS, PASSIVES, ENEMIES, MAX_WEAPON_LVL, MAX_PASSIVE_LVL,
   MAX_WEAPONS, MAX_PASSIVES, waveMix, xpNeed, ARMORY, NUKE, NUKE_TIER, GOD_TIER, isHoldable, manualLevelScale, bossFor, BossDef,
-  BOOSTS, BoostId
+  BOOSTS, BoostId, GodId, GODS, GOD_UNLOCK, MAX_GODS, MAX_GOD_LVL
 } from './defs'
 
 export type Rect = { x0: number; z0: number; x1: number; z1: number }
@@ -43,13 +43,16 @@ export type Enemy = {
   slow?: number // seconds of chill left (Frost Comet)
   frozen?: number // seconds fully frozen (Glacier Cataclysm)
   chargeCd?: number
+  atkCd?: number
+  atkI?: number
   charging?: number
   cvx?: number
   cvz?: number
 }
 export type PickKind = 'gem' | 'coin' | 'chest' | 'heal'
 export type Pickup = { id: number; kind: PickKind; x: number; z: number; value: number; alive: boolean; flying: boolean; big?: boolean; born: number }
-export type Proj = { id: number; x: number; z: number; vx: number; vz: number; dmg: number; pierce: number; life: number; hit: number[] }
+export type Proj = { id: number; x: number; z: number; vx: number; vz: number; dmg: number; pierce: number; life: number; hit: number[]; k?: 'feather' }
+export type Hostile = { id: number; x: number; z: number; vx: number; vz: number; life: number; dmg: number }
 export type Remote = { id: string; x: number; z: number; attackable: boolean }
 
 export type Ev =
@@ -83,6 +86,14 @@ export type Ev =
   | { t: 'slam'; x: number; z: number; r: number }
   | { t: 'charge'; x: number; z: number; yaw: number; len: number }
   | { t: 'combo'; n: number; name: string }
+  | { t: 'awaken' }
+  | { t: 'kame'; x: number; z: number; yaw: number; len: number; w: number; dur: number; max: boolean }
+  | { t: 'meteorFall'; x: number; z: number; delay: number; big: boolean }
+  | { t: 'gnuke'; x: number; z: number; r: number }
+  | { t: 'hole'; x: number; z: number; r: number; dur: number; max: boolean }
+  | { t: 'gsword'; x: number; z: number; delay: number; max: boolean }
+  | { t: 'bbeamWarn'; x: number; z: number; yaw: number; len: number; w: number; dur: number }
+  | { t: 'bbeam'; x: number; z: number; yaw: number; len: number; w: number; dur: number }
   | { t: 'comboBreak'; n: number }
   | { t: 'arena'; kind: ArenaKind; on: boolean; dur: number }
   | { t: 'comet'; x: number; z: number; r: number }
@@ -120,6 +131,7 @@ export type Option =
   | { kind: 'gold'; amount: number }
   | { kind: 'heal'; amount: number }
   | { kind: 'boost'; id: BoostId }
+  | { kind: 'god'; id: GodId; to: number }
 
 let rand = Math.random
 export function setRandom(fn: () => number) {
@@ -129,7 +141,7 @@ export function setRandom(fn: () => number) {
 export type RunSnap = {
   v: number; time: number; level: number; xp: number; kills: number; gold: number; hp: number; maxHp: number
   pendingLevels: number; rerolls: number; pvpKills: number
-  weapons: [WeaponId, number][]; passives: [PassiveId, number][]; evolved: WeaponId[]
+  weapons: [WeaponId, number][]; passives: [PassiveId, number][]; evolved: WeaponId[]; gods?: [GodId, number][]
   bossIndex: number; bossQueue: number; bossesSlain: number; boostDmg: number; boostArea: number; boostRegen: number
   nextElite: number; nextRing: number
 }
@@ -182,6 +194,18 @@ export class Run {
   sweeps: { t: number; dur: number; yaw: number; len: number; n: number; dmg: number; hit: Set<number>; pv: Set<string> }[] = []
   wisps: { x: number; z: number; cd: number; ph: number; dash: number; tx: number; tz: number }[] = []
 
+  // god powers (Lv 200+)
+  gods = new Map<GodId, number>()
+  awakened = false
+  private kames: { x: number; z: number; yaw: number; len: number; w: number; t: number; dmg: number; tick: number }[] = []
+  private nukes: { x: number; z: number; t: number; r: number; dmg: number }[] = []
+  private holes: { x: number; z: number; t: number; dur: number; r: number; dmg: number; boom: number; tick: number }[] = []
+  private swords: { x: number; z: number; t: number; dmg: number }[] = []
+  // sky-god boss attacks
+  hostile: Hostile[] = []
+  private bMeteors: { x: number; z: number; t: number; r: number; dmg: number }[] = []
+  private bBeams: { x: number; z: number; yaw: number; len: number; w: number; t: number; warm: number; dmg: number; tick: number }[] = []
+
   // kill combo
   combo = 0
   comboT = 0
@@ -220,7 +244,7 @@ export class Run {
       v: 1,
       time: Math.floor(this.time), level: this.level, xp: Math.floor(this.xp), kills: this.kills, gold: Math.floor(this.gold),
       hp: Math.ceil(this.hp), maxHp: this.maxHp, pendingLevels: this.pendingLevels, rerolls: this.rerolls, pvpKills: this.pvpKills,
-      weapons: [...this.weapons.entries()], passives: [...this.passives.entries()], evolved: [...this.evolved],
+      weapons: [...this.weapons.entries()], passives: [...this.passives.entries()], evolved: [...this.evolved], gods: [...this.gods.entries()],
       // bosses on the field come back (twins: both, so the pair stays together)
       bossIndex: this.bossIndex - this.bossesAlive().length, bossQueue: this.bossQueue + this.bossesAlive().length, bossesSlain: this.bossesSlain,
       boostDmg: this.boostDmg, boostArea: this.boostArea, boostRegen: this.boostRegen,
@@ -234,6 +258,8 @@ export class Run {
     r.weapons = new Map(s.weapons)
     r.passives = new Map(s.passives)
     r.evolved = new Set(s.evolved)
+    r.gods = new Map(s.gods ?? [])
+    r.awakened = s.level >= GOD_UNLOCK
     r.time = s.time
     r.level = s.level
     r.xp = s.xp
@@ -282,7 +308,7 @@ export class Run {
     return TUNING.baseMagnet * (1 + 0.35 * this.p('magnet') + 0.1 * this.meta.magnet)
   }
   get speedMul() {
-    return 1 + 0.08 * this.p('swiftness')
+    return 1 + 0.08 * this.p('swiftness') + (this.g('wings') ? 0.15 : 0)
   }
   get xpMul() {
     return 1 + 0.05 * this.meta.xp
@@ -299,6 +325,9 @@ export class Run {
   }
   w(id: WeaponId) {
     return this.weapons.get(id) ?? 0
+  }
+  g(id: GodId) {
+    return this.gods.get(id) ?? 0
   }
   evo(id: WeaponId) {
     return this.evolved.has(id)
@@ -683,6 +712,7 @@ export class Run {
       }
     }
     this.fire2(dt, foes, remotes)
+    this.fireGods(dt, foes, remotes)
   }
 
   // ───────── second wave of auto-skills ─────────
@@ -989,6 +1019,10 @@ export class Run {
       this.level++
       this.pendingLevels++
       this.events.push({ t: 'levelup' })
+      if (this.level >= GOD_UNLOCK && !this.awakened) {
+        this.awakened = true
+        this.events.push({ t: 'awaken' })
+      }
       while (this.level >= bossFor(this.bossIndex + this.bossQueue).lvl) this.bossQueue++
     }
   }
@@ -1015,9 +1049,30 @@ export class Run {
     return opts
   }
 
+  godUpgrades(): Option[] {
+    if (this.level < GOD_UNLOCK) return []
+    const out: Option[] = []
+    for (const id of Object.keys(GODS) as GodId[]) {
+      const lv = this.g(id)
+      if (lv === 0 && this.gods.size >= MAX_GODS) continue
+      if (lv < MAX_GOD_LVL) out.push({ kind: 'god', id, to: lv + 1 })
+    }
+    return out
+  }
+
   levelChoices(): Option[] {
     const all = this.allUpgrades()
     const n = 3 + (this.p('fortune') >= 3 ? 1 : 0)
+    // after the awakening, every level-up offers a god power (if any is left)
+    const gods = this.godUpgrades()
+    if (gods.length) {
+      const g = gods[Math.floor(rand() * gods.length)]
+      const rest = all.length ? all : (Object.keys(BOOSTS) as BoostId[]).map((id) => ({ kind: 'boost', id }) as Option)
+      const others = gods.filter((x) => x !== g).concat(rest)
+      const out: Option[] = [g]
+      while (out.length < n && others.length) out.push(others.splice(Math.floor(rand() * others.length), 1)[0])
+      return out
+    }
     if (!all.length) {
       const ids = (Object.keys(BOOSTS) as BoostId[]).filter((b) => !(b === 'area' && this.boostArea >= 0.6))
       const out: Option[] = []
@@ -1047,6 +1102,7 @@ export class Run {
         this.hp += 20
       }
     } else if (o.kind === 'evolve') this.evolved.add(o.id)
+    else if (o.kind === 'god') this.gods.set(o.id, o.to)
     else if (o.kind === 'gold') this.gold += o.amount
     else if (o.kind === 'heal') this.hp = Math.min(this.maxHp, this.hp + o.amount)
     else if (o.kind === 'boost') {
@@ -1058,6 +1114,237 @@ export class Run {
       else if (o.id === 'regen') this.boostRegen += 0.5
       else if (o.id === 'gold') this.gold += 30
     }
+  }
+
+  // ───────── GOD POWERS ─────────
+  private densest(foes: Enemy[], max = 14) {
+    // the foe with the most neighbours within 3 m (bosses count big)
+    let best: Enemy | null = null
+    let bs = -1
+    const near = foes.filter((e) => e.alive && Math.hypot(e.x - this.x, e.z - this.z) < max)
+    for (let i = 0; i < near.length; i += Math.max(1, Math.floor(near.length / 40))) {
+      const e = near[i]
+      let sc = e.kind === 'boss' ? 30 : 0
+      for (const q of near) if (Math.abs(q.x - e.x) < 3 && Math.abs(q.z - e.z) < 3) sc++
+      if (sc > bs) (bs = sc), (best = e)
+    }
+    return best
+  }
+  private fireGods(dt: number, foes: Enemy[], remotes: Remote[]) {
+    if (!this.gods.size && !this.kames.length && !this.nukes.length && !this.holes.length && !this.swords.length) return
+    const pv = (p: Remote) => this.pvpDamage(p, 60) // god powers are capped against players
+    // CELESTIAL CANNON — giant energy wave toward the densest pack
+    const kv = this.g('kame')
+    if (kv && this.ready('g_kame', 7 - 0.6 * (kv - 1), dt)) {
+      const tg = this.densest(foes, 20)
+      if (tg) {
+        const yaw = (Math.atan2(tg.x - this.x, tg.z - this.z) * 180) / Math.PI
+        const len = 26 * this.area
+        const w = (2.6 + 0.35 * kv) * this.area
+        this.kames.push({ x: this.x, z: this.z, yaw, len, w, t: 1.4, dmg: 300 * kv, tick: 0 })
+        this.events.push({ t: 'kame', x: this.x, z: this.z, yaw, len, w, dur: 1.4, max: kv >= MAX_GOD_LVL })
+      } else this.cd['g_kame'] = 0.5
+    }
+    for (const k of this.kames) {
+      k.t -= dt
+      k.tick -= dt
+      // the wave follows the caster
+      k.x = this.x
+      k.z = this.z
+      if (k.tick > 0) continue
+      k.tick = 0.2
+      const a = (k.yaw * Math.PI) / 180
+      const fx = Math.sin(a)
+      const fz = Math.cos(a)
+      for (const e of foes) {
+        if (!e.alive) continue
+        const rx = e.x - k.x
+        const rz = e.z - k.z
+        const along = rx * fx + rz * fz
+        if (along > -0.5 && along < k.len && Math.abs(rx * fz - rz * fx) < k.w / 2 + e.r) this.hitEnemy(e, k.dmg, fx * 3, fz * 3)
+      }
+      for (const p of remotes) {
+        const rx = p.x - k.x
+        const rz = p.z - k.z
+        const along = rx * fx + rz * fz
+        if (along > 0 && along < k.len && Math.abs(rx * fz - rz * fx) < k.w / 2) pv(p)
+      }
+    }
+    this.kames = this.kames.filter((k) => k.t > 0)
+    // HEAVEN'S NUKE — a nuclear meteor
+    const nv = this.g('nuke')
+    if (nv && this.ready('g_nuke', 8 - 0.7 * (nv - 1), dt)) {
+      const tg = this.densest(foes, 18)
+      if (tg) {
+        const r = (5 + 0.6 * nv) * this.area
+        this.nukes.push({ x: tg.x, z: tg.z, t: 1.0, r, dmg: 1500 * nv })
+        this.events.push({ t: 'meteorFall', x: tg.x, z: tg.z, delay: 1.0, big: nv >= MAX_GOD_LVL })
+      } else this.cd['g_nuke'] = 0.5
+    }
+    for (const n of this.nukes) {
+      n.t -= dt
+      if (n.t > 0) continue
+      this.events.push({ t: 'gnuke', x: n.x, z: n.z, r: n.r })
+      for (const e of foes) {
+        const d = Math.hypot(e.x - n.x, e.z - n.z)
+        if (e.alive && d < n.r + e.r) this.hitEnemy(e, n.dmg * (1 - 0.4 * Math.min(1, d / n.r)), ((e.x - n.x) / (d || 1)) * 8, ((e.z - n.z) / (d || 1)) * 8)
+      }
+      for (const p of remotes) if (Math.hypot(p.x - n.x, p.z - n.z) < n.r) pv(p)
+    }
+    this.nukes = this.nukes.filter((n) => n.t > 0)
+    // SINGULARITY — black hole: pull, crush, collapse
+    const hv = this.g('hole')
+    if (hv && this.ready('g_hole', 10 - 0.8 * (hv - 1), dt)) {
+      const tg = this.densest(foes, 14)
+      if (tg) {
+        const c = clampArena(tg.x, tg.z, 1)
+        this.holes.push({ x: c.x, z: c.z, t: 2.2, dur: 2.2, r: (6 + 0.5 * hv) * this.area, dmg: 150 * hv, boom: 1000 * hv, tick: 0 })
+        this.events.push({ t: 'hole', x: c.x, z: c.z, r: (6 + 0.5 * hv) * this.area, dur: 2.2, max: hv >= MAX_GOD_LVL })
+      } else this.cd['g_hole'] = 0.5
+    }
+    for (const h of this.holes) {
+      h.t -= dt
+      h.tick -= dt
+      for (const e of foes) {
+        if (!e.alive || e.kind === 'boss') continue
+        const d = Math.hypot(e.x - h.x, e.z - h.z)
+        if (d < h.r && d > 0.3) {
+          const pull = Math.min(d, (4 + this.g('hole')) * dt)
+          e.x -= ((e.x - h.x) / d) * pull
+          e.z -= ((e.z - h.z) / d) * pull
+        }
+      }
+      if (h.tick <= 0) {
+        h.tick = 0.25
+        for (const e of foes) if (e.alive && Math.hypot(e.x - h.x, e.z - h.z) < 3.5 + e.r) this.hitEnemy(e, h.dmg)
+      }
+      if (h.t <= 0) {
+        this.events.push({ t: 'gnuke', x: h.x, z: h.z, r: 5 })
+        for (const e of foes) if (e.alive && Math.hypot(e.x - h.x, e.z - h.z) < 5 + e.r) this.hitEnemy(e, h.boom)
+        for (const p of remotes) if (Math.hypot(p.x - h.x, p.z - h.z) < 5) pv(p)
+      }
+    }
+    this.holes = this.holes.filter((h) => h.t > 0)
+    // JUDGMENT BLADES — swords of light rain around the hunter
+    const sv = this.g('swords')
+    if (sv && this.ready('g_swords', 3.2 - 0.25 * (sv - 1), dt)) {
+      const n = 5 + Math.ceil(sv / 2) * 2 - 2
+      const near = foes.filter((e) => e.alive && Math.hypot(e.x - this.x, e.z - this.z) < 11)
+      for (let i = 0; i < n; i++) {
+        let x: number
+        let z: number
+        if (near.length && i % 3 !== 2) {
+          const e = near[Math.floor(rand() * near.length)]
+          x = e.x
+          z = e.z
+        } else {
+          const a = (i / n) * Math.PI * 2 + rand()
+          x = this.x + Math.sin(a) * (3 + rand() * 4)
+          z = this.z + Math.cos(a) * (3 + rand() * 4)
+        }
+        const c = clampArena(x, z, 0.6)
+        const delay = 0.35 + i * 0.06
+        this.swords.push({ x: c.x, z: c.z, t: delay, dmg: 600 * sv })
+        this.events.push({ t: 'gsword', x: c.x, z: c.z, delay, max: sv >= MAX_GOD_LVL })
+      }
+    }
+    for (const w of this.swords) {
+      w.t -= dt
+      if (w.t > 0) continue
+      for (const e of foes) if (e.alive && Math.hypot(e.x - w.x, e.z - w.z) < 1.9 + e.r) this.hitEnemy(e, w.dmg)
+      for (const p of remotes) if (Math.hypot(p.x - w.x, p.z - w.z) < 1.9) pv(p)
+    }
+    this.swords = this.swords.filter((w) => w.t > 0)
+    // SERAPH WINGS — feather storm (flight itself is applied to the avatar by the game)
+    const wv = this.g('wings')
+    if (wv && this.ready('g_wings', 0.5 - 0.04 * (wv - 1), dt)) {
+      const n = 2 + Math.ceil(wv / 2)
+      const ts = foes.filter((e) => e.alive).map((e) => ({ e, d: Math.hypot(e.x - this.x, e.z - this.z) })).filter((q) => q.d < 16).sort((a, b) => a.d - b.d)
+      for (let i = 0; i < n && ts.length; i++) {
+        const tg = ts[i % ts.length].e
+        const d = Math.hypot(tg.x - this.x, tg.z - this.z) || 1
+        this.projs.push({ id: this.nextId++, x: this.x, z: this.z, vx: ((tg.x - this.x) / d) * 18, vz: ((tg.z - this.z) / d) * 18, dmg: 110 * wv, pierce: 3, life: 1.1, hit: [], k: 'feather' })
+      }
+    }
+  }
+
+  // ───────── sky-god boss patterns ─────────
+  private skyAttack(b: Enemy, d: BossDef, kind: string) {
+    if (kind === 'beam') {
+      const yaw = (Math.atan2(this.x - b.x, this.z - b.z) * 180) / Math.PI
+      const len = 24
+      const w = 2.6
+      this.bBeams.push({ x: b.x, z: b.z, yaw, len, w, t: 0.9, warm: 1.2, dmg: d.dmg * 0.45, tick: 0 })
+      this.events.push({ t: 'bbeamWarn', x: b.x, z: b.z, yaw, len, w, dur: 1.2 })
+    } else if (kind === 'orbs') {
+      const n = 12 + Math.min(8, Math.floor((b.boss ?? 0) / 4))
+      const base = rand() * Math.PI * 2
+      for (let i = 0; i < n; i++) {
+        const a = base + (i / n) * Math.PI * 2
+        this.hostile.push({ id: this.nextId++, x: b.x, z: b.z, vx: Math.sin(a) * 6, vz: Math.cos(a) * 6, life: 4.5, dmg: d.dmg * 0.3 })
+      }
+      // and three aimed straight at the hunter
+      const dd = Math.hypot(this.x - b.x, this.z - b.z) || 1
+      for (let i = -1; i <= 1; i++) {
+        const a = Math.atan2(this.x - b.x, this.z - b.z) + i * 0.18
+        this.hostile.push({ id: this.nextId++, x: b.x, z: b.z, vx: Math.sin(a) * 8.5, vz: Math.cos(a) * 8.5, life: (dd + 8) / 8.5, dmg: d.dmg * 0.3 })
+      }
+    } else {
+      for (let i = 0; i < 6; i++) {
+        const a = rand() * Math.PI * 2
+        const r = i === 0 ? 0 : 2 + rand() * 6
+        const c = clampArena(this.x + Math.sin(a) * r, this.z + Math.cos(a) * r, 0.6)
+        const delay = 1.3 + i * 0.12
+        this.bMeteors.push({ x: c.x, z: c.z, t: delay, r: 2.6, dmg: d.dmg * 0.9 })
+        this.events.push({ t: 'slamWarn', x: c.x, z: c.z, r: 2.6, dur: delay })
+        this.events.push({ t: 'meteorFall', x: c.x, z: c.z, delay, big: false })
+      }
+    }
+  }
+  private hurtPlayer(dmg: number) {
+    if (this.invuln > 0) return
+    const v = dmg * Math.max(0.3, 1 - this.armor * 0.08) * (this.god ? 0.5 : 1)
+    this.hp -= v
+    this.lastAttacker = ''
+    this.events.push({ t: 'hurt', dmg: v })
+    this.breakCombo(true)
+    if (this.hp <= 0) this.die('')
+  }
+  private skyAttacks(dt: number) {
+    for (const bm of this.bBeams) {
+      if (bm.warm > 0) {
+        bm.warm -= dt
+        if (bm.warm <= 0) this.events.push({ t: 'bbeam', x: bm.x, z: bm.z, yaw: bm.yaw, len: bm.len, w: bm.w, dur: bm.t })
+        continue
+      }
+      bm.t -= dt
+      bm.tick -= dt
+      if (bm.tick > 0) continue
+      bm.tick = 0.3
+      const a = (bm.yaw * Math.PI) / 180
+      const rx = this.x - bm.x
+      const rz = this.z - bm.z
+      const along = rx * Math.sin(a) + rz * Math.cos(a)
+      if (along > 0 && along < bm.len && Math.abs(rx * Math.cos(a) - rz * Math.sin(a)) < bm.w / 2 + 0.3) this.hurtPlayer(bm.dmg)
+    }
+    this.bBeams = this.bBeams.filter((bm) => bm.warm > 0 || bm.t > 0)
+    for (const m of this.bMeteors) {
+      m.t -= dt
+      if (m.t > 0) continue
+      this.events.push({ t: 'slam', x: m.x, z: m.z, r: m.r })
+      if (Math.hypot(this.x - m.x, this.z - m.z) < m.r) this.hurtPlayer(m.dmg)
+    }
+    this.bMeteors = this.bMeteors.filter((m) => m.t > 0)
+    for (const h of this.hostile) {
+      h.life -= dt
+      h.x += h.vx * dt
+      h.z += h.vz * dt
+      if (Math.hypot(this.x - h.x, this.z - h.z) < 0.75) {
+        h.life = 0
+        this.hurtPlayer(h.dmg)
+      }
+    }
+    this.hostile = this.hostile.filter((h) => h.life > 0 && inArena(h.x, h.z, -2))
   }
 
   /** timeout ends the streak; getting hit (soft) halves it */
@@ -1161,6 +1448,7 @@ export class Run {
     const alive = this.bossesAlive()
     if (alive.length !== this.bossIds.length) this.bossIds = alive.map((e) => e.id)
     for (const b of alive) this.bossAct(b, dt)
+    this.skyAttacks(dt)
   }
 
   private bossAct(b: Enemy, dt: number) {
@@ -1210,6 +1498,14 @@ export class Run {
         b.charging = Math.min(1.1, (dist + 3) / (d.speed * 4.2))
         this.events.push({ t: 'charge', x: b.x, z: b.z, yaw: (Math.atan2(b.cvx, b.cvz) * 180) / Math.PI, len: d.speed * 4.2 * b.charging })
         return
+      }
+    }
+    if (d.attacks?.length) {
+      b.atkCd = (b.atkCd ?? 3) - dt
+      if (b.atkCd <= 0) {
+        b.atkCd = 3.4 - Math.min(1.2, (b.boss ?? 0) * 0.02)
+        b.atkI = (b.atkI ?? 0) + 1
+        this.skyAttack(b, d, d.attacks[b.atkI % d.attacks.length])
       }
     }
     b.slamCd = (b.slamCd ?? 4) - dt
@@ -1467,6 +1763,10 @@ export function optionLabel(o: Option): { title: string; sub: string; desc: stri
   if (o.kind === 'passive') {
     const p = PASSIVES[o.id]
     return { title: p.name, sub: o.to === 1 ? 'NEW PASSIVE' : `LV ${o.to - 1} → ${o.to}`, desc: p.desc, color: p.color, isNew: o.to === 1 }
+  }
+  if (o.kind === 'god') {
+    const g = GODS[o.id]
+    return { title: '✦ ' + g.name, sub: o.to === 1 ? 'GOD POWER' : `GOD LV ${o.to - 1} → ${o.to}`, desc: g.desc[o.to - 1], color: g.color, isNew: o.to === 1 }
   }
   if (o.kind === 'evolve') {
     const w = WEAPONS[o.id]

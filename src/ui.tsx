@@ -2,7 +2,7 @@ import ReactEcs, { ReactEcsRenderer, UiEntity, Label, Button } from '@dcl/sdk/re
 import { Color4 } from '@dcl/sdk/math'
 import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard } from './game/game'
 import { optionLabel, Option, ARENA_EVENTS, VAULT_PRIZES, COMBO_TIERS } from './game/core'
-import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable } from './game/defs'
+import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable, GODS, MAX_GOD_LVL, GOD_UNLOCK } from './game/defs'
 import { feed, topRuns } from './game/net'
 import { save } from './game/persist'
 import { play } from './game/sfx'
@@ -170,6 +170,10 @@ function RightMid() {
                 uiTransform={{ height: 18 }}
                 textAlign="middle-left"
               />
+            ))}
+            {r.gods.size ? <Label value="<b>✦ GOD POWERS</b>" fontSize={11} color={GOLD} uiTransform={{ height: 15, margin: { top: 4 } }} textAlign="middle-left" /> : null}
+            {[...r.gods.entries()].map(([id, lv]) => (
+              <Label key={`g${id}`} value={`✦ ${GODS[id].name}  <b>${lv >= MAX_GOD_LVL ? 'MAX' : 'Lv' + lv}</b>`} fontSize={13} color={C(GODS[id].color)} uiTransform={{ height: 18 }} textAlign="middle-left" />
             ))}
             {ps.length ? <UiEntity uiTransform={{ height: 4 }} /> : null}
             {ps.map(([id, lv]) => (
@@ -481,13 +485,14 @@ function Modal(props: { title: string; sub?: string; children?: any; color?: Col
 
 function Card(props: { o: Option; onPick: () => void; key?: string }) {
   const l = optionLabel(props.o)
+  const god = props.o.kind === 'god'
   return (
-    <UiEntity uiTransform={{ width: 214, height: 210, margin: 8, flexDirection: 'column', padding: 14 }} uiBackground={FRAME}>
+    <UiEntity uiTransform={{ width: 214, height: 210, margin: 8, flexDirection: 'column', padding: 14 }} uiBackground={god ? MODAL : FRAME}>
       <UiEntity uiTransform={{ width: '100%', height: 6, margin: { bottom: 10 } }} uiBackground={{ color: C(l.color) }} />
       <Label value={l.sub} fontSize={12} color={l.isNew ? C('#3DFF8E') : DIM} uiTransform={{ height: 16 }} />
       <Label value={`<b>${l.title}</b>`} fontSize={19} color={C(l.color)} uiTransform={{ height: 30 }} />
       <Label value={l.desc} fontSize={13} color={WHITE} uiTransform={{ height: 60, width: '100%' }} />
-      <Button value="CHOOSE" fontSize={15} color={WHITE} uiTransform={{ width: '100%', height: 38 }} uiBackground={BTN(C('#7B3BFF'))} onMouseDown={tap(props.onPick)} />
+      <Button value={god ? '✦ ASCEND' : 'CHOOSE'} fontSize={15} color={WHITE} uiTransform={{ width: '100%', height: 38 }} uiBackground={BTN(god ? C('#C08A00') : C('#7B3BFF'))} onMouseDown={tap(props.onPick)} />
     </UiEntity>
   )
 }

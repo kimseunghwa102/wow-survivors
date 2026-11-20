@@ -5,7 +5,7 @@ import { movePlayerTo } from '~system/RestrictedActions'
 import LAYOUT from '../../layout.json'
 import { Run, Option, Ev, inArena } from './core'
 import type { Entity } from '@dcl/sdk/ecs'
-import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS } from './defs'
+import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS, GODS, MAX_GOD_LVL } from './defs'
 import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm, queueRemoteFx, fxTiers, haloTiersOf } from './view'
 import { encodeFx, decodeFx } from './fxnet'
 import { ARENA_EVENTS, VaultPrize, VAULT_PRIZES } from './core'
@@ -106,6 +106,7 @@ export function applyProfile(p: ServerProfile | null) {
 // raid relic on my own avatar
 let myCos: string | null = null
 let myCosEnt: Entity | undefined
+let seraphEnt: Entity | undefined
 function wearMine() {
   if (save.inv.cosmetic === myCos) return
   myCos = save.inv.cosmetic
@@ -387,6 +388,13 @@ export function showUpgrade(o: Option) {
     upgradeFx(r, 'evolve', o.id, `✦ ${w.evo.toUpperCase()} ✦`, '#FFFFFF')
     play('evolve')
   } else if (o.kind === 'boost') upgradeFx(r, 'passive', 'boost', 'RIFT BOOST', '#FFD86A')
+  else if (o.kind === 'god') {
+    const g = GODS[o.id]
+    upgradeFx(r, 'evolve', o.id, `✦ ${g.name.toUpperCase()}  ${o.to >= MAX_GOD_LVL ? 'MAX' : 'Lv' + o.to} ✦`, g.color)
+    play('evolve', 0.8)
+    play('roar', 1.2)
+    if (o.id === 'wings' && o.to === 1) banner('SERAPH WINGS — you can FLY now: jump, double-jump, glide!', 5)
+  }
 }
 
 export function reroll() {
@@ -652,6 +660,31 @@ function handle(evs: Ev[]) {
         play('elite')
         banner('A BRUTE appears — it carries a vault!', 4)
         break
+      case 'awaken':
+        G.flash = 0.6
+        play('evolve')
+        play('boss')
+        banner('✦ DIVINE AWAKENING ✦  GOD POWERS unlocked — every level-up now offers one', 6)
+        break
+      case 'kame':
+        play('nukelaunch', 1.4)
+        break
+      case 'gnuke':
+        play('nuke', 1.2)
+        G.flash = Math.max(G.flash, 0.25)
+        break
+      case 'hole':
+        play('roar', 0.6)
+        break
+      case 'gsword':
+        play('slam', 1.5)
+        break
+      case 'bbeamWarn':
+        play('warn')
+        break
+      case 'bbeam':
+        play('nukelaunch', 0.8)
+        break
       case 'combo':
         G.comboName = e.name
         G.comboFlash = 1.6
@@ -889,10 +922,20 @@ export function setupGame() {
       // no run of my own: still draw other players' effects
       renderRun(null, [], dt)
     }
+    // golden wings on my back while Seraph Wings is active
+    {
+      const want = !!G.run && G.run.alive && G.run.g('wings') > 0
+      if (want && !seraphEnt) seraphEnt = attachCosmetic(undefined, 'seraph_wings')
+      else if (!want && seraphEnt) {
+        engine.removeEntity(seraphEnt)
+        seraphEnt = undefined
+      }
+    }
     // swiftness passive → avatar speed; divine form → god flight (huge jumps, double jump, gliding)
     {
       const sp = G.run ? G.run.speedMul : 1
-      const god = equipped() === GOD_TIER
+      // divine form OR the Seraph Wings god power → flight
+      const god = equipped() === GOD_TIER || (!!G.run && G.run.g('wings') > 0)
       const key = god ? sp + 100 : sp
       if (key !== lastSpeed) {
         lastSpeed = key
