@@ -78,8 +78,15 @@ def depth_map(verts, tris, n):
     return c
 
 
+LIFT = float(os.environ.get('LIFT', '1.0'))  # >1 lifts the shadows/midtones of a dark destination (night sky land)
+
+
 def denoise(img):
-    return cv2.fastNlMeansDenoisingColored(img, None, 3, 3, 7, 21)
+    img = cv2.fastNlMeansDenoisingColored(img, None, 3, 3, 7, 21)
+    if LIFT != 1.0:
+        f = (img.astype(np.float32) / 255) ** (1 / LIFT)
+        img = (np.clip(f * (1 + (LIFT - 1) * 0.35), 0, 1) * 255).astype(np.uint8)
+    return img
 
 
 # ───────── window texture: destination as seen through the portal from the nominal eye ─────────
