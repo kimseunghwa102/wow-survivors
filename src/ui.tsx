@@ -1,6 +1,7 @@
 import ReactEcs, { ReactEcsRenderer, UiEntity, Label, Button } from '@dcl/sdk/react-ecs'
 import { Color4 } from '@dcl/sdk/math'
 import { buyPotion, drinkPotion } from './game/game'
+import { Ui as CasinoUi, playerInCasino } from './casino/holdem/ui'
 import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard } from './game/game'
 import { optionLabel, Option, ARENA_EVENTS, VAULT_PRIZES, COMBO_TIERS, POTION_DEFS, PotionKind } from './game/core'
 import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable, GODS, MAX_GOD_LVL, GOD_UNLOCK } from './game/defs'
@@ -903,6 +904,7 @@ function SlayerReveal() {
 
 const Root = () => (
   <UiEntity uiTransform={{ width: '100%', height: '100%', positionType: 'absolute' }}>
+    {playerInCasino() ? <CasinoUi /> : null}
     <Hurt />
     <LowHp />
     <Flash />

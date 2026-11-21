@@ -56,7 +56,7 @@ CURTAIN_H = 24.0  # tall outer curtain wall: nothing outside the castle is visib
 B.box2(16.0, -0.3, 0.0, 48.0, 0.0, 48.0, FLAG)
 B.box2(0.0, -0.3, 48.0, 32.0, 0.0, 80.0, FLAG)
 B.box2(0.0, -0.3, 0.0, 16.0, 0.04, 16.0, DMARBLE)
-B.box2(48.0, -0.3, 32.0, 64.0, 0.04, 48.0, DMARBLE)
+# (-103,78: the casino brings its own floor)
 for (cx, cz, r) in [(32, 24, 8.0), (16, 64, 7.0)]:
     B.decal(cx, 0.012, cz, r * 3.2, r * 3.2, CRACK, yaw=random.uniform(0, 360))
     B.decal(cx, 0.02, cz, r * 2, r * 2, RUNE)
@@ -177,10 +177,7 @@ wall('z', 32 - T - E, 32 - E, 48.0, 80 - E, 'w')                                
 wall('x', E, T + E, E, 16 + E, 'n', h=6.0, trim=GOLD, deco=False, mat=BLOCK_D)
 wall('z', E, T + E, E, 16 - E, 'e', h=6.0, trim=GOLD, deco=False, mat=BLOCK_D)
 wall('x', 16 - T - E, 16 - E, E, 16 + E, 's', h=6.0, trim=GOLD, deco=False, mat=BLOCK_D)
-# Hall of Legends (x48–64, z32–48); its west side is the R1 east wall
-wall('x', 32 + E, 32 + T + E, 48 - E, 64 - E, 'n', h=6.0, trim=GOLD, deco=False, mat=BLOCK_D)
-wall('z', 64 - T - E, 64 - E, 32 + E, 48 - E, 'w', h=6.0, trim=GOLD, deco=False, mat=BLOCK_D)
-wall('x', 48 - T - E, 48 - E, 48 - E, 64 - E, 's', h=6.0, trim=GOLD, deco=False, mat=BLOCK_D)
+# -103,78 (x48–64, z32–48) is now the GYBM casino building (src/casino); it has its own walls
 
 
 
@@ -486,24 +483,14 @@ for x in (4.0, 12.0):
     banner_on(x, 3.3, T + E, 'n', BANNER, 1.3, 2.6)
 lamp(4.5, 3.0)
 
-# ═══════════ HALL OF LEGENDS (safe, cell -103,78) ═══════════
+# ═══════════ HALL OF LEGENDS BOARD — on the arena side of the R1 east wall (faces west) ═══════════
 lx, _, lz = L['leaderboard']
-B.box(lx, 3.4, lz, 9.0, 6.4, 0.3, BLOCK_D)
-B.box(lx, 3.4, lz - 0.17, 8.4, 5.8, 0.04, SCREEN)
-B.box(lx, 6.75, lz, 9.4, 0.3, 0.5, GOLD)
-for s in (-1, 1):
-    B.box(lx + s * 4.8, 3.3, lz, 0.6, 6.6, 0.6, BLOCK)
-    B.billboard_cross(lx + s * 4.8, 6.7, lz - 0.2, 0.6, 1.0, FLAME)
-B.cyl(56, 0, 38, 1.5, 1.0, DMARBLE, seg=16, collide=True)
-B.cyl(56, 1.0, 38, 1.55, 0.06, GOLD, seg=16)
-B.ring(56, 2.6, 38, 0.45, 0.6, 0.35, GOLD, seg=12)
-for k in range(6):
-    a = math.radians(k * 60)
-    B.octa(56 + math.cos(a) * 0.52, 3.05, 38 + math.sin(a) * 0.52, 0.08, 0.14, CRYS)
-for z in (36.0, 43.0):
-    banner_on(64 - T - E, 3.3, z, 'w', BANNER, 1.3, 2.6)
-for (x, z) in [(51, 35), (61, 35)]:
-    lamp(x, z)
+B.box(lx, 3.4, lz, 0.3, 6.4, 9.0, BLOCK_D)
+B.box(lx - 0.17, 3.4, lz, 0.04, 5.8, 8.4, SCREEN)
+B.box(lx, 6.75, lz, 0.5, 0.3, 9.4, GOLD)
+for s_ in (-1, 1):
+    B.box(lx, 3.3, lz + s_ * 4.8, 0.6, 6.6, 0.6, BLOCK)
+    B.billboard_cross(lx - 0.2, 6.7, lz + s_ * 4.8, 0.6, 1.0, FLAME)
 
 # ═══════════ RIBBED DOMES WITH OPEN OCULUS (concept B) ═══════════
 DGLASS = M.add('dome_glass', '#8A5BFF', 0.1, 0.1, '#5A2BCF', 1.2, alpha=0.55)

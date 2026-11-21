@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import { PAY_SCHEMA } from './payments'
 import { RAID_SCHEMA } from './raid'
 import { PROGRESS_SCHEMA, trackRun } from './progress'
+import { CASINO_SCHEMA } from './casino/casino'
 import { META_KEYS, MetaKey, ARMORY_COST, DAILY_REWARD, dayKey, clampRun } from './rules'
 
 /** minimal pg-compatible client (pg.Pool in production, pg-mem in tests) */
@@ -55,7 +56,7 @@ ALTER TABLE runs ADD COLUMN IF NOT EXISTS checkpoint_at TIMESTAMPTZ;
 `
 
 export async function migrate(db: Sql) {
-  for (const stmt of (SCHEMA + ';' + PAY_SCHEMA + ';' + RAID_SCHEMA + ';' + PROGRESS_SCHEMA).split(';').map((s) => s.trim()).filter(Boolean)) await db.query(stmt)
+  for (const stmt of (SCHEMA + ';' + PAY_SCHEMA + ';' + RAID_SCHEMA + ';' + PROGRESS_SCHEMA + ';' + CASINO_SCHEMA).split(';').map((s) => s.trim()).filter(Boolean)) await db.query(stmt)
 }
 
 export type Profile = {

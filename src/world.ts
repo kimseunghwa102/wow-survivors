@@ -38,7 +38,7 @@ export function buildWorld() {
   LightSource.create(node(V(32, 14, 24)), { type: LightSource.Type.Point({}), color: fire, intensity: 6000, range: 24 })
   LightSource.create(node(V(16, 13, 64)), { type: LightSource.Type.Point({}), color: fire, intensity: 5000, range: 20 })
   LightSource.create(node(V(8, 4, 8)), { type: LightSource.Type.Point({}), color: Color3.create(1, 0.8, 0.45), intensity: 2500, range: 14 })
-  LightSource.create(node(V(56, 4, 40)), { type: LightSource.Type.Point({}), color: Color3.create(1, 0.8, 0.45), intensity: 2200, range: 12 })
+  // (the -103,78 cell is the GYBM casino now; it brings its own lights)
 
   // ── Sanctuary ──
   const title = node(V(8, 4.2, 8))
@@ -148,18 +148,21 @@ export function buildWorld() {
   text(V(17.48, 8.3, gz), 'SANCTUARY · SAFE', 3.4, '#5EF2FF', { rot: FACE.east, outline: '#001A22' })
   const lgd = LAYOUT.legends
   const gz2 = (lgd.gateZ0 + lgd.gateZ1) / 2
-  text(V(46.44, 8.3, gz2), 'HALL OF LEGENDS · SAFE', 3.0, '#FFD86A', { rot: FACE.west, outline: '#2A1A00' })
+  text(V(46.44, 8.3, gz2), 'GYBM CASINO · GOLD HOLD\'EM', 3.0, '#FFD86A', { rot: FACE.west, outline: '#2A1A00' })
   text(V(16, 10.4, 78.22), 'THE HOLLOW KING AWAITS', 4, '#C79BFF', { outline: '#10001A' })
 
   // ── Hall of Legends leaderboard ──
+  // the board hangs on the arena side of the R1 east wall, facing west: board-local u (reader's right) = −z
   const [lx, , lz] = LAYOUT.leaderboard
-  text(V(lx, 6.1, lz - 0.22), 'HALL OF LEGENDS', 5.5, '#FFD86A', { outline: '#2A1A00' })
-  text(V(lx - 4.6, 5.35, lz - 0.22), 'THIS WEEK (LIVE)', 2.6, '#3DFF8E', { align: TextAlignMode.TAM_MIDDLE_LEFT })
-  text(V(lx - 1.3, 5.35, lz - 0.22), 'ALL-TIME (LIVE)', 2.6, '#5EF2FF', { align: TextAlignMode.TAM_MIDDLE_LEFT })
-  text(V(lx + 2.0, 5.35, lz - 0.22), 'PvP · SLAYERS', 2.6, '#FF5468', { align: TextAlignMode.TAM_MIDDLE_LEFT })
-  const weekT = text(V(lx - 4.6, 3.0, lz - 0.22), '', 2.0, '#FFFFFF', { align: TextAlignMode.TAM_MIDDLE_LEFT })
-  const runsT = text(V(lx - 1.3, 3.0, lz - 0.22), '', 2.0, '#FFFFFF', { align: TextAlignMode.TAM_MIDDLE_LEFT })
-  const pvpT = text(V(lx + 2.0, 3.0, lz - 0.22), '', 2.0, '#FFFFFF', { align: TextAlignMode.TAM_MIDDLE_LEFT })
+  const bp = (u: number, y: number) => V(lx - 0.22, y, lz - u)
+  const W = { rot: FACE.west }
+  text(bp(0, 6.1), 'HALL OF LEGENDS', 5.5, '#FFD86A', { ...W, outline: '#2A1A00' })
+  text(bp(-4.6, 5.35), 'THIS WEEK (LIVE)', 2.6, '#3DFF8E', { ...W, align: TextAlignMode.TAM_MIDDLE_LEFT })
+  text(bp(-1.3, 5.35), 'ALL-TIME (LIVE)', 2.6, '#5EF2FF', { ...W, align: TextAlignMode.TAM_MIDDLE_LEFT })
+  text(bp(2.0, 5.35), 'PvP · SLAYERS', 2.6, '#FF5468', { ...W, align: TextAlignMode.TAM_MIDDLE_LEFT })
+  const weekT = text(bp(-4.6, 3.0), '', 2.0, '#FFFFFF', { ...W, align: TextAlignMode.TAM_MIDDLE_LEFT })
+  const runsT = text(bp(-1.3, 3.0), '', 2.0, '#FFFFFF', { ...W, align: TextAlignMode.TAM_MIDDLE_LEFT })
+  const pvpT = text(bp(2.0, 3.0), '', 2.0, '#FFFFFF', { ...W, align: TextAlignMode.TAM_MIDDLE_LEFT })
   let acc = 2
   let boardT = 0
   engine.addSystem((dt) => {

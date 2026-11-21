@@ -7,6 +7,8 @@ import createAuthChainHeaders from '@dcl/platform-crypto-middleware/dist/createA
 import { createPayload } from '@dcl/platform-crypto-middleware/dist/verify'
 import { createApp, dclAuth } from '../src/app'
 import { migrate } from '../src/db'
+import { startCasino, _test as casinoT } from '../src/casino/casino'
+import WS from 'ws'
 
 const assert = (c: any, m: string) => {
   if (!c) throw new Error('FAIL: ' + m)
@@ -289,8 +291,75 @@ async function main() {
     assert(fixed[0] === 'title_slayer' && fixed[1] === 'scythe_skin', 'loot table weights (legendary at the far tail)')
   }
 
+  console.log('gold casino (hold\'em with WOW gold)')
+  {
+    process.env.CASINO_NEXT_MS = '50'
+    await startCasino(server as any, db)
+    casinoT.CASINO.nextHandMs = 50
+    const tableClient = async (who: typeof alice) => {
+      const t = await signed(who, 'POST', '/casino/ticket', { name: 'x' })
+      const ws = new WS(base.replace('http', 'ws') + '/casino?t=' + t.json.ticket)
+      let id = 0
+      const acks = new Map<number, (d: any) => void>()
+      let view: any = null
+      ws.on('message', (raw) => {
+        const m = JSON.parse(String(raw))
+        if (m.a != null) acks.get(m.a)?.(m.d)
+        else if (m.e === 'state') view = m.d
+      })
+      await new Promise((r) => ws.on('open', r))
+      const call = (e: string, d: any = {}) => new Promise<any>((res) => { const i = ++id; acks.set(i, res); ws.send(JSON.stringify({ e, d, id: i })) })
+      return { ws, call, view: () => view }
+    }
+    const goldOf = async (a: string) => (await db.query('SELECT bank, casino_stack FROM players WHERE address = $1', [a])).rows[0]
+    const aA = alice.owner.address.toLowerCase(), bA = bob.owner.address.toLowerCase()
+    const before = Number((await goldOf(aA)).bank) + Number((await goldOf(bA)).bank)
+    const bad = await fetch(base.replace('http', 'ws').replace('ws:', 'http:') + '/casino/health')
+    assert(bad.status === 200, 'casino health endpoint')
+    const A = await tableClient(alice)
+    const B = await tableClient(bob)
+    assert((await A.call('dcl:join', { name: 'Alice' })).ok && (await B.call('dcl:join', { name: 'Bob' })).ok, 'wallet login only (no nickname/PIN)')
+    assert(!(await A.call('login', { name: 'x', pin: '1234' })).ok, 'nickname/PIN accounts are refused')
+    casinoT.S.cfg.ai = false
+    await db.query('UPDATE players SET bank = 300 WHERE address = $1', [bA])
+    const poor = await B.call('sit', { seat: 1 })
+    assert(!poor.ok, 'cannot sit with less than the minimum buy-in')
+    await db.query('UPDATE players SET bank = 8000 WHERE address = $1', [bA])
+    await db.query('UPDATE players SET bank = 8000 WHERE address = $1', [aA])
+    const s1 = await A.call('sit', { seat: 0 })
+    const s2 = await B.call('sit', { seat: 1 })
+    assert(s1.ok && s2.ok && s1.buyIn === 5000, 'buy-in of 5,000 gold moves from the bank to the table')
+    const ga = await goldOf(aA)
+    assert(Number(ga.bank) === 3000 && Number(ga.casino_stack) === 5000, 'escrow: bank 3,000 + table 5,000')
+    // play some hands: whoever is to act calls (or checks)
+    for (let k = 0; k < 400; k++) {
+      await new Promise((r) => setTimeout(r, 10))
+      for (const c of [A, B]) {
+        const v = c.view()
+        const h = v?.hand
+        if (h && !h.over && h.opts) await c.call('act', { type: k % 7 === 0 ? 'raise' : 'call', to: h.opts.minTo, no: h.no })
+      }
+      if ((A.view()?.handNo ?? 0) >= 6 && A.view()?.hand?.over) break
+    }
+    const hands = A.view().handNo
+    assert(hands >= 3, `${hands} hands played for gold`)
+    await new Promise((r) => setTimeout(r, 200))
+    await A.call('stand')
+    await B.call('stand')
+    await new Promise((r) => setTimeout(r, 200))
+    const fa = await goldOf(aA), fb = await goldOf(bA)
+    assert(Number(fa.casino_stack) === 0 && Number(fb.casino_stack) === 0, 'standing up cashes the stack back to the bank')
+    assert(Number(fa.bank) + Number(fb.bank) === 16000, `gold is conserved between hunters (${fa.bank} + ${fb.bank} = 16,000) — they took it from each other`)
+    const r = (await db.query('SELECT casino_net, casino_hands FROM players WHERE address = $1', [aA])).rows[0]
+    assert(Number(r.casino_hands) >= 3 && Number(r.casino_net) === Number(fa.bank) - 8000, `net booked (${r.casino_net})`)
+    A.ws.close()
+    B.ws.close()
+    void before
+  }
+
   server.close()
   console.log('\nALL PASSED')
+  process.exit(0)
 }
 
 main().catch((e) => {

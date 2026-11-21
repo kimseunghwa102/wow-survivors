@@ -8,6 +8,10 @@ import type { Entity } from '@dcl/sdk/ecs'
 import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS, GODS, MAX_GOD_LVL } from './defs'
 import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm, queueRemoteFx, fxTiers, haloTiersOf } from './view'
 import { encodeFx, decodeFx } from './fxnet'
+import { playerInCasino } from '../casino/holdem/ui'
+import { duckMusic } from './sfx'
+import { store as casinoStore } from '../casino/holdem/store'
+let lastCasinoView = 0
 import { ARENA_EVENTS, VaultPrize, VAULT_PRIZES, POTION_DEFS, PotionKind } from './core'
 import { attachCosmetic } from './cosmetics'
 import { play, setupSfx, musicLevel } from './sfx'
@@ -879,6 +883,15 @@ export function setupGame() {
     if (G.buyConfirmT > 0) G.buyConfirmT -= dt
     // Divine Ascension in hand → the player takes divine form (lobby and runs)
     setGodForm(equipped() === GOD_TIER)
+    // inside the casino the keys belong to the hold'em table
+    duckMusic(playerInCasino())
+    // the casino moves gold in and out of the bank: mirror it in the gold HUD
+    const cv = casinoStore.view
+    if (cv && cv.me && typeof cv.me.bank === 'number' && casinoStore.viewAt !== lastCasinoView) {
+      lastCasinoView = casinoStore.viewAt
+      if (cv.me.bank !== G.bank) G.bank = cv.me.bank
+    }
+    if (playerInCasino()) return
     const k1 = inputSystem.isTriggered(InputAction.IA_ACTION_3, PointerEventType.PET_DOWN)
     if (k1 && !G.goldShopOpen) {
       G.infoOpen = !G.infoOpen

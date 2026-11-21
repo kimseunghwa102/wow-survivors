@@ -43,6 +43,17 @@ export function play(k: Sfx, pitch = 1) {
 }
 
 /** duck the score a little during runs so combat sounds cut through */
+let musicBase = -1
+let ducked = false
 export function musicLevel(v: number) {
-  if (music) AudioSource.getMutable(music).volume = v
+  musicBase = v
+  if (music) AudioSource.getMutable(music).volume = ducked ? 0 : v
+}
+/** silence the castle music (the casino plays its own lounge jazz) */
+export function duckMusic(on: boolean) {
+  if (on === ducked || !music) return
+  ducked = on
+  const a = AudioSource.getMutable(music)
+  if (musicBase < 0) musicBase = a.volume ?? 0.2
+  a.volume = on ? 0 : musicBase
 }

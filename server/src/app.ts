@@ -3,6 +3,7 @@ import { verify } from '@dcl/platform-crypto-middleware'
 import { GOLD_PACK, GOLD_PACKS, FIRST_BUY_BONUS, hasBought, createQuote, confirmPurchase, settlePending, Rpc, PriceFeed, coingecko, Currency } from './payments'
 import { Sql, getOrCreate, toProfile, startRun, getOpenRun, finishRun, buy, leaderboard, rankOf, buyArmory, claimDaily, getResume, saveCheckpoint, bankAbandoned } from './db'
 import { raidRoutes, inventory } from './raid'
+import { casinoRoutes } from './casino/casino'
 import { boards, questState, claimQuest, buyPotion, packBelt } from './progress'
 import { META_KEYS, META_MAX, MetaKey, metaCost, clampRun, LIMITS } from './rules'
 
@@ -209,6 +210,7 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
   )
 
   raidRoutes(app as any, db, authed as any, getOrCreate)
+  casinoRoutes(app, db, authed, getOrCreate)
 
   // potion belt (lobby shop)
   app.post(
