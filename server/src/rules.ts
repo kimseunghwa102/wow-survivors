@@ -18,7 +18,7 @@ export const LIMITS = {
   killsPerSecond: 20,
   pvpKillsPerMinute: 4,
   timeSlackSec: 10, // network delay allowance between start and end
-  maxRunSec: 3 * 3600,
+  maxRunSec: 30 * 3600, // the road to THE ALMIGHTY (Lv 1111) takes 18 h+ over several resumed sessions
   minSecondsBetweenStarts: 4,
   pvpDeathKeep: 0.7 // gold kept when killed by another player
 }

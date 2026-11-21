@@ -112,7 +112,7 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
       const r = await saveCheckpoint(db, String(b.runId || ''), a.address, b.snap)
       if (!r) return res.status(404).json({ ok: false, error: 'run not found or already finished' })
       const p = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
-      res.json({ ok: true, banked: r.banked, slayer: r.slayer, profile: p ? toProfile(p) : null, inv: r.slayer ? await inventory(db, a.address) : undefined })
+      res.json({ ok: true, banked: r.banked, slayer: r.slayer, god: r.god, profile: p ? toProfile(p) : null, inv: r.slayer || r.god ? await inventory(db, a.address) : undefined })
     })
   )
 
@@ -141,7 +141,7 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
       )
       const fin = await finishRun(db, run, a.address, result, Math.floor(num(b.gold)), killer, num(b.bossesSlain))
       const p = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
-      res.json({ ok: true, granted: result.gold + fin.bonus, paid: fin.paid, bonus: fin.bonus, newBest: fin.newBest, slayer: fin.slayer, rank: await rankOf(db, p.best_time), profile: toProfile(p), inv: await inventory(db, a.address) })
+      res.json({ ok: true, granted: result.gold + fin.bonus, paid: fin.paid, bonus: fin.bonus, newBest: fin.newBest, slayer: fin.slayer, god: fin.god, rank: await rankOf(db, p.best_time), profile: toProfile(p), inv: await inventory(db, a.address) })
     })
   )
 

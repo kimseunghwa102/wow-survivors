@@ -159,6 +159,28 @@ async function main() {
     assert(board.slayers.includes(alice.name) || board.slayers.length === 1, 'Hall of Slayers lists the slayer')
   }
 
+  console.log('THE ALMIGHTY: the one who beats God becomes God')
+  {
+    const gabe = await identity()
+    await signed(gabe, 'POST', '/api/profile', { name: 'Gabriel' })
+    const gr = await signed(gabe, 'POST', '/api/run/start', { weapon: 'lash' })
+    await db.query(`UPDATE runs SET started_at = NOW() - INTERVAL '70000 seconds' WHERE id = $1`, [gr.json.runId])
+    const snap = (time: number, level: number, bossesSlain: number) => ({ runId: gr.json.runId, snap: { v: 1, time, level, kills: Math.floor(time * 15), gold: Math.floor(time * 12), bossesSlain, weapons: [['lash', 8]], passives: [], evolved: [] } })
+    const early = await signed(gabe, 'POST', '/api/run/save', snap(7200, 1111, 43))
+    assert(early.json.ok && early.json.god === false && !early.json.profile.god, 'Lv 1111 after only 2 h is not believed')
+    const short = await signed(gabe, 'POST', '/api/run/save', snap(66000, 1111, 42))
+    assert(short.json.god === false, 'one boss short of the whole ladder → not God')
+    const g = await signed(gabe, 'POST', '/api/run/save', snap(66050, 1111, 43))
+    assert(g.json.god === true && g.json.inv.items.title_god === 1 && g.json.inv.items.god_skin === 1, 'THE ALMIGHTY slain at Lv 1111 after 18 h: God skin + title granted')
+    assert(g.json.inv.cosmetic === 'god_skin' && g.json.inv.title === 'title_god' && g.json.profile.god === true, 'worn at once; profile says God (every run starts as God)')
+    const g2 = await signed(gabe, 'POST', '/api/run/save', snap(66100, 1112, 43))
+    assert(g2.json.god === false, 'godhood is granted once')
+    const board = await (await fetch(base + '/api/leaderboard')).json()
+    assert(Array.isArray(board.gods) && board.gods.length === 1, 'Hall of Gods lists the new God')
+    const end = await signed(gabe, 'POST', '/api/run/end', { runId: gr.json.runId, time: 66200, level: 1113, kills: 993000, gold: 794000, bossesSlain: 43 })
+    assert(end.json.ok && end.json.god === false && end.json.profile.god === true && end.json.profile.best.time === 66200, 'an 18 h run ends cleanly (no longer cut at 3 h)')
+  }
+
   console.log('shop')
   const bank0 = (await signed(alice, 'POST', '/api/profile', {})).json.profile.bank
   const b1 = await signed(alice, 'POST', '/api/shop/buy', { key: 'might' })
@@ -236,7 +258,7 @@ async function main() {
   const again2 = await signed(alice, 'POST', '/api/profile', {})
   assert(again2.json.profile.meta.might === 2 && again2.json.profile.armory === 1, 'upgrades & armory persist across sessions')
   const lb = await (await fetch(base + '/api/leaderboard')).json()
-  assert(lb.runs[0].n === 'Alice' && lb.runs[0].t === 590, 'global leaderboard lists best run')
+  assert(lb.runs.some((r: any) => r.n === 'Alice' && r.t === 590), 'global leaderboard lists best run')
 
   console.log('raid: the pale sovereign')
   {

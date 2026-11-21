@@ -176,8 +176,14 @@ export function setupView() {
   GltfContainer.create(missile, { src: 'models/w_nuke.glb' })
   blast = ent()
   GltfContainer.create(blast, { src: 'models/fx_nuke.glb' })
-  warnPool = pick('models/fx_slam_warn.glb', 2, 0)
-  slamPool = pick('models/fx_slam.glb', 2, 0)
+  const grow = (src: string, n: number, max: number) =>
+    new Pool(() => {
+      const e = ent()
+      GltfContainer.create(e, { src })
+      return e
+    }, n, max)
+  warnPool = grow('models/fx_slam_warn.glb', 4, 56)
+  slamPool = grow('models/fx_slam.glb', 3, 36)
   dmgPool = new Pool(() => {
     const e = ent()
     TextShape.create(e, { text: '', fontSize: 3, textColor: Color4.White(), font: Font.F_SANS_SERIF, textAlign: TextAlignMode.TAM_MIDDLE_CENTER, outlineWidth: 0.2, outlineColor: Color3.Black() })
@@ -404,6 +410,7 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
   for (let i = remoteMines.length - 1; i >= 0; i--) if (remoteMines[i].a.life <= 0) remoteMines.splice(i, 1)
   renderSkills2(run, dt)
   renderGods(run, dt)
+  renderSky(dt)
   renderHalos(run, dt)
   for (let i = fxs.length - 1; i >= 0; i--) {
     const f = fxs[i]
@@ -556,6 +563,8 @@ function playEvents(events: Ev[], run: Run | null, tiers?: number[]) {
       t.scale = V(ev.r * 2, 1, ev.r * 2)
       active.push({ e, life: 0.28, max: 0.28, kind: 'strike', r: ev.r, asc })
     } else if (playGod(ev, run, tiers)) {
+      // handled
+    } else if (!tiers && playMyth(ev, run)) {
       // handled
     } else if (playSkill2(ev, run, tiers)) {
       // handled
@@ -1156,7 +1165,7 @@ function clearSkills2() {
 let featherPool: Pool[]
 const GP = {} as Record<'kame' | 'meteor' | 'hole' | 'lsword' | 'nuke' | 'bbeam' | 'borb', Pool[]>
 const gAnims: Anim[] = []
-const orbEnt = new Map<number, Entity>()
+const orbEnt = new Map<number, { e: Entity; pool: Pool }>()
 function setupGods() {
   const mk = (src: string, n: number, max: number, spin = 0) =>
     new Pool(() => {
@@ -1173,6 +1182,215 @@ function setupGods() {
   GP.nuke = [mk('models/fx_nuke.glb', 1, 4)]
   GP.bbeam = [mk('models/fx_bbeam.glb', 1, 3)]
   GP.borb = [mk('models/fx_borb.glb', 12, 40, 300)]
+  MP.ringWarn = []
+  MP.ring = []
+  for (let i = 0; i < 6; i++) {
+    MP.ringWarn.push(mk(`models/fx_mring${i}_warn.glb`, 1, 3))
+    MP.ring.push(mk(`models/fx_mring${i}.glb`, 1, 3))
+  }
+  for (const k of RAIN_KINDS) MP.rain[k] = mk(`models/fx_rain_${k}.glb`, 1, 34)
+  MP.pillar = mk('models/fx_mpillar.glb', 1, 52)
+  MP.sun = mk('models/fx_msun.glb', 1, 4, 40)
+  MP.spoke = mk('models/fx_bbeam.glb', 1, 20)
+  MP.shade = mk('models/fx_shade.glb', 1, 14)
+  MP.fox = mk('models/fx_fox.glb', 1, 14, 200)
+  MP.safe = mk('models/fx_safe.glb', 1, 3, 30)
+  MP.light = mk('models/fx_godlight.glb', 1, 1)
+  MP.chrono = mk('models/fx_chrono.glb', 1, 1, 50)
+  MP.ascend = mk('models/fx_ascend_ring.glb', 1, 4)
+  MP.apillar = mk('models/fx_mpillar.glb', 1, 2, 30)
+}
+// mythic boss patterns (Lv 350-1111)
+const RAIN_KINDS = ['spear', 'cannon', 'kunai', 'fire', 'fist', 'bolt', 'star'] as const
+const MP = { rain: {} as Record<string, Pool> } as {
+  ringWarn: Pool[]; ring: Pool[]; rain: Record<string, Pool>; pillar: Pool; sun: Pool; spoke: Pool; shade: Pool; fox: Pool
+  safe: Pool; light: Pool; chrono: Pool; ascend: Pool; apillar: Pool
+}
+const ringIdx = (r0: number) => Math.max(0, Math.min(5, Math.round((r0 - 2.2) / 4)))
+function warnAt(x: number, z: number, r: number, dur: number) {
+  const e = warnPool.take()
+  if (!e) return
+  Transform.getMutable(e).position = V(x, 0.05, z)
+  fxs.push({ e, life: dur, max: dur, pool: warnPool, kind: 'warn', r })
+}
+function playMyth(ev: Ev, run: Run | null): boolean {
+  switch (ev.t) {
+    case 'mRingWarn': {
+      gAnim(MP.ringWarn[ringIdx(ev.r0)], ev.dur, (k, tr) => {
+        tr.position = V(ev.x, 0, ev.z)
+        const s = 1 + Math.sin(k * k * 46) * 0.012
+        tr.scale = V(s, 1, s)
+      })
+      return true
+    }
+    case 'mRing': {
+      gAnim(MP.ring[ringIdx(ev.r0)], 0.5, (k, tr) => {
+        tr.position = V(ev.x, 0, ev.z)
+        const s = 1 + k * 0.06
+        tr.scale = V(s, 0.05 + Math.sin(Math.min(1, k * 1.7) * Math.PI) * 1.7, s)
+      })
+      return true
+    }
+    case 'mStrike': {
+      warnAt(ev.x, ev.z, ev.r, ev.delay)
+      const delay = ev.delay
+      if (ev.k === 'pillar') {
+        gAnim(MP.pillar, delay + 0.45, (k, tr) => {
+          const el = k * (delay + 0.45)
+          if (el < delay - 0.04) return void (tr.position = HIDE)
+          const a = el - delay
+          const w = ev.r * 2 * (a < 0.25 ? 1 : Math.max(0, 1 - (a - 0.25) / 0.2))
+          tr.position = V(ev.x, 0, ev.z)
+          tr.scale = V(w, Math.min(1, 0.2 + (a + 0.04) * 8), w)
+        })
+      } else if (ev.k === 'sun') {
+        gAnim(MP.sun, delay + 0.3, (k, tr) => {
+          const el = k * (delay + 0.3)
+          const f = Math.min(1, el / delay)
+          const s = ev.r * (el <= delay ? 0.45 + 0.65 * f : 1.1 * Math.max(0, 1 - (el - delay) / 0.3))
+          tr.position = V(ev.x, 0.6 + 15 * Math.pow(1 - f, 1.6), ev.z)
+          tr.scale = V(s, s, s)
+        })
+      } else if (ev.k === 'bolt') {
+        gAnim(MP.rain.bolt, delay + 0.25, (k, tr) => {
+          const el = k * (delay + 0.25)
+          if (el < delay - 0.1) return void (tr.position = HIDE)
+          const f = 1 + Math.sin(el * 90) * 0.25
+          tr.position = V(ev.x, 0, ev.z)
+          tr.rotation = yawQ(el * 900)
+          tr.scale = V(f, 1, f)
+        })
+      } else {
+        const pool = MP.rain[ev.k] ?? MP.rain.star
+        const ox = -3.2, oz = -2.1, h = 18
+        gAnim(pool, delay, (k, tr) => {
+          const f = k * k
+          tr.position = V(ev.x + ox * (1 - f), h * (1 - f), ev.z + oz * (1 - f))
+          tr.rotation = Quaternion.fromEulerDegrees(-6.5, ev.k === 'kunai' || ev.k === 'spear' ? ev.x * 53 : 0, 10)
+          const s = ev.k === 'fist' ? 1.3 : 1.15
+          tr.scale = V(s, s, s)
+        })
+      }
+      return true
+    }
+    case 'mSpokes': {
+      for (let i = 0; i < ev.n; i++) {
+        const yaw0 = ev.a0 + (i * 360) / ev.n
+        const a = (yaw0 * Math.PI) / 180
+        const e = warnPool.take()
+        if (e) {
+          const t = Transform.getMutable(e)
+          t.position = V(ev.x + Math.sin(a) * ev.len * 0.5, 0.05, ev.z + Math.cos(a) * ev.len * 0.5)
+          t.rotation = yawQ(yaw0)
+          t.scale = V(ev.w, 1, ev.len)
+          fxs.push({ e, life: ev.warm, max: ev.warm, pool: warnPool, kind: 'tracer', r: ev.len })
+        }
+        const life = ev.warm + ev.dur
+        gAnim(MP.spoke, life, (k, tr) => {
+          const el = k * life
+          if (el < ev.warm) return void (tr.position = HIDE)
+          const age = el - ev.warm
+          tr.position = V(ev.x, 1.0, ev.z)
+          tr.rotation = yawQ(yaw0 + ev.omega * age)
+          const w = ev.w * (1 + Math.sin(el * 50) * 0.1) * (life - el < 0.2 ? (life - el) / 0.2 : 1)
+          tr.scale = V(w, w, ev.len * Math.min(1, age * 8))
+        })
+      }
+      return true
+    }
+    case 'mBlink':
+      deathPuff(ev.x0, ev.z0, 2.6)
+      deathPuff(ev.x1, ev.z1, 2.6)
+      return true
+    case 'mLight': {
+      for (const [x, z, r] of ev.safe)
+        gAnim(MP.safe, ev.dur + 0.4, (k, tr) => {
+          const s = r * 2 * Math.min(1, k * 9)
+          tr.position = V(x, 0, z)
+          tr.scale = V(s, 1 + Math.sin(k * 40) * 0.06, s)
+        })
+      const cx = run ? run.x : 32
+      const cz = run ? run.z : 24
+      const life = ev.dur + 0.5
+      gAnim(MP.light, life, (k, tr) => {
+        const el = k * life
+        const f = Math.min(1, el / ev.dur)
+        const out = el > ev.dur ? Math.max(0, 1 - (el - ev.dur) / 0.5) : 1
+        tr.position = V(cx, 0, cz)
+        tr.scale = V(64 - 30 * f * f, (2 + 44 * f * f) * out, 64 - 30 * f * f)
+      })
+      return true
+    }
+    case 'mChrono': {
+      const x0 = run ? run.x : 32
+      const z0 = run ? run.z : 24
+      gAnim(MP.chrono, ev.dur, (k, tr) => {
+        const s = 8 * Math.min(1, k * 10) * (k > 0.88 ? (1 - k) / 0.12 : 1)
+        tr.position = V(run ? run.x : x0, 0, run ? run.z : z0)
+        tr.scale = V(s, 1, s)
+      })
+      return true
+    }
+    case 'ascend': {
+      const x = run ? run.x : 32
+      const z = run ? run.z : 24
+      ascendFx(x, z)
+      return true
+    }
+  }
+  return false
+}
+// giant golden words in the sky over a new God
+let skyA: Entity | undefined
+let skyB: Entity | undefined
+let skyT = 0
+let skyX = 32
+let skyZ = 24
+export function skyText(a: string, b: string, secs: number, x = 32, z = 24) {
+  if (!skyA || !skyB) {
+    skyA = ent()
+    TextShape.create(skyA, { text: '', fontSize: 30, textColor: Color4.create(1, 0.86, 0.45, 1), font: Font.F_SANS_SERIF, textAlign: TextAlignMode.TAM_MIDDLE_CENTER, outlineWidth: 0.22, outlineColor: Color3.create(0.3, 0.17, 0) })
+    Billboard.create(skyA, { billboardMode: BillboardMode.BM_Y })
+    skyB = ent()
+    TextShape.create(skyB, { text: '', fontSize: 18, textColor: Color4.create(1, 0.98, 0.9, 1), font: Font.F_SANS_SERIF, textAlign: TextAlignMode.TAM_MIDDLE_CENTER, outlineWidth: 0.2, outlineColor: Color3.create(0.3, 0.17, 0) })
+    Billboard.create(skyB, { billboardMode: BillboardMode.BM_Y })
+  }
+  TextShape.getMutable(skyA).text = a
+  TextShape.getMutable(skyB).text = b
+  skyT = secs
+  skyX = x
+  skyZ = z
+}
+function renderSky(dt: number) {
+  if (!skyA || !skyB) return
+  if (skyT <= 0) return
+  skyT -= dt
+  if (skyT <= 0) {
+    Transform.getMutable(skyA).position = HIDE
+    Transform.getMutable(skyB).position = HIDE
+    return
+  }
+  const bob = Math.sin(skyT * 1.3) * 0.4
+  Transform.getMutable(skyA).position = V(skyX, 21 + bob, skyZ)
+  Transform.getMutable(skyB).position = V(skyX, 17.6 + bob, skyZ)
+}
+/** the column of light and golden shockwaves when a hunter becomes God (also played for remote hunters) */
+export function ascendFx(x: number, z: number) {
+  gAnim(MP.apillar, 9, (k, tr) => {
+    const el = k * 9
+    const w = el < 0.6 ? el / 0.6 * 7 : el > 7.5 ? 7 * (9 - el) / 1.5 : 7 + Math.sin(el * 6) * 0.4
+    tr.position = V(x, 0, z)
+    tr.scale = V(w, Math.min(9, 0.4 + el * 12), w)
+  })
+  for (let i = 0; i < 4; i++)
+    gAnim(MP.ascend, 1.6 + i * 0.7, (k, tr) => {
+      const el = k * (1.6 + i * 0.7)
+      const on = el > i * 0.7
+      const f = on ? (el - i * 0.7) / 1.6 : 0
+      const s = on ? 2 + f * 70 : 0.01
+      tr.position = on ? V(x, 0.1 + i * 0.05, z) : HIDE
+      tr.scale = V(s, 1, s)
+    })
 }
 function gAnim(pool: Pool, life: number, upd: Anim['upd']) {
   const e = pool.take()
@@ -1264,22 +1482,28 @@ function renderGods(run: Run | null, dt: number) {
   if (run)
     for (const h of run.hostile) {
       seen.add(h.id)
-      let e = orbEnt.get(h.id)
-      if (!e) {
-        e = GP.borb[0].take()
+      let o = orbEnt.get(h.id)
+      if (!o) {
+        const pool = h.k === 'shade' ? MP.shade : h.k === 'fox' ? MP.fox : GP.borb[0]
+        const e = pool.take()
         if (!e) continue
-        orbEnt.set(h.id, e)
+        o = { e, pool }
+        orbEnt.set(h.id, o)
       }
-      Transform.getMutable(e).position = V(h.x, 1.1, h.z)
+      const t = Transform.getMutable(o.e)
+      if (h.k === 'shade') {
+        t.position = V(h.x, 0, h.z)
+        t.rotation = yawQ((Math.atan2(h.vx, h.vz) * 180) / Math.PI)
+      } else t.position = V(h.x, h.k === 'fox' ? 0.1 : 1.1, h.z)
     }
-  for (const [id, e] of orbEnt)
+  for (const [id, o] of orbEnt)
     if (!seen.has(id)) {
-      GP.borb[0].give(e)
+      o.pool.give(o.e)
       orbEnt.delete(id)
     }
 }
 function clearGods() {
   for (const a of gAnims.splice(0)) a.pool.give(a.e)
-  for (const [, e] of orbEnt) GP.borb[0].give(e)
+  for (const [, o] of orbEnt) o.pool.give(o.e)
   orbEnt.clear()
 }

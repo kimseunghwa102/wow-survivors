@@ -72,6 +72,7 @@ export type Profile = {
   armory: number
   daily: { streak: number; claimable: boolean; next: number; doubleReady: boolean }
   belt: { hp: number; rage: number; phoenix: number }
+  god: boolean
 }
 
 export function toProfile(r: any): Profile {
@@ -87,7 +88,8 @@ export function toProfile(r: any): Profile {
     totalKills: r.total_kills,
     armory: r.armory ?? 0,
     daily: dailyInfo(r),
-    belt: { hp: r.pot_hp ?? 0, rage: r.pot_rage ?? 0, phoenix: r.pot_phoenix ?? 0 }
+    belt: { hp: r.pot_hp ?? 0, rage: r.pot_rage ?? 0, phoenix: r.pot_phoenix ?? 0 },
+    god: !!r.god_at
   }
 }
 
@@ -251,7 +253,7 @@ export async function finishRun(
       newBest ? res.time : p.best_time, newBest ? res.level : p.best_level, newBest ? res.kills : p.best_kills, address
     ]
   )
-  return { newBest, bonus, paid: t.banked, slayer: t.slayer }
+  return { newBest, bonus, paid: t.banked, slayer: t.slayer, god: t.god }
 }
 
 export async function buy(db: Sql, address: string, key: MetaKey, cost: number) {

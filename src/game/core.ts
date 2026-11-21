@@ -48,11 +48,13 @@ export type Enemy = {
   charging?: number
   cvx?: number
   cvz?: number
+  phase?: number // mythic enrage step
+  windR?: number // radius of a blink-slam
 }
 export type PickKind = 'gem' | 'coin' | 'chest' | 'heal' | 'potion'
 export type Pickup = { id: number; kind: PickKind; x: number; z: number; value: number; alive: boolean; flying: boolean; big?: boolean; born: number }
 export type Proj = { id: number; x: number; z: number; vx: number; vz: number; dmg: number; pierce: number; life: number; hit: number[]; k?: 'feather' }
-export type Hostile = { id: number; x: number; z: number; vx: number; vz: number; life: number; dmg: number }
+export type Hostile = { id: number; x: number; z: number; vx: number; vz: number; life: number; dmg: number; home?: number; k?: string }
 export type Remote = { id: string; x: number; z: number; attackable: boolean }
 
 export type Ev =
@@ -109,6 +111,17 @@ export type Ev =
   | { t: 'sweep'; x: number; z: number; yaw: number; len: number; dur: number; n: number }
   | { t: 'dash'; x0: number; z0: number; x1: number; z1: number }
   | { t: 'proj'; x: number; z: number; vx: number; vz: number; life: number; k: number } // k 0-3 shard tier · 4 feather · 5 gold feather (network only)
+  // mythic boss patterns (Lv 350+)
+  | { t: 'mRingWarn'; x: number; z: number; r0: number; r1: number; dur: number }
+  | { t: 'mRing'; x: number; z: number; r0: number; r1: number }
+  | { t: 'mStrike'; x: number; z: number; r: number; delay: number; k: string }
+  | { t: 'mSpokes'; x: number; z: number; n: number; len: number; w: number; a0: number; omega: number; warm: number; dur: number }
+  | { t: 'mBlink'; x0: number; z0: number; x1: number; z1: number }
+  | { t: 'mLight'; safe: [number, number, number][]; dur: number }
+  | { t: 'mLightHit'; ok: boolean }
+  | { t: 'mChrono'; dur: number }
+  | { t: 'mPhase'; boss: number; phase: number }
+  | { t: 'ascend' }
 
 export type PotionKind = 'hp' | 'rage' | 'phoenix'
 export const POTION_DEFS: Record<PotionKind, { name: string; key: string; color: string; desc: string; carry: number; shop: number; shopMax: number }> = {
@@ -117,7 +130,7 @@ export const POTION_DEFS: Record<PotionKind, { name: string; key: string; color:
   phoenix: { name: 'Phoenix Tear', key: 'auto', color: '#FFD86A', desc: 'cheat death once: revive at 60% HP with a firestorm', carry: 1, shop: 2500, shopMax: 1 }
 }
 /** monsters scale with how strong the hunter has become (the "threat"): healing is scarce, potions decide fights */
-export const THREAT = { perLevel: 0.08, from: 12, dmgShare: 1.0 }
+export const THREAT = { perLevel: 0.08, from: 12, dmgShare: 1.0, cap: 300, deepPerLevel: 0.004, timeCap: 5400 }
 
 export type ArenaKind = 'bloodmoon' | 'goldrush' | 'elitehunt'
 export const ARENA_EVENTS: Record<ArenaKind, { name: string; desc: string; dur: number; color: string }> = {
@@ -158,6 +171,8 @@ export type RunSnap = {
   weapons: [WeaponId, number][]; passives: [PassiveId, number][]; evolved: WeaponId[]; gods?: [GodId, number][]; potions?: Record<PotionKind, number>
   bossIndex: number; bossQueue: number; bossesSlain: number; boostDmg: number; boostArea: number; boostRegen: number
   nextElite: number; nextRing: number
+  ascended?: boolean
+  godBorn?: boolean
 }
 
 export class Run {
@@ -221,6 +236,16 @@ export class Run {
   private nukes: { x: number; z: number; t: number; r: number; dmg: number }[] = []
   private holes: { x: number; z: number; t: number; dur: number; r: number; dmg: number; boom: number; tick: number }[] = []
   private swords: { x: number; z: number; t: number; dmg: number }[] = []
+  // mythic boss patterns
+  private mRings: { x: number; z: number; r0: number; r1: number; t: number; dmg: number }[] = []
+  private mSpokes: { x: number; z: number; n: number; len: number; w: number; a0: number; omega: number; warm: number; t: number; dmg: number; tick: number; age: number }[] = []
+  private mLight: { safe: [number, number, number][]; t: number; dmg: number } | null = null
+  /** Chrono: time slows the hunter (the game slows the avatar while this runs) */
+  slowT = 0
+  /** THE ALMIGHTY fell in this run: the story is over, only the horde remains */
+  ascended = false
+  /** a God (permanent): born awakened, stronger, flying */
+  godBorn = false
   // sky-god boss attacks
   hostile: Hostile[] = []
   private bMeteors: { x: number; z: number; t: number; r: number; dmg: number }[] = []
@@ -258,6 +283,15 @@ export class Run {
     this.maxHp = this.hp = TUNING.baseHp + this.meta.hp * 10
   }
 
+  /** the ones who defeated THE ALMIGHTY start every run as God: awakened, twice as strong and sturdy */
+  becomeGod() {
+    if (this.godBorn) return
+    this.godBorn = true
+    this.awakened = true
+    this.maxHp *= 2
+    this.hp = this.maxHp
+  }
+
   /** everything needed to resume this run later (enemies respawn; an alive boss comes back at full hp) */
   snapshot(): RunSnap {
     return {
@@ -268,7 +302,9 @@ export class Run {
       // bosses on the field come back (twins: both, so the pair stays together)
       bossIndex: this.bossIndex - this.bossesAlive().length, bossQueue: this.bossQueue + this.bossesAlive().length, bossesSlain: this.bossesSlain,
       boostDmg: this.boostDmg, boostArea: this.boostArea, boostRegen: this.boostRegen,
-      nextElite: this.nextElite, nextRing: this.nextRing
+      nextElite: this.nextElite, nextRing: this.nextRing,
+      ascended: this.ascended,
+      godBorn: this.godBorn
     }
   }
 
@@ -298,6 +334,9 @@ export class Run {
     r.boostArea = s.boostArea
     r.boostRegen = s.boostRegen
     r.nextElite = s.nextElite
+    r.ascended = !!s.ascended
+    r.godBorn = !!s.godBorn // maxHp in the snapshot already holds the ×2
+    if (r.godBorn) r.awakened = true
     r.nextRing = s.nextRing
     r.invuln = 3
     return r
@@ -308,7 +347,7 @@ export class Run {
     return this.passives.get(id) ?? 0
   }
   get might() {
-    return (1 + 0.12 * this.p('might') + 0.05 * this.meta.might + this.boostDmg) * (this.rageT > 0 ? 1.6 : 1)
+    return (1 + 0.12 * this.p('might') + 0.05 * this.meta.might + this.boostDmg) * (this.rageT > 0 ? 1.6 : 1) * (this.godBorn ? 2 : 1)
   }
   get cdMul() {
     return Math.max(0.3, (1 - 0.07 * this.p('haste')) * (this.rageT > 0 ? 0.75 : 1))
@@ -324,17 +363,23 @@ export class Run {
   }
   /** how hard the horde hits back: grows with the hunter's level */
   get threat() {
-    return 1 + Math.max(0, this.level - THREAT.from) * THREAT.perLevel
+    const L = Math.min(this.level, THREAT.cap)
+    const base = 1 + Math.max(0, L - THREAT.from) * THREAT.perLevel
+    return this.level <= THREAT.cap ? base : base * (1 + (this.level - THREAT.cap) * THREAT.deepPerLevel)
+  }
+  /** run time that drives monster growth: stops at 90 min, deeper runs scale through the threat only */
+  get tScale() {
+    return Math.min(this.time, THREAT.timeCap)
   }
   get regen() {
     // healing is scarce on purpose: potions are the real lifeline
-    return 0.12 + 0.25 * this.p('bloodstone') + this.boostRegen * 0.5
+    return 0.12 + 0.25 * this.p('bloodstone') + this.boostRegen * 0.5 + (this.godBorn ? 3 : 0)
   }
   get magnet() {
     return TUNING.baseMagnet * (1 + 0.35 * this.p('magnet') + 0.1 * this.meta.magnet)
   }
   get speedMul() {
-    return 1 + 0.08 * this.p('swiftness') + (this.g('wings') ? 0.15 : 0)
+    return (1 + 0.08 * this.p('swiftness') + (this.g('wings') ? 0.15 : 0)) * (this.slowT > 0 ? 0.5 : 1)
   }
   get xpMul() {
     return 1 + 0.05 * this.meta.xp
@@ -431,11 +476,12 @@ export class Run {
         z = c.z
       }
     }
-    const scale = (1 + this.time / 150) * (kind === 'boss' ? 1 : this.threat)
+    const T = this.tScale
+    const scale = (1 + T / 150) * (kind === 'boss' ? 1 : this.threat)
     const hp = d.hp * scale
     const e: Enemy = {
       id: this.nextId++, kind, x: x!, z: z!, hp, maxHp: hp,
-      speed: d.speed * (1 + Math.min(0.25, this.time / 1200)), dmg: d.dmg * (1 + this.time / 220) * (1 + (this.threat - 1) * THREAT.dmgShare),
+      speed: d.speed * (1 + Math.min(0.25, T / 1200)), dmg: d.dmg * (1 + T / 220) * (1 + (this.threat - 1) * THREAT.dmgShare),
       r: d.r, xp: d.xp, alive: true, wob: rand() * 6.28, kx: 0, kz: 0, lastHit: {},
       sc: 1 + Math.min(0.5, this.time / 2400)
     }
@@ -532,7 +578,8 @@ export class Run {
     if (!e.alive) return
     const crit = rand() < 0.05 + 0.02 * this.p('fortune')
     let d = dmg * this.might * (crit ? 2 : 1)
-    if (this.god) d = Math.max(d, e.hp + 1)
+    // Divine Ascension one-shots everything except the mythic ladder (Lv 350+), which only takes its heavy blows
+    if (this.god && !(e.kind === 'boss' && bossFor(e.boss ?? 0).divine)) d = Math.max(d, e.hp + 1)
     e.hp -= d
     e.kx += kx
     e.kz += kz
@@ -574,6 +621,19 @@ export class Run {
       this.drop('potion', e.x - 1.4, e.z + 0.8, 0)
       this.drop('potion', e.x + 1.2, e.z - 0.6, 1)
       this.events.push({ t: 'bossDown', boss: bi })
+      if (bossFor(bi).god && !this.ascended) {
+        // the story ends: no boss comes after God
+        this.ascended = true
+        this.bossQueue = 0
+        this.mRings = []
+        this.mSpokes = []
+        this.mLight = null
+        this.hostile = []
+        this.becomeGod()
+        this.hp = this.maxHp
+        this.invuln = 20 // the ending plays out in peace
+        this.events.push({ t: 'ascend' })
+      }
     } else if (e.kind === 'elite') {
       this.drop('chest', e.x, e.z, 1, false)
       this.drop('potion', e.x - 0.6, e.z, 0)
@@ -1077,7 +1137,7 @@ export class Run {
         this.awakened = true
         this.events.push({ t: 'awaken' })
       }
-      while (this.level >= bossFor(this.bossIndex + this.bossQueue).lvl) this.bossQueue++
+      while (!this.ascended && this.level >= bossFor(this.bossIndex + this.bossQueue).lvl) this.bossQueue++
     }
   }
 
@@ -1104,7 +1164,7 @@ export class Run {
   }
 
   godUpgrades(): Option[] {
-    if (this.level < GOD_UNLOCK) return []
+    if (this.level < GOD_UNLOCK && !this.godBorn) return []
     const out: Option[] = []
     for (const id of Object.keys(GODS) as GodId[]) {
       const lv = this.g(id)
@@ -1324,6 +1384,7 @@ export class Run {
 
   // ───────── sky-god boss patterns ─────────
   private skyAttack(b: Enemy, d: BossDef, kind: string) {
+    if (d.pct) d = { ...d, dmg: this.pctDmg(d, 0.9) }
     if (kind === 'beam') {
       const yaw = (Math.atan2(this.x - b.x, this.z - b.z) * 180) / Math.PI
       const len = 24
@@ -1391,6 +1452,18 @@ export class Run {
     this.bMeteors = this.bMeteors.filter((m) => m.t > 0)
     for (const h of this.hostile) {
       h.life -= dt
+      if (h.home) {
+        // turn toward the hunter, a little at a time (you can outrun them)
+        const want = Math.atan2(this.x - h.x, this.z - h.z)
+        const cur = Math.atan2(h.vx, h.vz)
+        let dA = want - cur
+        while (dA > Math.PI) dA -= Math.PI * 2
+        while (dA < -Math.PI) dA += Math.PI * 2
+        const turn = Math.max(-h.home * dt, Math.min(h.home * dt, dA))
+        const sp = Math.hypot(h.vx, h.vz)
+        h.vx = Math.sin(cur + turn) * sp
+        h.vz = Math.cos(cur + turn) * sp
+      }
       h.x += h.vx * dt
       h.z += h.vz * dt
       if (Math.hypot(this.x - h.x, this.z - h.z) < 0.75) {
@@ -1503,7 +1576,8 @@ export class Run {
       const e = this.spawnEnemy('boss', x, z)
       e.boss = idx
       e.hp = e.maxHp = d.hp
-      e.dmg = d.dmg
+      // mythic bosses hit for a share of your max HP, so they stay deadly however strong you are
+      e.dmg = d.pct ? Math.max(d.dmg, this.maxHp * d.pct * 0.5) : d.dmg
       e.speed = d.speed
       e.r = d.r
       e.sc = d.scale
@@ -1519,6 +1593,180 @@ export class Run {
     if (alive.length !== this.bossIds.length) this.bossIds = alive.map((e) => e.id)
     for (const b of alive) this.bossAct(b, dt)
     this.skyAttacks(dt)
+    this.mythicStep(dt)
+  }
+
+  // ───────── mythic patterns (Lv 350+): every hit is a share of YOUR max HP ─────────
+  /** later bosses hit a little harder on top of their own share */
+  private esc(d: BossDef) {
+    return 1 + Math.max(0, d.lvl - 350) / 4000
+  }
+  private pctDmg(d: BossDef, mult: number) {
+    // divine form halves damage taken; against the mythic ladder it only shaves a quarter
+    return this.maxHp * (d.pct ?? 0.25) * mult * this.esc(d) * (this.god ? 1.5 : 1)
+  }
+  private mythicMove(b: Enemy, d: BossDef, mv: string) {
+    const tier = Math.max(0, d.lvl - 350) // 0 … 761
+    const toYou = Math.atan2(this.x - b.x, this.z - b.z)
+    switch (mv) {
+      case 'rings': {
+        const n = 3 + Math.floor(tier / 250)
+        for (let i = 0; i < n; i++) {
+          const r0 = 2.2 + i * 4, r1 = r0 + 2
+          const t = 1.2 + i * 0.35
+          this.mRings.push({ x: b.x, z: b.z, r0, r1, t, dmg: this.pctDmg(d, 0.9) })
+          this.events.push({ t: 'mRingWarn', x: b.x, z: b.z, r0, r1, dur: t })
+        }
+        return
+      }
+      case 'rain': {
+        const n = 10 + Math.floor(tier / 40)
+        for (let i = 0; i < n; i++) {
+          const a = rand() * Math.PI * 2
+          const rr = i === 0 ? 0 : 1.5 + rand() * 8
+          const c = clampArena(this.x + Math.sin(a) * rr, this.z + Math.cos(a) * rr, 0.6)
+          const delay = 1.0 + i * 0.07
+          this.bMeteors.push({ x: c.x, z: c.z, t: delay, r: 1.8, dmg: this.pctDmg(d, 0.55) })
+          this.events.push({ t: 'mStrike', x: c.x, z: c.z, r: 1.8, delay, k: d.rain ?? 'star' })
+        }
+        return
+      }
+      case 'pillars': {
+        // checkerboard of light around you: half erupts, then the other half
+        const cell = 3.6
+        for (let i = -2; i <= 2; i++)
+          for (let j = -2; j <= 2; j++) {
+            const c = clampArena(this.x + i * cell, this.z + j * cell, 0.6)
+            const delay = (i + j) % 2 === 0 ? 1.3 : 2.3
+            this.bMeteors.push({ x: c.x, z: c.z, t: delay, r: 1.95, dmg: this.pctDmg(d, 0.8) })
+            this.events.push({ t: 'mStrike', x: c.x, z: c.z, r: 1.95, delay, k: 'pillar' })
+          }
+        return
+      }
+      case 'spokes': {
+        const n = 4 + Math.floor(tier / 150)
+        const omega = (rand() < 0.5 ? -1 : 1) * (38 + tier / 18)
+        const a0 = (toYou * 180) / Math.PI + 180 / n
+        this.mSpokes.push({ x: b.x, z: b.z, n, len: 22, w: 1.6, a0, omega, warm: 1.0, t: 4.5, dmg: this.pctDmg(d, 0.18), tick: 0, age: 0 })
+        this.events.push({ t: 'mSpokes', x: b.x, z: b.z, n, len: 22, w: 1.6, a0, omega, warm: 1.0, dur: 4.5 })
+        return
+      }
+      case 'shades': {
+        const n = 3 + Math.floor(tier / 200)
+        const k = d.name === 'YORUMI' ? 'fox' : 'shade'
+        for (let i = 0; i < n; i++) {
+          const a = toYou + ((i - (n - 1) / 2) / n) * Math.PI * 1.4
+          this.hostile.push({ id: this.nextId++, x: b.x, z: b.z, vx: Math.sin(a) * 5, vz: Math.cos(a) * 5, life: 4.5, dmg: this.pctDmg(d, 0.3), home: 1.7, k })
+        }
+        return
+      }
+      case 'sun': {
+        const r = 4.5 + tier / 260
+        const suns = 1 + (tier >= 450 ? 1 : 0)
+        for (let i = 0; i < suns; i++) {
+          const delay = 2.2 + i * 1.2
+          const c = clampArena(this.x + (i ? (rand() - 0.5) * 6 : 0), this.z + (i ? (rand() - 0.5) * 6 : 0), 0.6)
+          this.bMeteors.push({ x: c.x, z: c.z, t: delay, r, dmg: this.pctDmg(d, 1.1) })
+          this.events.push({ t: 'mStrike', x: c.x, z: c.z, r, delay, k: 'sun' })
+        }
+        return
+      }
+      case 'blink': {
+        // vanish and strike from your side
+        const a = rand() * Math.PI * 2
+        const c = clampArena(this.x + Math.sin(a) * 2.6, this.z + Math.cos(a) * 2.6, 1)
+        this.events.push({ t: 'mBlink', x0: b.x, z0: b.z, x1: c.x, z1: c.z })
+        b.x = c.x
+        b.z = c.z
+        b.wind = 0.55
+        b.windR = Math.max(3.5, d.slam * 0.55)
+        this.events.push({ t: 'slamWarn', x: b.x, z: b.z, r: b.windR, dur: 0.55 })
+        return
+      }
+      case 'cross': {
+        const a = rand() * Math.PI
+        for (const yawR of [a, a + Math.PI / 2]) {
+          const yaw = (yawR * 180) / Math.PI
+          const sx = this.x - Math.sin(yawR) * 30, sz = this.z - Math.cos(yawR) * 30
+          this.bBeams.push({ x: sx, z: sz, yaw, len: 60, w: 2.4, t: 0.6, warm: 1.0, dmg: this.pctDmg(d, 0.35), tick: 0 })
+          this.events.push({ t: 'bbeamWarn', x: sx, z: sz, yaw, len: 60, w: 2.4, dur: 1.0 })
+        }
+        return
+      }
+      case 'wave': {
+        const yaw = (toYou * 180) / Math.PI
+        this.bBeams.push({ x: b.x, z: b.z, yaw, len: 30, w: 5.5, t: 0.9, warm: 1.3, dmg: this.pctDmg(d, 0.3), tick: 0 })
+        this.events.push({ t: 'bbeamWarn', x: b.x, z: b.z, yaw, len: 30, w: 5.5, dur: 1.3 })
+        return
+      }
+      case 'light': {
+        // LET THERE BE LIGHT: stand in a safe circle or be burned away
+        const safe: [number, number, number][] = []
+        const a = rand() * Math.PI * 2
+        safe.push((() => { const c = clampArena(this.x + Math.sin(a) * 6, this.z + Math.cos(a) * 6, 3); return [c.x, c.z, 3.2] as [number, number, number] })())
+        for (let i = 0; i < 2; i++) {
+          const c = clampArena(32 + (rand() - 0.5) * 24, 24 + (rand() - 0.5) * 36, 3)
+          safe.push([c.x, c.z, 3.2])
+        }
+        this.mLight = { safe, t: 3.6, dmg: this.maxHp * 0.92 }
+        this.events.push({ t: 'mLight', safe, dur: 3.6 })
+        return
+      }
+      case 'chrono': {
+        this.slowT = 3.5
+        this.events.push({ t: 'mChrono', dur: 3.5 })
+        this.mythicMove(b, d, 'rings')
+        return
+      }
+      default:
+        this.skyAttack(b, d, mv)
+    }
+  }
+  private mythicStep(dt: number) {
+    if (this.slowT > 0) this.slowT -= dt
+    for (const g of this.mRings) {
+      g.t -= dt
+      if (g.t > 0) continue
+      this.events.push({ t: 'mRing', x: g.x, z: g.z, r0: g.r0, r1: g.r1 })
+      const dd = Math.hypot(this.x - g.x, this.z - g.z)
+      if (dd >= g.r0 - 0.4 && dd <= g.r1 + 0.4) this.hurtPlayer(g.dmg)
+    }
+    this.mRings = this.mRings.filter((g) => g.t > 0)
+    for (const sp of this.mSpokes) {
+      if (sp.warm > 0) {
+        sp.warm -= dt
+        continue
+      }
+      sp.t -= dt
+      sp.age += dt
+      sp.tick -= dt
+      if (sp.tick > 0) continue
+      sp.tick = 0.3
+      const rx = this.x - sp.x, rz = this.z - sp.z
+      for (let i = 0; i < sp.n; i++) {
+        const a = ((sp.a0 + sp.omega * sp.age) * Math.PI) / 180 + (i / sp.n) * Math.PI * 2
+        const along = rx * Math.sin(a) + rz * Math.cos(a)
+        if (along > 0 && along < sp.len && Math.abs(rx * Math.cos(a) - rz * Math.sin(a)) < sp.w / 2 + 0.3) {
+          this.hurtPlayer(sp.dmg)
+          break
+        }
+      }
+    }
+    this.mSpokes = this.mSpokes.filter((sp) => sp.warm > 0 || sp.t > 0)
+    const L = this.mLight
+    if (L) {
+      L.t -= dt
+      if (L.t <= 0) {
+        const ok = L.safe.some(([x, z, r]) => Math.hypot(this.x - x, this.z - z) < r)
+        this.events.push({ t: 'mLightHit', ok })
+        if (!ok && this.invuln <= 0 && this.alive) {
+          this.hp -= L.dmg
+          this.events.push({ t: 'hurt', dmg: L.dmg })
+          if (this.hp <= 0) this.die('')
+        }
+        this.mLight = null
+      }
+    }
   }
 
   private bossAct(b: Enemy, dt: number) {
@@ -1527,10 +1775,11 @@ export class Run {
       b.wind -= dt
       if (b.wind <= 0) {
         b.wind = undefined
-        const r = d.slam
+        const r = b.windR ?? d.slam
+        b.windR = undefined
         this.events.push({ t: 'slam', x: b.x, z: b.z, r })
         if (Math.hypot(this.x - b.x, this.z - b.z) < r && this.invuln <= 0) {
-          const dmg = d.dmg * 1.6 * Math.max(0.3, 1 - this.armor * 0.08) * (this.god ? 0.5 : 1)
+          const dmg = (d.pct ? this.maxHp * d.pct * 1.3 * this.esc(d) : d.dmg * 1.6) * Math.max(0.3, 1 - this.armor * 0.08) * (this.god ? (d.pct ? 0.75 : 0.5) : 1)
           this.hp -= dmg
           this.lastAttacker = ''
           this.events.push({ t: 'hurt', dmg })
@@ -1570,7 +1819,28 @@ export class Run {
         return
       }
     }
-    if (d.attacks?.length) {
+    if (d.moves?.length) {
+      // enrage steps at 66% / 33% HP
+      if (d.phases) {
+        const f = b.hp / b.maxHp
+        const ph = Math.min(d.phases, f < 0.33 ? 2 : f < 0.66 ? 1 : 0)
+        if (ph > (b.phase ?? 0)) {
+          b.phase = ph
+          this.events.push({ t: 'mPhase', boss: b.boss ?? 0, phase: ph })
+        }
+      }
+      b.atkCd = (b.atkCd ?? 2.4) - dt
+      if (b.atkCd <= 0) {
+        const ph = b.phase ?? 0
+        b.atkCd = (d.cd ?? 3) * Math.pow(0.85, ph)
+        const n = (d.combo ?? 1) + (ph >= 2 ? 1 : 0)
+        for (let k = 0; k < n; k++) {
+          const mv = d.moves[(b.atkI ?? 0) % d.moves.length]
+          b.atkI = (b.atkI ?? 0) + 1
+          this.mythicMove(b, d, mv)
+        }
+      }
+    } else if (d.attacks?.length) {
       b.atkCd = (b.atkCd ?? 3) - dt
       if (b.atkCd <= 0) {
         b.atkCd = 3.4 - Math.min(1.2, (b.boss ?? 0) * 0.02)
@@ -1649,7 +1919,7 @@ export class Run {
         const dz = e.z - this.z
         const d = Math.hypot(dx, dz)
         if (d > R + e.r) continue
-        this.hitEnemy(e, 1, (dx / (d || 1)) * w.knock, (dz / (d || 1)) * w.knock)
+        this.hitEnemy(e, e.kind === 'boss' && bossFor(e.boss ?? 0).divine ? dmg : 1, (dx / (d || 1)) * w.knock, (dz / (d || 1)) * w.knock)
       }
       for (const r of remotes) if (Math.hypot(r.x - this.x, r.z - this.z) < R) this.pvpDamage(r, 400)
       this.events.push({ t: 'divine', x: this.x, z: this.z, r: R })

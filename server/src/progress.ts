@@ -8,6 +8,7 @@ ALTER TABLE runs ADD COLUMN IF NOT EXISTS q_kills INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS q_bosses INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS q_gold INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS slayer_at TIMESTAMPTZ;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS god_at TIMESTAMPTZ;
 CREATE TABLE IF NOT EXISTS player_quests (
   day     TEXT NOT NULL,
   address TEXT NOT NULL,
@@ -42,6 +43,10 @@ export const weekKey = (t = Date.now()) => new Date(weekStart(t) + KST).toISOStr
 // ───────────── NIGHTSWARM slayer ─────────────
 // bosses: every ladder boss up to and including NIGHTSWARM (src/game/defs.ts NIGHTSWARM_INDEX + 1)
 export const SLAYER = { gold: 100_000, items: ['title_nightswarm', 'void_wings'], bosses: 23, level: 200 }
+
+// ───────────── THE ALMIGHTY (Lv 1111): the one who beats God becomes God ─────────────
+// bosses: the whole ladder (src/game/defs.ts GOD_INDEX + 1); minTime: the XP curve needs far longer, this only stops crude claims
+export const GOD = { items: ['title_god', 'god_skin'], bosses: 43, level: 1111, minTime: 6 * 3600 }
 
 // ───────────── weekly prizes (paid lazily when a new week's board is first read) ─────────────
 export const WEEKLY_PRIZE = [30_000, 20_000, 15_000, 6_000, 6_000, 6_000, 6_000, 6_000, 6_000, 6_000]
@@ -127,7 +132,21 @@ export async function trackRun(db: Sql, address: string, run: any, res: { time: 
     await db.query('UPDATE player_quests SET level = $1, time = $2 WHERE day = $3 AND address = $4', [Math.max(n(cur.level), res.level), Math.max(n(cur.time), res.time), day, address])
   let slayer = false
   if (!res.flagged && bosses >= SLAYER.bosses && res.level >= SLAYER.level) slayer = await grantSlayer(db, address)
-  return { banked: bankNow, slayer }
+  let god = false
+  if (!res.flagged && bosses >= GOD.bosses && res.level >= GOD.level && res.time >= GOD.minTime) god = await grantGod(db, address)
+  return { banked: bankNow, slayer, god }
+}
+
+/** once per wallet: the God skin + title, worn at once; the Hall of Gods lists god_at */
+export async function grantGod(db: Sql, address: string) {
+  const r = await db.query('UPDATE players SET god_at = NOW() WHERE address = $1 AND god_at IS NULL', [address])
+  if (!r.rowCount) return false
+  for (const it of GOD.items) {
+    const u = await db.query('UPDATE player_items SET qty = qty + 1 WHERE address = $1 AND item = $2', [address, it])
+    if (!u.rowCount) await db.query('INSERT INTO player_items (address, item, qty) VALUES ($1, $2, 1)', [address, it])
+  }
+  await db.query("UPDATE players SET cosmetic = 'god_skin', title = 'title_god' WHERE address = $1", [address])
+  return true
 }
 
 export async function grantSlayer(db: Sql, address: string) {
@@ -178,7 +197,8 @@ export async function boards(db: Sql, now = Date.now()) {
   }
   const weekly = [...wk.values()].sort((a, b) => b.t - a.t || b.k - a.k).slice(0, 10)
   const slayers = (await db.query('SELECT name, slayer_at FROM players WHERE slayer_at IS NOT NULL ORDER BY slayer_at ASC LIMIT 20')).rows.map((r: any) => r.name)
-  return { allTime, weekly, slayers, live: liveBy.size, week: weekKey(now), weekEndsAt: ws + 7 * 86400e3, prizes: WEEKLY_PRIZE }
+  const gods = (await db.query('SELECT name, god_at FROM players WHERE god_at IS NOT NULL ORDER BY god_at ASC LIMIT 20')).rows.map((r: any) => r.name)
+  return { allTime, weekly, slayers, gods, live: liveBy.size, week: weekKey(now), weekEndsAt: ws + 7 * 86400e3, prizes: WEEKLY_PRIZE }
 }
 
 /** pay last week's top 10 once, the first time anything reads the boards in a new week */

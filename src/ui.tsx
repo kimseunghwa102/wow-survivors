@@ -200,7 +200,7 @@ function BossBar() {
         const d = bossFor(b.boss ?? 0)
         return (
           <UiEntity key={`boss${i}`} uiTransform={{ flexDirection: 'column', alignItems: 'center', padding: { left: 16, right: 16, top: 10, bottom: 10 }, width: twin ? 420 : 600, margin: { left: 6, right: 6 } }} uiBackground={FRAME}>
-            <Label value={`<b>${d.name}</b>  ·  ${d.title}`} fontSize={twin ? 14 : 16} color={C(d.color)} uiTransform={{ height: 22 }} />
+            <Label value={`<b>${d.name}</b>  ·  ${d.title}${b.phase ? (b.phase >= 2 ? '  ·  ⚠ UNLEASHED' : '  ·  ⚠ FURIOUS') : ''}`} fontSize={twin ? 14 : 16} color={C(d.color)} uiTransform={{ height: 22 }} />
             <TexBar frac={b.hp / b.maxHp} fill="images/ui_boss.png" w={twin ? 390 : 560} h={16} />
             <Label value={`${Math.max(0, Math.ceil(b.hp)).toLocaleString()} / ${Math.round(b.maxHp).toLocaleString()}`} fontSize={10} color={DIM} uiTransform={{ height: 14 }} />
           </UiEntity>
@@ -214,6 +214,18 @@ function NextBoss() {
   const r = G.run
   if (!r || r.boss) return null
   const d = bossFor(r.bossIndex)
+  if (r.ascended || !Number.isFinite(d.lvl))
+    return (
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 66 }, width: '100%', justifyContent: 'center' }}>
+        <Label value="☀ <b>You are God.</b> No one is left above you — only the swarm remains." fontSize={12} color={C('#FFD86A', 0.9)} />
+      </UiEntity>
+    )
+  if (d.god)
+    return (
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 66 }, width: '100%', justifyContent: 'center' }}>
+        <Label value={`the final trial: <b>THE ALMIGHTY</b> at Lv ${d.lvl}`} fontSize={13} color={C('#FFE9A8', 0.95)} />
+      </UiEntity>
+    )
   const twin = d.twin ? bossFor(r.bossIndex + 1) : null
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 66 }, width: '100%', justifyContent: 'center' }}>
@@ -845,7 +857,7 @@ function BoardModal() {
   const left = b?.weekEndsAt ? Math.max(0, (b.weekEndsAt - Date.now()) / 1000) : 0
   const prizes = b?.prizes ?? []
   const tabBtn = (k: typeof tab, label: string) => (
-    <Button key={k} value={label} fontSize={13} color={WHITE} uiTransform={{ width: 170, height: 32, margin: 3 }} uiBackground={BTN(tab === k ? C('#7B3BFF') : C('#2A1F3A'))} onMouseDown={tap(() => (G.boardTab = k))} />
+    <Button key={k} value={label} fontSize={13} color={WHITE} uiTransform={{ width: 146, height: 32, margin: 3 }} uiBackground={BTN(tab === k ? (k === 'gods' ? C('#B8860B') : C('#7B3BFF')) : C('#2A1F3A'))} onMouseDown={tap(() => (G.boardTab = k))} />
   )
   return (
     <Modal title="RANKINGS" color={GOLD} sub={`${b?.live ?? 0} hunting right now · updates live`}>
@@ -854,9 +866,20 @@ function BoardModal() {
           {tabBtn('weekly', '📅 THIS WEEK')}
           {tabBtn('allTime', '🏆 ALL-TIME')}
           {tabBtn('slayers', '✦ SLAYERS')}
+          {tabBtn('gods', '☀ GODS')}
         </UiEntity>
         {tab === 'weekly' ? <Label value={`resets Monday 00:00 KST · ${Math.floor(left / 86400)}d ${Math.floor((left % 86400) / 3600)}h left · top 10 win gold, top 3 get ♛ Champion`} fontSize={11} color={DIM} uiTransform={{ height: 16 }} /> : null}
-        {tab === 'slayers' ? (
+        {tab === 'gods' ? (
+          <UiEntity uiTransform={{ flexDirection: 'column', width: '100%', alignItems: 'center', margin: { top: 6 } }}>
+            <Label value="<b>HALL OF GODS</b> — those who defeated THE ALMIGHTY at Lv 1111" fontSize={14} color={GOLD} uiTransform={{ height: 20 }} />
+            <Label value="they wear Divine Radiance and begin every run as God" fontSize={11} color={DIM} uiTransform={{ height: 16 }} />
+            {(b?.gods ?? []).length ? (
+              (b?.gods ?? []).map((n, i) => <Label key={`g${i}`} value={`☀ <b>${n}</b>`} fontSize={18} color={C('#FFE9A8')} uiTransform={{ height: 26 }} />)
+            ) : (
+              <Label value="No one has become God… yet." fontSize={15} color={DIM} uiTransform={{ height: 24, margin: { top: 6 } }} />
+            )}
+          </UiEntity>
+        ) : tab === 'slayers' ? (
           <UiEntity uiTransform={{ flexDirection: 'column', width: '100%', alignItems: 'center', margin: { top: 6 } }}>
             <Label value="Hunters who slew NIGHTSWARM at Lv 200 — Void Wings + 100,000 gold" fontSize={12} color={GOLD} uiTransform={{ height: 18 }} />
             {(b?.slayers ?? []).length ? (
@@ -902,6 +925,32 @@ function SlayerReveal() {
   )
 }
 
+/** THE ALMIGHTY has fallen: the hunter becomes God */
+function AscendEnding() {
+  const t = G.ascendT
+  if (t <= 0) return null
+  const out = t > 16.5 ? Math.max(0, 1 - (t - 16.5) / 2.5) : 1
+  const a = (start: number) => Math.max(0, Math.min(1, (t - start) / 1.3)) * out
+  const white = Math.max(0, 1 - t / 2.2)
+  const line = (key: string, value: string, size: number, color: string, start: number, h: number) => (
+    <Label key={key} value={value} fontSize={size} color={C(color, a(start))} uiTransform={{ height: h }} />
+  )
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', width: '100%', height: '100%' }} uiBackground={{ color: C('#140C02', 0.62 * out) }}>
+      <UiEntity uiTransform={{ positionType: 'absolute', width: '100%', height: '100%' }} uiBackground={{ color: C('#FFF8E6', white) }} />
+      <UiEntity uiTransform={{ positionType: 'absolute', width: '100%', height: '100%', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        {line('a', '<b>THE ALMIGHTY HAS FALLEN</b>', 40, '#FFD86A', 0.8, 54)}
+        {line('b', 'From the last light of creation, a new God rises —', 18, '#FFF6D8', 3, 34)}
+        {line('c', `<b>${G.ascendName.toUpperCase()}</b>`, 66, '#FFE9A8', 5, 86)}
+        {line('d', '<b>✦ YOU HAVE BECOME GOD ✦</b>', 36, '#FFFFFF', 6.6, 52)}
+        {line('e', 'Divine Radiance  ·  title ✦ GOD ✦  ·  ×2 power  ·  ×2 life  ·  +3 regen — forever', 16, '#FFD86A', 8.6, 28)}
+        {line('f', 'Every run from now on begins as God. Your name is in the Hall of Gods.', 15, '#E8E2FF', 10.4, 24)}
+        {line('g', 'No one is left above you. From here on, only the swarm remains.', 14, '#B9B2C9', 12.2, 22)}
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
 const Root = () => (
   <UiEntity uiTransform={{ width: '100%', height: '100%', positionType: 'absolute' }}>
     {playerInCasino() ? <CasinoUi /> : null}
@@ -931,6 +980,7 @@ const Root = () => (
     {G.boardOpen && G.phase !== 'levelup' && G.phase !== 'chest' && !G.questOpen ? <BoardModal /> : null}
     <GoldShop />
     <SlayerReveal />
+    <AscendEnding />
     <Banner />
   </UiEntity>
 )

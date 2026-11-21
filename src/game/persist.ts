@@ -18,12 +18,14 @@ export type ServerProfile = {
   daily?: { streak: number; claimable: boolean; next: number; doubleReady: boolean }
   firstPurchase?: boolean
   belt?: { hp: number; rage: number; phoenix: number }
+  /** beat THE ALMIGHTY: every run starts as God */
+  god?: boolean
 }
 export type BoardRow = { n: string; t: number; l: number; k: number; live?: boolean }
 export type GlobalBoard = {
   runs: BoardRow[]; pvp: [string, number][]; players: number
   // live boards (players mid-run are merged in, flagged live)
-  allTime?: BoardRow[]; weekly?: BoardRow[]; slayers?: string[]; live?: number; week?: string; weekEndsAt?: number; prizes?: number[]
+  allTime?: BoardRow[]; weekly?: BoardRow[]; slayers?: string[]; gods?: string[]; live?: number; week?: string; weekEndsAt?: number; prizes?: number[]
 }
 export type Quest = { kind: string; tier: number; target: number; reward: number; text: string; progress: number; done: boolean; claimed: boolean }
 export type QuestState = { day: string; resetsAt: number; quests: Quest[] }
@@ -101,7 +103,7 @@ export async function serverEndRun(result: { time: number; level: number; kills:
   try {
     const r = await call('POST', '/api/run/end', { runId, ...result })
     save.profile = r.profile
-    return r as { granted: number; paid?: number; bonus?: number; newBest: boolean; slayer?: boolean; rank: number; profile: ServerProfile; inv?: any }
+    return r as { granted: number; paid?: number; bonus?: number; newBest: boolean; slayer?: boolean; god?: boolean; rank: number; profile: ServerProfile; inv?: any }
   } catch (e) {
     console.log('run/end failed', e)
     return null
@@ -160,7 +162,7 @@ export async function serverSaveRun(snap: RunSnap) {
   try {
     const r = await call('POST', '/api/run/save', { runId: save.runId, snap })
     if (r.profile) save.profile = r.profile
-    return r as { ok: boolean; banked: number; slayer: boolean; profile: ServerProfile | null; inv?: any }
+    return r as { ok: boolean; banked: number; slayer: boolean; god?: boolean; profile: ServerProfile | null; inv?: any }
   } catch (e) {
     console.log('run/save failed', e)
     return null

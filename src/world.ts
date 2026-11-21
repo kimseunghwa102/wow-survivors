@@ -45,11 +45,24 @@ export function buildWorld() {
   bob(title, 0.15, 2200)
   text(V(0, 0.4, 0), 'WOW NIGHTSWARM', 9, '#FFD86A', { parent: title, billboard: true, outline: '#2A0A3A' })
   text(V(0, -0.45, 0), 'Hold the rift. Break the swarm. Hunt your rivals.', 2.6, '#E8E2FF', { parent: title, billboard: true })
+  // ── Hall of Gods: the ones who defeated THE ALMIGHTY (Lv 1111) ──
+  const gods = node(V(8, 6.7, 8))
+  bob(gods, 0.12, 2600)
+  text(V(0, 0.35, 0), '☀ HALL OF GODS ☀', 4.4, '#FFD86A', { parent: gods, billboard: true, outline: '#2A1A00' })
+  const godsT = text(V(0, -0.55, 0), '', 2.6, '#FFF6D8', { parent: gods, billboard: true, outline: '#2A1A00' })
+  let godsAcc = 3
+  engine.addSystem((dt) => {
+    godsAcc += dt
+    if (godsAcc < 3) return
+    godsAcc = 0
+    const g = save.board?.gods ?? []
+    setText(godsT, g.length ? g.slice(0, 6).join('  ·  ') : 'No one has become God… yet.\nDefeat THE ALMIGHTY at Lv 1111.')
+  })
   const [hx, , hz] = LAYOUT.howto
   text(V(hx, 2.75, hz - 0.13), 'HOW TO PLAY', 4.2, '#FFD86A', { rot: FACE.south })
   text(
     V(hx - 1.95, 1.45, hz - 0.13),
-    'Walk through the gate to start a run.\nSkills fire on their own · HOLD LEFT CLICK to\nattack with your Armory weapon · F = nuke.\nGems → level up → upgrades. Max a skill + its\npartner passive, open a vault to ASCEND it.\nA BOSS rises every few levels — dragons from\nLv 50, the World Eater at Lv 200, then endless.\nClaim your DAILY reward · first run = 2x gold.\nOther hunters can hurt you in the rift!',
+    'Walk through the gate to start a run.\nSkills fire on their own · HOLD LEFT CLICK to\nattack with your Armory weapon · F = nuke.\nGems → level up → upgrades. Max a skill + its\npartner passive, open a vault to ASCEND it.\nA BOSS rises every few levels — the World Eater\nat Lv 200, tyrants to Lv 1000, GOD at Lv 1111.\nClaim your DAILY reward · first run = 2x gold.\nOther hunters can hurt you in the rift!',
     2.15,
     '#FFFFFF',
     { rot: FACE.south, align: TextAlignMode.TAM_MIDDLE_LEFT }
@@ -192,7 +205,9 @@ export function buildWorld() {
 }
 
 export function mmss(t: number) {
-  const m = Math.floor(t / 60)
+  const h = Math.floor(t / 3600)
+  const m = Math.floor((t % 3600) / 60)
   const s = Math.floor(t % 60)
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }

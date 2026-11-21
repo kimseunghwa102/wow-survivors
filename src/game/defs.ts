@@ -164,7 +164,7 @@ export const ARMORY: ArmoryDef[] = [
   { name: 'Storm Minigun', cost: 20000, dmg: 60, range: 18, arc: 0, cd: 0.07, knock: 1.5, gun: true, color: '#7FE8FF', model: 'models/w_minigun.glb', fx: 'gun', desc: 'Hold to shred everything in a line' },
   { name: 'Doomsday Nuke', cost: 100000, dmg: 40000, range: 16, arc: 0, cd: 30, knock: 0, color: '#FF3B2E', model: 'models/w_nuke.glb', fx: 'nuke', desc: 'Press F: wipe the screen (30s cooldown)' },
   { name: "Zeus' Atomic Thunder", cost: 200000, dmg: 1400, range: 20, arc: 0, cd: 0.22, knock: 3, chain: 7, color: '#FFE45A', model: 'models/w_zeus.glb', fx: 'zeus', desc: 'Chain lightning that leaps through 8 foes' },
-  { name: 'Divine Ascension', cost: 1000000, dmg: 1, range: 10, arc: 360, cd: 0.35, knock: 12, god: true, color: '#FFFFFF', model: 'models/w_god.glb', fx: 'god', desc: 'BECOME A GOD — divine form, everything dies in one hit' }
+  { name: 'Divine Ascension', cost: 1000000, dmg: 800, range: 10, arc: 360, cd: 0.35, knock: 12, god: true, color: '#FFFFFF', model: 'models/w_god.glb', fx: 'god', desc: 'BECOME A GOD — divine form, everything dies in one hit (mythic bosses take heavy blows)' }
 ]
 export const GOD_TIER = 8
 /** weapons you can hold (the nuke is an F-key ability, not a held weapon) */
@@ -185,8 +185,24 @@ export type BossDef = {
   fly?: number
   /** ranged patterns: energy beam, orb barrage, meteor rain */
   attacks?: BossAttack[]
+  /** Lv 350+ mythic patterns (replace `attacks`); fired `combo` at a time every `cd` seconds */
+  moves?: BossMove[]
+  /** what falls in a 'rain' volley */
+  rain?: RainKind
+  /** share of the hunter's max HP a big hit takes (mythic bosses scale with you, not with flat numbers) */
+  pct?: number
+  combo?: number
+  cd?: number
+  /** enrage steps at 66% / 33% HP: faster volleys, and one more pattern at once in the last step */
+  phases?: number
+  /** shrugs off Divine Ascension one-hit kills */
+  divine?: boolean
+  /** THE ALMIGHTY: the story ends when it falls */
+  god?: boolean
 }
 export type BossAttack = 'beam' | 'orbs' | 'meteors'
+export type BossMove = BossAttack | 'rings' | 'rain' | 'pillars' | 'spokes' | 'shades' | 'sun' | 'blink' | 'cross' | 'wave' | 'light' | 'chrono'
+export type RainKind = 'spear' | 'cannon' | 'kunai' | 'fire' | 'fist' | 'bolt' | 'star'
 // original creature bosses + dragons; twins arrive together and share the arena
 export const BOSSES: BossDef[] = [
   { lvl: 10, name: 'Gravemaw', title: 'Glutton of the Crypts', model: 'models/ghoul_elite.glb', scale: 2.6, hp: 1500, dmg: 25, speed: 2.0, r: 1.2, slam: 3.5, adds: 'ghoul', color: '#FF5A3D' },
@@ -217,37 +233,35 @@ export const BOSSES: BossDef[] = [
   { lvl: 240, name: 'Stormheart', title: 'Wings of the Last Storm', model: 'models/boss_stormbird.glb', scale: 1.1, hp: 9000000, dmg: 260, speed: 3.6, r: 2.6, slam: 9, adds: 'bat', color: '#7DF9FF', fly: 5, charge: true, attacks: ['orbs', 'meteors'] },
   { lvl: 260, name: 'Oculus Prime', title: 'The Eye Above All', model: 'models/boss_oculus.glb', scale: 1.1, hp: 13500000, dmg: 280, speed: 2.2, r: 3.0, slam: 10, adds: 'wraith', color: '#FF2A6A', fly: 4, attacks: ['beam', 'orbs'] },
   { lvl: 280, name: 'Azure Leviathan', title: 'Serpent of the Upper Sky', model: 'models/boss_skywyrm.glb', scale: 1.3, hp: 20000000, dmg: 300, speed: 3.2, r: 3.0, slam: 10, adds: 'skeleton', color: '#3FE6FF', fly: 4.5, charge: true, attacks: ['beam', 'meteors'] },
-  { lvl: 300, name: 'AETHERION', title: 'The God-Eater', model: 'models/boss_aetherion.glb', scale: 1.2, hp: 33000000, dmg: 340, speed: 2.4, r: 3.8, slam: 12, adds: 'wraith', color: '#B05BFF', fly: 2.5, attacks: ['beam', 'orbs', 'meteors'] }
+  { lvl: 300, name: 'AETHERION', title: 'The God-Eater', model: 'models/boss_aetherion.glb', scale: 1.2, hp: 33000000, dmg: 340, speed: 2.4, r: 3.8, slam: 12, adds: 'wraith', color: '#B05BFF', fly: 2.5, attacks: ['beam', 'orbs', 'meteors'] },
+  // ── the MYTHIC ASCENT (Lv 350-1000, every 50): warriors, pirates, ninja, angels and demons — original designs ──
+  // their hits take a share of YOUR max HP, so the fight stays deadly however strong you get
+  { lvl: 350, name: 'VARKOS', title: 'The Unbound Ki Berserker', model: 'models/boss_varkos.glb', scale: 1.0, hp: 45000000, dmg: 360, speed: 3.0, r: 2.4, slam: 9, adds: 'skeleton', color: '#FF3B4E', fly: 1.5, moves: ['wave', 'rain', 'rings', 'blink'], rain: 'fist', pct: 0.18, combo: 1, cd: 3.2, divine: true },
+  { lvl: 400, name: 'CAPTAIN DRAKKAR', title: 'Emperor of the Drowned Tide', model: 'models/boss_drakkar.glb', scale: 1.1, hp: 52000000, dmg: 380, speed: 2.2, r: 2.8, slam: 10, adds: 'ghoul', color: '#2BD4C4', moves: ['rain', 'rings', 'pillars', 'cross'], rain: 'cannon', pct: 0.19, combo: 1, cd: 3.0, divine: true },
+  { lvl: 450, name: 'KAGEROU', title: 'The Thousand Shadows', model: 'models/boss_kagerou.glb', scale: 1.0, hp: 60000000, dmg: 400, speed: 3.8, r: 2.0, slam: 8, adds: 'wraith', color: '#E03A5A', moves: ['shades', 'rain', 'blink', 'cross'], rain: 'kunai', pct: 0.19, combo: 1, cd: 2.8, divine: true },
+  { lvl: 500, name: 'SOLARIEL', title: 'Archangel of Judgment', model: 'models/boss_solariel.glb', scale: 1.1, hp: 70000000, dmg: 420, speed: 2.8, r: 2.6, slam: 9, adds: 'wraith', color: '#FFE9A8', fly: 3, moves: ['pillars', 'rain', 'cross', 'wave'], rain: 'spear', pct: 0.2, combo: 2, cd: 3.4, divine: true },
+  { lvl: 550, name: 'MALGOROTH', title: 'The Hellforge Tyrant', model: 'models/boss_malgoroth.glb', scale: 1.2, hp: 82000000, dmg: 440, speed: 2.4, r: 3.0, slam: 10, adds: 'skeleton', color: '#FF5A1E', moves: ['rain', 'spokes', 'rings', 'sun'], rain: 'fire', pct: 0.21, combo: 2, cd: 3.4, divine: true },
+  { lvl: 600, name: 'ZERATH', title: 'The Star-Devourer', model: 'models/boss_zerath.glb', scale: 1.0, hp: 95000000, dmg: 460, speed: 3.2, r: 2.4, slam: 9, adds: 'wraith', color: '#8A6BFF', fly: 2.5, moves: ['sun', 'orbs', 'rain', 'wave'], rain: 'star', pct: 0.21, combo: 2, cd: 3.2, divine: true },
+  { lvl: 650, name: 'YORUMI', title: 'The Nine-Tailed Empress', model: 'models/boss_yorumi.glb', scale: 1.2, hp: 110000000, dmg: 480, speed: 3.6, r: 2.6, slam: 9, adds: 'bat', color: '#7FD8FF', moves: ['shades', 'spokes', 'rings', 'blink'], pct: 0.22, combo: 2, cd: 3.0, divine: true },
+  { lvl: 700, name: 'THE DROWNED ARMADA', title: 'Ghost Flagship of the Endless Sea', model: 'models/boss_armada.glb', scale: 1.3, hp: 125000000, dmg: 500, speed: 2.0, r: 3.4, slam: 11, adds: 'ghoul', color: '#39FFB0', fly: 3.5, moves: ['cross', 'rain', 'sun', 'rings'], rain: 'cannon', pct: 0.23, combo: 2, cd: 3.2, divine: true },
+  { lvl: 750, name: 'RAIKOU', title: 'The Thunder Shogun', model: 'models/boss_raikou.glb', scale: 1.2, hp: 140000000, dmg: 520, speed: 3.0, r: 2.8, slam: 10, adds: 'skeleton', color: '#FFD02B', moves: ['pillars', 'cross', 'rain', 'blink'], rain: 'bolt', pct: 0.23, combo: 2, cd: 3.0, divine: true },
+  { lvl: 800, name: 'OPHANOS', title: 'The Burning Wheels', model: 'models/boss_ophanos.glb', scale: 1.2, hp: 160000000, dmg: 540, speed: 2.4, r: 3.0, slam: 10, adds: 'wraith', color: '#FFB347', fly: 4, moves: ['spokes', 'pillars', 'orbs', 'rain'], rain: 'spear', pct: 0.24, combo: 2, cd: 3.0, divine: true },
+  { lvl: 850, name: 'NYXARA', title: 'Queen of the Abyss', model: 'models/boss_nyxara.glb', scale: 1.2, hp: 180000000, dmg: 560, speed: 3.2, r: 2.6, slam: 10, adds: 'wraith', color: '#B04BFF', fly: 3, moves: ['sun', 'shades', 'spokes', 'cross'], pct: 0.25, combo: 2, cd: 3.4, divine: true },
+  { lvl: 900, name: 'ASURAKH', title: 'The Six-Armed Wrath', model: 'models/boss_asurakh.glb', scale: 1.3, hp: 200000000, dmg: 580, speed: 2.8, r: 3.2, slam: 11, adds: 'skeleton', color: '#FF6A3D', moves: ['rain', 'rings', 'cross', 'wave', 'blink'], rain: 'fist', pct: 0.25, combo: 2, cd: 3.2, divine: true },
+  { lvl: 950, name: 'KHRONOS', title: 'The Time Devourer', model: 'models/boss_khronos.glb', scale: 1.3, hp: 225000000, dmg: 600, speed: 2.2, r: 3.4, slam: 11, adds: 'ghoul', color: '#E8D28A', fly: 2.5, moves: ['chrono', 'rings', 'pillars', 'spokes', 'sun'], pct: 0.26, combo: 2, cd: 3.2, divine: true },
+  { lvl: 1000, name: 'MORTHAEL', title: 'The Last Demon King', model: 'models/boss_morthael.glb', scale: 1.5, hp: 400000000, dmg: 640, speed: 3.2, r: 3.4, slam: 12, adds: 'wraith', color: '#FF2A3D', fly: 3, moves: ['sun', 'shades', 'cross', 'rain', 'spokes', 'rings', 'blink'], rain: 'fire', pct: 0.27, combo: 2, cd: 3.0, phases: 2, divine: true },
+  // ── THE ALMIGHTY (Lv 1111): defeat God and become God. No boss comes after. ──
+  { lvl: 1111, name: 'THE ALMIGHTY', title: 'God of All Creation', model: 'models/boss_almighty.glb', scale: 1.6, hp: 400000000, dmg: 700, speed: 2.2, r: 4.0, slam: 13, adds: 'wraith', color: '#FFF6D8', fly: 4.5, moves: ['light', 'pillars', 'spokes', 'rain', 'cross', 'sun', 'shades', 'rings'], rain: 'star', pct: 0.25, combo: 2, cd: 3.0, phases: 2, divine: true, god: true }
 ]
 /** index of NIGHTSWARM in the ladder (bosses slain to reach + kill it; server/src/progress.ts SLAYER.bosses must match) */
 export const NIGHTSWARM_INDEX = BOSSES.findIndex((b) => b.name === 'NIGHTSWARM')
-export const ENDLESS_EVERY = 20 // after level 300: a Calamity every 20 levels, 30% stronger each time
-const ENDLESS_POOL = BOSSES.filter((b) => !b.twin && b.lvl >= 70 && b.name !== 'NIGHTSWARM' && b.name !== 'AETHERION' && !b.name.includes('Twin'))
-const LAST = BOSSES[BOSSES.length - 1]
+/** the boss that ends the story, and the level it waits at */
+export const GOD_INDEX = BOSSES.findIndex((b) => b.god)
+export const GOD_LEVEL = BOSSES[GOD_INDEX].lvl
+/** past THE ALMIGHTY nothing else comes: only the horde */
+const NO_BOSS: BossDef = { ...BOSSES[GOD_INDEX], lvl: Number.POSITIVE_INFINITY, name: '—', title: 'No one left above you', god: false }
 export function bossFor(index: number): BossDef {
-  if (index < BOSSES.length) return BOSSES[index]
-  const k = index - BOSSES.length + 1
-  const base = ENDLESS_POOL[(k - 1) % ENDLESS_POOL.length]
-  const mul = Math.pow(1.3, k)
-  return {
-    ...base,
-    twin: false,
-    lvl: LAST.lvl + k * ENDLESS_EVERY,
-    name: `Calamity ${toRoman(k)}: ${base.name}`,
-    title: 'Endless Night',
-    scale: Math.min(2.0, base.scale * 1.15),
-    hp: Math.round(LAST.hp * mul),
-    dmg: Math.round(LAST.dmg * Math.pow(1.1, k)),
-    // every calamity flies and uses the sky-god patterns
-    fly: base.fly ?? 3,
-    attacks: base.attacks ?? ['beam', 'orbs', 'meteors']
-  }
-}
-function toRoman(n: number) {
-  const r: [number, string][] = [[10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']]
-  let s = ''
-  for (const [v, c] of r) while (n >= v) (s += c), (n -= v)
-  return s
+  return index < BOSSES.length ? BOSSES[index] : NO_BOSS
 }
 
 // ───────────── GOD POWERS: unlocked at Lv 200 (own slots, up to Lv 5) ─────────────
@@ -298,6 +312,9 @@ export const COSMETICS: CosmeticDef[] = [
   { id: 'void_wings', name: 'Void Wings', model: 'models/cos_void_wings.glb', anchor: 'back', anim: true },
   { id: 'title_champion', name: 'Weekly Champion', title: '♛ Weekly Champion' },
   // worn automatically while the Seraph Wings god power is active (not an item)
-  { id: 'seraph_wings', name: 'Seraph Wings', model: 'models/cos_seraph_wings.glb', anchor: 'back', anim: true }
+  { id: 'seraph_wings', name: 'Seraph Wings', model: 'models/cos_seraph_wings.glb', anchor: 'back', anim: true },
+  // the ones who defeated THE ALMIGHTY (Lv 1111)
+  { id: 'title_god', name: 'God', title: '✦ GOD ✦' },
+  { id: 'god_skin', name: 'Divine Radiance', model: 'models/cos_god.glb', anchor: 'back', anim: true }
 ]
 export const RAID_PARCEL = { x: -91, y: 71 }

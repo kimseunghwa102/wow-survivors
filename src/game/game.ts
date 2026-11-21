@@ -6,7 +6,7 @@ import LAYOUT from '../../layout.json'
 import { Run, Option, Ev, inArena } from './core'
 import type { Entity } from '@dcl/sdk/ecs'
 import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS, GODS, MAX_GOD_LVL } from './defs'
-import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm, queueRemoteFx, fxTiers, haloTiersOf, projKind, lookOf } from './view'
+import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm, queueRemoteFx, fxTiers, haloTiersOf, projKind, lookOf, ascendFx, skyText } from './view'
 import { encodeFx, decodeFx } from './fxnet'
 import { playerInCasino } from '../casino/holdem/ui'
 import { duckMusic } from './sfx'
@@ -15,7 +15,7 @@ let lastCasinoView = 0
 import { ARENA_EVENTS, VaultPrize, VAULT_PRIZES, POTION_DEFS, PotionKind } from './core'
 import { attachCosmetic, anchorOf, detach } from './cosmetics'
 import { play, setupSfx, musicLevel } from './sfx'
-import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf, sendFx, pushFeed } from './net'
+import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf, sendFx, pushFeed, sendAscend } from './net'
 import { serverQuests, serverClaimQuest, QuestState, serverBuyPotion } from './persist'
 import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile, serverArmoryBuy, serverClaimDaily, shopConfig, shopQuote, shopConfirm, serverSaveRun, serverAbandon, pingServer } from './persist'
 import { getUserAccount, sendAsync, requirePayment } from '~system/EthereumController'
@@ -82,8 +82,13 @@ export const G = {
   questOpen: false,
   questBusy: false,
   boardOpen: false,
-  boardTab: 'weekly' as 'weekly' | 'allTime' | 'slayers',
+  boardTab: 'weekly' as 'weekly' | 'allTime' | 'slayers' | 'gods',
   slayerReveal: 0,
+  /** beat THE ALMIGHTY (server-confirmed): every run starts as God */
+  isGod: false,
+  /** the ending: seconds since ascension (0 = not playing) */
+  ascendT: 0,
+  ascendName: '',
   // potion belt in the lobby (server-owned) + run feel
   profileBelt: { hp: 0, rage: 0, phoenix: 0 },
   potionOpen: false,
@@ -109,6 +114,7 @@ export function applyProfile(p: ServerProfile | null) {
   if (p.daily) G.daily = p.daily
   if (p.firstPurchase !== undefined) G.firstPurchase = p.firstPurchase
   if (p.belt) G.profileBelt = { ...p.belt }
+  if (p.god) G.isGod = true
   wearMine()
 }
 
@@ -342,6 +348,7 @@ export function resumeRun() {
   save.resume = null
   save.runId = s.runId
   G.run = Run.restore(s.snap, { ...G.meta }, G.armory, equipped())
+  if (G.isGod) G.run.becomeGod()
   G.runBanked = s.snap.gold
   G.doubleBonus = 0
   G.armoryOpen = false
@@ -372,13 +379,14 @@ export function startRun(w: WeaponId) {
     })
   })
   G.run = new Run(w, { ...G.meta }, G.armory, equipped())
+  if (G.isGod) G.run.becomeGod()
   G.runBanked = 0
   G.doubleBonus = 0
   G.armoryOpen = false
   G.pvpKills = 0
   G.phase = 'running'
   G.lastAttackerId = ''
-  banner(`HOLD THE RIFT! ${WEAPONS[w].name} equipped`, 3)
+  banner(G.isGod ? `✦ GOD WALKS THE RIFT ✦  ${WEAPONS[w].name} in hand` : `HOLD THE RIFT! ${WEAPONS[w].name} equipped`, 3)
   musicLevel(0.16)
 }
 
@@ -444,7 +452,31 @@ function checkpoint() {
     if (res.inv) save.inv = res.inv
     if (res.profile) applyProfile(res.profile)
     if (res.slayer) slayerReveal()
+    if (res.god) G.isGod = true
   })
+}
+
+/** THE ALMIGHTY has fallen: the hunter becomes God (the ending plays; everyone in the scene sees it) */
+function ascend() {
+  const r = G.run
+  if (!r) return
+  const name = me().name
+  G.ascendT = 0.001
+  G.ascendName = name
+  G.flash = 1.2
+  play('choir')
+  play('evolve')
+  play('jackpot')
+  musicLevel(0.06)
+  // wear the God skin and title at once (the server confirms on the checkpoint below)
+  save.inv.items = { ...save.inv.items, title_god: 1, god_skin: 1 }
+  save.inv.cosmetic = 'god_skin'
+  save.inv.title = 'title_god'
+  wearMine()
+  sendAscend(r.x, r.z)
+  pushFeed(`✦ ${name} HAS BECOME GOD ✦`, '#FFD86A')
+  skyText(`✦ ${name.toUpperCase()} ✦`, 'HAS BECOME GOD', 30, r.x, r.z)
+  checkpoint()
 }
 
 /** the NIGHTSWARM reward lands (once per wallet) */
@@ -584,6 +616,7 @@ function endRun(killer?: string) {
         if (res.inv) save.inv = res.inv
         applyProfile(res.profile)
         if (res.slayer) slayerReveal()
+        if (res.god) G.isGod = true
         if (G.summary) {
           G.summary.gold = res.granted
           G.doubleBonus = res.bonus ?? 0
@@ -778,6 +811,44 @@ function handle(evs: Ev[]) {
       case 'charge':
         play('warn', 0.8)
         break
+      // mythic boss patterns (Lv 350+)
+      case 'mRingWarn':
+        play('warn', 0.7)
+        break
+      case 'mRing':
+        play('slam', 0.8)
+        break
+      case 'mSpokes':
+        play('nukelaunch', 1.25)
+        break
+      case 'mBlink':
+        play('reaper', 1.2)
+        break
+      case 'mChrono':
+        play('sigil', 0.5)
+        banner('⏳ TIME IS DEVOURED — you are slowed ⏳', 2)
+        break
+      case 'mLight':
+        play('choir', 1.15)
+        play('warn', 0.6)
+        banner('✦ LET THERE BE LIGHT ✦  — stand inside a golden circle!', 3.4)
+        break
+      case 'mLightHit':
+        play('nuke', e.ok ? 1.3 : 0.9)
+        G.flash = Math.max(G.flash, e.ok ? 0.5 : 1.1)
+        if (e.ok) banner('the light spares you…', 1.5)
+        break
+      case 'mPhase': {
+        const b = bossFor(e.boss)
+        play('roar', 0.8)
+        play('boss')
+        G.flash = Math.max(G.flash, 0.3)
+        banner(e.phase >= 2 ? `⚠ ${b.name.toUpperCase()} UNLEASHES EVERYTHING ⚠` : `⚠ ${b.name.toUpperCase()} GROWS FURIOUS ⚠`, 3)
+        break
+      }
+      case 'ascend':
+        ascend()
+        break
       case 'ring':
         play('ring')
         banner('THE NIGHTSWARM CLOSES IN!', 3)
@@ -790,7 +861,7 @@ function handle(evs: Ev[]) {
         return
     }
   }
-  if (G.phase === 'running' && (r.pendingLevels > 0 || G.chestQueue.length)) nextModal()
+  if (G.phase === 'running' && G.ascendT <= 0 && (r.pendingLevels > 0 || G.chestQueue.length)) nextModal()
 }
 
 export function setupGame() {
@@ -871,6 +942,16 @@ export function setupGame() {
       if (G.run.events.some((e) => e.t === 'hurt')) G.hurtFlash = 0.25
       if (!G.run.alive) endRun(fromName || nameOf(fromId))
     },
+    onAscend: (name, x, z) => {
+      pushFeed(`✦ ${name} HAS BECOME GOD ✦`, '#FFD86A')
+      banner(`✦ ${name.toUpperCase()} DEFEATED THE ALMIGHTY AND BECAME GOD ✦`, 8)
+      skyText(`✦ ${name.toUpperCase()} ✦`, 'HAS BECOME GOD', 30, x, z)
+      ascendFx(x, z)
+      G.flash = Math.max(G.flash, 0.6)
+      play('choir')
+      play('evolve', 0.9)
+      void loadBoard()
+    },
     onBounty: (victim, lvl) => {
       play('pvp')
       G.pvpKills++
@@ -930,6 +1011,13 @@ export function setupGame() {
     if (G.bannerT > 0) G.bannerT -= dt
     if (G.comboFlash > 0) G.comboFlash -= dt
     if (G.slayerReveal > 0) G.slayerReveal -= dt
+    if (G.ascendT > 0) {
+      G.ascendT += dt
+      if (G.ascendT > 19) {
+        G.ascendT = 0
+        musicLevel(0.16)
+      }
+    }
     // low HP: heartbeat
     if (G.run && G.run.alive && G.phase === 'running' && G.run.hp < G.run.maxHp * 0.3) {
       G.heartbeat -= dt

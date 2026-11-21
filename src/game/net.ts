@@ -94,6 +94,7 @@ type Handlers = {
   onHit: (dmg: number, fromId: string, fromName: string) => void
   onBounty: (victimName: string, victimLvl: number) => void
   onFx: (fromId: string, tiers: number[], evs: number[][]) => void
+  onAscend: (name: string, x: number, z: number, id: string) => void
 }
 let H: Handlers
 
@@ -118,6 +119,11 @@ export function setupNet(h: Handlers) {
       H.onBounty(m.vn, m.lvl)
       addPvpKill(m.kn)
     }
+  })
+  // someone beat THE ALMIGHTY: everyone in the scene sees the ascension
+  bus.on('god', (m: { id: string; n: string; x: number; z: number }) => {
+    if (!m || m.id === me().id) return
+    H.onAscend(String(m.n || 'A hunter').slice(0, 24), Number(m.x) || 32, Number(m.z) || 24, m.id)
   })
   bus.on('fx', (m: { id: string; a: number[]; e: number[][] }) => {
     if (!m || m.id === me().id || !Array.isArray(m.e)) return
@@ -154,6 +160,10 @@ export function sendFx(code: number, nums: number[], tiers: number[]) {
 export function sendStatus(s: Omit<Status, 'id' | 'n'>) {
   const m = me()
   bus.emit('st', { ...s, id: m.id, n: m.name })
+}
+export function sendAscend(x: number, z: number) {
+  const m = me()
+  bus.emit('god', { id: m.id, n: m.name, x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10 })
 }
 export function sendHit(to: string, dmg: number) {
   const m = me()
