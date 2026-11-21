@@ -138,16 +138,21 @@ function build() {
   startNet()
   engine.addSystem(() => renderTable())
 
-  // ── portal to the GYBM casino (-76,-48): same table, same gold ──
+  // ── portal to the GYBM casino (-76,-48): same table, same gold ── (big and glowing, right by the entrance)
+  const PX = 13.2, PZ = 1.5
   const gate = engine.addEntity()
-  Transform.create(gate, { position: V(13.6, 0, 1.3), rotation: Quaternion.fromEulerDegrees(0, 180, 0), scale: V(0.55, 0.55, 0.55) })
+  Transform.create(gate, { position: V(PX, 0, PZ), rotation: Quaternion.fromEulerDegrees(0, 180, 0), scale: V(1.0, 1.0, 1.0) })
   GltfContainer.create(gate, { src: 'models/raid_gate.glb', visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE })
-  text(V(13.6, 3.1, 1.25), 'GYBM CASINO\n-76,-48', 0.9, hex4('#FFD700FF'), 0, true)
-  hotspot(V(13.6, 1.2, 1.3), V(1.8, 2.4, 0.8), 'Portal to the GYBM Casino (same table, same gold)', () => {
-    playChime(V(13.6, 1, 1.3))
+  text(V(PX, 4.6, PZ), 'PORTAL\nGYBM CASINO', 2.2, hex4('#FFD700FF'), 0, true, hex3('#3A0A00'))
+  text(V(PX, 3.7, PZ), 'click to teleport to -76,-48', 1.1, hex4('#7DF9FFFF'), 0, true)
+  const glow = engine.addEntity()
+  Transform.create(glow, { position: V(PX, 2.2, PZ) })
+  LightSource.create(glow, { type: LightSource.Type.Point({}), color: hex3('#FFB040'), intensity: 14000, range: 9 })
+  const goGybm = () => {
+    playChime(V(PX, 1, PZ))
     void teleportTo({ worldCoordinates: { x: -76, y: -48 } })
-  }, 6)
-
+  }
+  hotspot(V(PX, 1.6, PZ), V(3.0, 3.2, 1.4), 'Teleport to the GYBM Casino (-76,-48) — same table, same gold', goGybm, 10)
 
   // ── 슬롯머신 (무료 재미용) ──
   const symbols = ['7', 'BAR', '$', 'K', 'A', '*']

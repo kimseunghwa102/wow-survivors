@@ -91,7 +91,7 @@ function AccountPanel() {
             </UiEntity>
           ) : null}
           {me.seat == null && !me.broke ? (
-            <Label value={`Click an open chair: buy-in up to ${fmt(v!.cfg.maxBuyIn || 5000)} gold from your bank.`} fontSize={13} color={C.dim} uiTransform={{ height: 20 }} textAlign="middle-left" />
+            <Label value={`Click an open chair: your whole bank (${fmt(me.bank || 0)} gold) goes on the table.`} fontSize={13} color={C.dim} uiTransform={{ height: 20 }} textAlign="middle-left" />
           ) : null}
         </UiEntity>
       ) : store.status === 'online' ? (

@@ -329,9 +329,9 @@ async function main() {
     await db.query('UPDATE players SET bank = 8000 WHERE address = $1', [aA])
     const s1 = await A.call('sit', { seat: 0 })
     const s2 = await B.call('sit', { seat: 1 })
-    assert(s1.ok && s2.ok && s1.buyIn === 5000, 'buy-in of 5,000 gold moves from the bank to the table')
+    assert(s1.ok && s2.ok && s1.buyIn === 8000, 'buy-in = the whole bank (8,000) moves onto the table')
     const ga = await goldOf(aA)
-    assert(Number(ga.bank) === 3000 && Number(ga.casino_stack) === 5000, 'escrow: bank 3,000 + table 5,000')
+    assert(Number(ga.bank) === 0 && Number(ga.casino_stack) === 8000, 'escrow: bank 0 + table 8,000')
     // play some hands: whoever is to act calls (or checks)
     for (let k = 0; k < 400; k++) {
       await new Promise((r) => setTimeout(r, 10))

@@ -27,7 +27,7 @@ export const CASINO = {
   sb: 25,
   bb: 50,
   minBuyIn: 500,
-  maxBuyIn: 5000,
+  maxBuyIn: 1_000_000_000, // buy in with the whole bank
   turnSecs: 30,
   aiStack: 5000,
   offlineStandMs: Number(process.env.CASINO_OFFLINE_MS || 90_000),
