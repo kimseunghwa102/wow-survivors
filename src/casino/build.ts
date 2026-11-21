@@ -138,21 +138,37 @@ function build() {
   startNet()
   engine.addSystem(() => renderTable())
 
-  // ── portal to the GYBM casino (-76,-48): same table, same gold ── (big and glowing, right by the entrance)
-  const PX = 13.2, PZ = 1.5
-  const gate = engine.addEntity()
-  Transform.create(gate, { position: V(PX, 0, PZ), rotation: Quaternion.fromEulerDegrees(0, 180, 0), scale: V(1.0, 1.0, 1.0) })
-  GltfContainer.create(gate, { src: 'models/raid_gate.glb', visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE })
-  text(V(PX, 4.6, PZ), 'PORTAL\nGYBM CASINO', 2.2, hex4('#FFD700FF'), 0, true, hex3('#3A0A00'))
-  text(V(PX, 3.7, PZ), 'click to teleport to -76,-48', 1.1, hex4('#7DF9FFFF'), 0, true)
+  // ── WORMHOLE to the GYBM casino (-76,-48): walk into it, no click ──
+  // just inside the door on the right, the first thing you see when you come in
+  const PX = 12.2, PZ = 4.7
+  const frame = engine.addEntity()
+  Transform.create(frame, { position: V(PX, 0, PZ), rotation: Quaternion.fromEulerDegrees(0, 180, 0), scale: V(0.85, 0.85, 0.85) })
+  GltfContainer.create(frame, { src: 'models/raid_gate.glb', visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE })
+  const vortex = engine.addEntity()
+  Transform.create(vortex, { position: V(PX, 1.75, PZ), scale: V(3, 3, 1) })
+  GltfContainer.create(vortex, { src: 'models/fx_wormhole.glb', visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE })
+  spin(vortex, V(0, 0, 1), 140)
+  text(V(PX, 4.3, PZ), 'WORMHOLE\nGYBM CASINO', 1.8, hex4('#FFD700FF'), 0, true, hex3('#3A0A00'))
+  text(V(PX, 3.55, PZ), 'walk in → -76,-48 · same table, same gold', 0.8, hex4('#7DF9FFFF'), 0, true)
   const glow = engine.addEntity()
-  Transform.create(glow, { position: V(PX, 2.2, PZ) })
-  LightSource.create(glow, { type: LightSource.Type.Point({}), color: hex3('#FFB040'), intensity: 14000, range: 9 })
-  const goGybm = () => {
-    playChime(V(PX, 1, PZ))
-    void teleportTo({ worldCoordinates: { x: -76, y: -48 } })
-  }
-  hotspot(V(PX, 1.6, PZ), V(3.0, 3.2, 1.4), 'Teleport to the GYBM Casino (-76,-48) — same table, same gold', goGybm, 10)
+  Transform.create(glow, { position: V(PX, 2.0, PZ) })
+  LightSource.create(glow, { type: LightSource.Type.Point({}), color: hex3('#B05BFF'), intensity: 16000, range: 9 })
+  let armed = false
+  let cool = 0
+  engine.addSystem((dt) => {
+    cool -= dt
+    const t = Transform.getOrNull(engine.PlayerEntity)
+    if (!t) return
+    const c = toCasino(t.position.x, t.position.z)
+    const d = Math.hypot(c.x - PX, c.z - PZ)
+    if (d > 2.2) armed = true // you have to walk in, not spawn inside it
+    if (armed && cool <= 0 && d < 0.9) {
+      armed = false
+      cool = 6
+      playChime(V(PX, 1, PZ))
+      void teleportTo({ worldCoordinates: { x: -76, y: -48 } })
+    }
+  })
 
   // ── 슬롯머신 (무료 재미용) ──
   const symbols = ['7', 'BAR', '$', 'K', 'A', '*']
