@@ -74,7 +74,7 @@ const spin = (e: Entity, axis: Vector3, speed: number) => spinners.push({ e, axi
 
 let chimeEntity: Entity
 function playChime(at: Vector3) {
-  Transform.createOrReplace(chimeEntity, { position: at })
+  Transform.createOrReplace(chimeEntity, { position: at, parent: root })
   AudioSource.createOrReplace(chimeEntity, { audioClipUrl: CHIME, playing: true, loop: false, volume: 0.9 })
 }
 // ═════════════════ placement inside WOW NIGHTSWARM ═════════════════
