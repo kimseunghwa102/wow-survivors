@@ -101,7 +101,7 @@ export function buildCasino() {
   Transform.create(root, { position: V(CASINO_ROOT.x, 0, CASINO_ROOT.z), rotation: Quaternion.fromEulerDegrees(0, CASINO_ROOT.yaw, 0) })
   build()
   // everything the casino just created lives in the casino frame
-  for (const [e, t] of engine.getEntitiesWith(Transform)) if (e !== root && !before.has(e) && t.parent === undefined) Transform.getMutable(e).parent = root
+  for (const [e, t] of engine.getEntitiesWith(Transform)) if (e !== root && !before.has(e) && !t.parent) Transform.getMutable(e).parent = root
 }
 
 function build() {
