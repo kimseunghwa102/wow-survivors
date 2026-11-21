@@ -138,23 +138,32 @@ function build() {
   startNet()
   engine.addSystem(() => renderTable())
 
-  // ── WORMHOLE to the GYBM casino (-76,-48): walk into it, no click ──
-  // just inside the door on the right, the first thing you see when you come in
-  const PX = 12.2, PZ = 4.7
-  const frame = engine.addEntity()
-  Transform.create(frame, { position: V(PX, 0, PZ), rotation: Quaternion.fromEulerDegrees(0, 180, 0), scale: V(0.85, 0.85, 0.85) })
-  GltfContainer.create(frame, { src: 'models/raid_gate.glb', visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE })
-  const vortex = engine.addEntity()
-  Transform.create(vortex, { position: V(PX, 1.75, PZ), scale: V(3, 3, 1) })
-  GltfContainer.create(vortex, { src: 'models/fx_wormhole.glb', visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE })
-  spin(vortex, V(0, 0, 1), 140)
-  text(V(PX, 4.3, PZ), 'WORMHOLE\nGYBM CASINO', 1.8, hex4('#FFD700FF'), 0, true, hex3('#3A0A00'))
-  text(V(PX, 3.55, PZ), 'walk in → -76,-48 · same table, same gold', 0.8, hex4('#7DF9FFFF'), 0, true)
+  // ── WORMHOLE to the GYBM casino (-76,-48): a window into the other land — walk in, no click ──
+  // inside the door on the right, turned to face the door (you can see it from the arena gate).
+  // The window is the GYBM entrance panorama, re-projected into a bowl so it keeps depth as you move;
+  // stepping in wraps the camera in the full 360° view of where you land while the teleport asks.
+  const PX = 11.0, PY = 1.75, PZ = 5.0
+  const turn = Quaternion.fromEulerDegrees(0, 34, 0)
+  const NOCOL = { visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE }
+  const win = engine.addEntity()
+  Transform.create(win, { position: V(PX, PY, PZ), rotation: turn })
+  GltfContainer.create(win, { src: 'models/casino/portal_gybm_win.glb', ...NOCOL })
+  const rim = engine.addEntity()
+  Transform.create(rim, { position: V(PX, PY, PZ), rotation: turn })
+  GltfContainer.create(rim, { src: 'models/casino/portal_gybm_rim.glb', ...NOCOL })
+  spin(rim, V(0, 0, 1), 55)
+  const bubble = engine.addEntity()
+  Transform.create(bubble, { position: V(PX, PY, PZ), rotation: turn, scale: V(0.7, 0.7, 0.7) })
+  GltfContainer.create(bubble, { src: 'models/casino/portal_gybm_bub.glb', ...NOCOL })
+  VisibilityComponent.create(bubble, { visible: false })
+  text(V(PX, 4.6, PZ), 'WORMHOLE\nGYBM CASINO', 3.0, hex4('#FFD700FF'), 0, true, hex3('#3A0A00'))
+  text(V(PX, 3.95, PZ), 'walk in → -76,-48 · same table, same gold', 1.3, hex4('#7DF9FFFF'), 0, true)
   const glow = engine.addEntity()
   Transform.create(glow, { position: V(PX, 2.0, PZ) })
-  LightSource.create(glow, { type: LightSource.Type.Point({}), color: hex3('#B05BFF'), intensity: 16000, range: 9 })
+  LightSource.create(glow, { type: LightSource.Type.Point({}), color: hex3('#FFB347'), intensity: 14000, range: 8 })
   let armed = false
   let cool = 0
+  let wrapped = 0
   engine.addSystem((dt) => {
     cool -= dt
     const t = Transform.getOrNull(engine.PlayerEntity)
@@ -165,8 +174,23 @@ function build() {
     if (armed && cool <= 0 && d < 0.9) {
       armed = false
       cool = 6
+      wrapped = 7
+      VisibilityComponent.getMutable(bubble).visible = true
       playChime(V(PX, 1, PZ))
       void teleportTo({ worldCoordinates: { x: -76, y: -48 } })
+    }
+    if (wrapped > 0) {
+      wrapped -= dt
+      // keep the bubble on the camera so the other land fills the view
+      const cam = Transform.getOrNull(engine.CameraEntity)
+      if (cam) {
+        const p = toCasino(cam.position.x, cam.position.z)
+        Transform.getMutable(bubble).position = V(p.x, cam.position.y, p.z)
+      }
+      if (wrapped <= 0 || d > 1.6) {
+        wrapped = 0
+        VisibilityComponent.getMutable(bubble).visible = false
+      }
     }
   })
 

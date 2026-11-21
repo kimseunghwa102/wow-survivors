@@ -1,0 +1,58 @@
+import sys, os, time, math
+sys.path.insert(0, '/home/claude/pano')
+from recon import *
+import recon
+from mathutils import Vector
+args = sys.argv[sys.argv.index('--') + 1:]
+W, H, SPP, OUT = int(args[0]), int(args[1]), int(args[2]), args[3]
+LON = float(os.environ.get('LON', '180')); LAT = float(os.environ.get('LAT', '90')); AMB = float(os.environ.get('AMB', '0'))
+recon.LIGHT_K = float(os.environ.get('LK', '0.05'))
+M = '/home/claude/wow-survivors/models/'
+sc = reset()
+place(M + 'arena.glb', dcl_m())
+for p in ((32, 7.5, 24), (16, 7.5, 64)):
+    place(M + 'rift_core.glb', dcl_m(p))
+gate = dcl_m((6, 0, 14.4), q_euler(0, 180, 0))
+place(M + 'raid_gate.glb', gate)
+place(M + 'fx_r_portal.glb', gate @ dcl_m((0, 2.2, 0.05), q_euler(0, 180, 0)))
+tre = dcl_m((12.6, 0, 3.2), q_euler(0, -92, 0))
+place(M + 'treasury.glb', tre)
+place(M + 'coin.glb', tre @ dcl_m((0, 2.7, 0.1), s=(4, 4, 4)))
+def tpos(Mp, p):
+    v = Mp @ Vector((*p, 1))
+    return (v.x, v.y, v.z)
+# lights (src/world.ts)
+fire = (1, 0.55, 0.22)
+for x, z in ((24, 10), (40, 10), (24, 38), (40, 38), (8, 58), (24, 70)):
+    point((x, 4.2, z), fire, 2200)
+soul = (0.6, 0.3, 1)
+point((32, 6, 24), soul, 5000); point((16, 6, 64), soul, 5000); point((16, 6, 74), (0.75, 0.35, 1), 3500)
+point((32, 14, 24), fire, 6000); point((16, 13, 64), fire, 5000)
+point((8, 4, 8), (1, 0.8, 0.45), 2500)
+point((6.0, 2.5, 13.6), (0.7, 0.4, 1), 3000)
+point((12.6, 3.5, 3.2), (1, 0.78, 0.35), 3000)
+sun((0.3, -1, 0.5), (0.55, 0.65, 1.0), 0.08)
+EYE = (7, 1.9, 3)
+# text (src/world.ts)
+text((8, 4.6, 8), 'WOW NIGHTSWARM', 9, '#FFD86A', face=EYE, outline='#2A0A3A')
+text((8, 3.75, 8), 'Hold the rift. Break the swarm. Hunt your rivals.', 2.6, '#E8E2FF', face=EYE)
+text((12.8, 2.75, 14.07), 'HOW TO PLAY', 4.2, '#FFD86A', 0)
+text((10.85, 1.45, 14.07), 'Walk through the gate to start a run.\nSkills fire on their own · HOLD LEFT CLICK to\nattack with your Armory weapon · F = nuke.\nGems → level up → upgrades. Max a skill + its\npartner passive, open a vault to ASCEND it.\nA BOSS rises every few levels — dragons from\nLv 50, the World Eater at Lv 200, then endless.\nClaim your DAILY reward · first run = 2x gold.\nOther hunters can hurt you in the rift!', 2.15, '#FFFFFF', 0, align='LEFT')
+text((3.2, 3.4, 12.5), 'ARCANE FORGE', 3.2, '#5EF2FF', face=EYE, outline='#001A22')
+text((9.2, 3.45, 12.2), 'Created by', 1.6, '#CFC8E8', face=EYE)
+text((9.2, 3.0, 12.2), 'X / Twitter  @bitcoinisnotall', 3.4, '#FFFFFF', face=EYE, outline='#1D9BF0')
+text((9.2, 2.55, 12.2), 'click to follow', 1.4, '#1D9BF0', face=EYE)
+text((6.0, 6.3, 14.2), "THE REAPER'S REALM", 2.6, '#FF7A4A', face=EYE, outline='#2A0006')
+text((6.0, 5.5, 14.2), 'co-op world boss', 1.5, '#E8C8FF', face=EYE)
+text((3.0, 3.1, 7.6), 'ARMORY', 3.2, '#FFB84A', face=EYE, outline='#2A1400')
+text((3.0, 2.7, 7.6), 'fists → pan → hammer → swords → minigun → ☢', 1.6, '#FFFFFF', face=EYE)
+text((15.84, 8.3, 8), 'THE RIFT · PvP', 3.4, '#FF5468', 90, outline='#200000')
+text(tpos(tre, (0, 3.2, -1.0)), 'THE TREASURY', 3.0, '#FFD86A', -92 + 180, outline='#3A1A00')
+text(tpos(tre, (0, 5.6, -1.2)), 'BUY GOLD', 4.2, '#FFFFFF', -92 + 180, outline='#9A3BFF')
+text(tpos(tre, (0, 1.6, 1.9)), 'first purchase +50% gold', 1.8, '#3DFF8E', face=EYE)
+ground(-0.3, '#07060A')
+night_world(strength=1.0, amb_strength=AMB)
+pano_camera(EYE, math.degrees(math.atan2(9, 5)), LON, LAT)
+t = time.time()
+render(OUT, W, H, SPP)
+print('render s', round(time.time() - t, 1))
