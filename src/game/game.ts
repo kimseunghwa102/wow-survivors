@@ -8,11 +8,11 @@ import type { Entity } from '@dcl/sdk/ecs'
 import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS, GODS, MAX_GOD_LVL } from './defs'
 import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm, queueRemoteFx, fxTiers, haloTiersOf } from './view'
 import { encodeFx, decodeFx } from './fxnet'
-import { ARENA_EVENTS, VaultPrize, VAULT_PRIZES } from './core'
+import { ARENA_EVENTS, VaultPrize, VAULT_PRIZES, POTION_DEFS, PotionKind } from './core'
 import { attachCosmetic } from './cosmetics'
 import { play, setupSfx, musicLevel } from './sfx'
 import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf, sendFx, pushFeed } from './net'
-import { serverQuests, serverClaimQuest, QuestState } from './persist'
+import { serverQuests, serverClaimQuest, QuestState, serverBuyPotion } from './persist'
 import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile, serverArmoryBuy, serverClaimDaily, shopConfig, shopQuote, shopConfirm, serverSaveRun, serverAbandon, pingServer } from './persist'
 import { getUserAccount, sendAsync, requirePayment } from '~system/EthereumController'
 import { getPlayer } from '@dcl/sdk/players'
@@ -79,7 +79,11 @@ export const G = {
   questBusy: false,
   boardOpen: false,
   boardTab: 'weekly' as 'weekly' | 'allTime' | 'slayers',
-  slayerReveal: 0
+  slayerReveal: 0,
+  // potion belt in the lobby (server-owned) + run feel
+  profileBelt: { hp: 0, rage: 0, phoenix: 0 },
+  potionOpen: false,
+  heartbeat: 0
 }
 
 export const equipped = () => {
@@ -100,6 +104,7 @@ export function applyProfile(p: ServerProfile | null) {
   if (p.armory !== undefined) G.armory = Math.max(G.armory, p.armory)
   if (p.daily) G.daily = p.daily
   if (p.firstPurchase !== undefined) G.firstPurchase = p.firstPurchase
+  if (p.belt) G.profileBelt = { ...p.belt }
   wearMine()
 }
 
@@ -342,7 +347,15 @@ export function startRun(w: WeaponId) {
   const left = save.resume
   save.resume = null
   // a saved run that is not resumed gets banked by the server when the new run starts
-  void serverStartRun(w, me().name).then(() => {
+  void serverStartRun(w, me().name).then((belt) => {
+    // the lobby belt is packed into this run
+    if (belt && G.run && (belt.hp || belt.rage || belt.phoenix)) {
+      G.run.potions.hp = Math.min(9, G.run.potions.hp + belt.hp)
+      G.run.potions.rage = Math.min(5, G.run.potions.rage + belt.rage)
+      G.run.potions.phoenix = Math.min(1, G.run.potions.phoenix + belt.phoenix)
+      banner(`Belt packed: ${belt.hp} Blood · ${belt.rage} Rage · ${belt.phoenix} Phoenix`, 3)
+    }
+    if (G.profileBelt) G.profileBelt = { hp: 0, rage: 0, phoenix: 0 }
     if (!left) return
     void loadProfile(me().name).then((p) => {
       applyProfile(p)
@@ -486,6 +499,29 @@ function nextModal() {
     return
   }
   G.phase = 'running'
+}
+
+export function buyPotion(id: PotionKind) {
+  if (G.shopBusy) return
+  const d = POTION_DEFS[id]
+  if (G.profileBelt[id] >= d.shopMax) return banner(`${d.name}: belt is full`, 2)
+  if (G.bank < d.shop) return banner('Not enough gold', 2)
+  if (!save.online) return banner('Connect to the save server to buy potions', 3)
+  G.shopBusy = true
+  serverBuyPotion(id)
+    .then((p) => {
+      applyProfile(p)
+      play('coin')
+    })
+    .catch((e) => banner(`Purchase failed: ${String(e?.message ?? e)}`, 3))
+    .finally(() => (G.shopBusy = false))
+}
+export function drinkPotion(k: 'hp' | 'rage') {
+  const r = G.run
+  if (!r || G.phase !== 'running') return
+  if (!r.drink(k)) {
+    if (r.potions[k] <= 0) banner(k === 'hp' ? 'No Blood Potions left!' : 'No Rage Elixirs left!', 1.5)
+  }
 }
 
 export function buyMeta(k: MetaKey) {
@@ -660,6 +696,29 @@ function handle(evs: Ev[]) {
         play('elite')
         banner('A BRUTE appears — it carries a vault!', 4)
         break
+      case 'potion':
+        if (e.kind === 'hp') {
+          play('levelup', 1.3)
+          play('buy', 0.7)
+        } else {
+          play('roar', 1.5)
+          play('evolve', 1.4)
+          G.flash = 0.35
+          banner('RAGE! damage ×1.6 · 12s', 2)
+        }
+        break
+      case 'potionGet':
+        play('gem', 0.6)
+        break
+      case 'rageEnd':
+        banner('rage wears off…', 1.2)
+        break
+      case 'revive':
+        G.flash = 0.9
+        play('evolve')
+        play('nuke', 1.3)
+        banner('✦ PHOENIX TEAR ✦  you cheated death!', 4)
+        break
       case 'awaken':
         G.flash = 0.6
         play('evolve')
@@ -828,7 +887,8 @@ export function setupGame() {
     const k2 = inputSystem.isTriggered(InputAction.IA_ACTION_4, PointerEventType.PET_DOWN)
     const k3 = inputSystem.isTriggered(InputAction.IA_ACTION_5, PointerEventType.PET_DOWN)
     if (inputSystem.isTriggered(InputAction.IA_ACTION_6, PointerEventType.PET_DOWN)) {
-      if (G.goldShopOpen) G.goldShopOpen = false
+      if (G.run && G.phase === 'running' && !G.goldShopOpen) drinkPotion('rage')
+      else if (G.goldShopOpen) G.goldShopOpen = false
       else openGoldShop()
       play('click')
     }
@@ -837,6 +897,10 @@ export function setupGame() {
       if (k1) G.packSel = (G.packSel + 1) % GOLD_PACKS.length
       if (k2) void buyGold('ETH')
       if (k3) void buyGold('MANA')
+    } else if (G.run && G.phase === 'running') {
+      // mid-run: 3 = Blood Potion, 4 = Rage Elixir
+      if (k2) cycleWeapon()
+      if (k3) drinkPotion('hp')
     } else {
       if (k2) cycleWeapon()
       if (k3) buyNextHotkey()
@@ -848,6 +912,14 @@ export function setupGame() {
     if (G.bannerT > 0) G.bannerT -= dt
     if (G.comboFlash > 0) G.comboFlash -= dt
     if (G.slayerReveal > 0) G.slayerReveal -= dt
+    // low HP: heartbeat
+    if (G.run && G.run.alive && G.phase === 'running' && G.run.hp < G.run.maxHp * 0.3) {
+      G.heartbeat -= dt
+      if (G.heartbeat <= 0) {
+        G.heartbeat = G.run.hp < G.run.maxHp * 0.15 ? 0.45 : 0.75
+        play('pulse', 0.55)
+      }
+    }
     if (G.hurtFlash > 0) G.hurtFlash -= dt
     if (G.flash > 0) G.flash -= dt
     const pt = Transform.getOrNull(engine.PlayerEntity)

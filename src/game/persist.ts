@@ -17,6 +17,7 @@ export type ServerProfile = {
   armory?: number
   daily?: { streak: number; claimable: boolean; next: number; doubleReady: boolean }
   firstPurchase?: boolean
+  belt?: { hp: number; rage: number; phoenix: number }
 }
 export type BoardRow = { n: string; t: number; l: number; k: number; live?: boolean }
 export type GlobalBoard = {
@@ -79,9 +80,18 @@ export async function serverStartRun(weapon: string, name: string) {
   try {
     const r = await call('POST', '/api/run/start', { weapon, name })
     save.runId = r.runId
+    if (save.profile) save.profile.belt = { hp: 0, rage: 0, phoenix: 0 }
+    return (r.belt ?? null) as { hp: number; rage: number; phoenix: number } | null
   } catch (e) {
     console.log('run/start failed', e)
   }
+  return null
+}
+
+export async function serverBuyPotion(id: string) {
+  const r = await call('POST', '/api/potion/buy', { id })
+  if (r.profile) save.profile = r.profile
+  return r.profile as ServerProfile
 }
 
 export async function serverEndRun(result: { time: number; level: number; kills: number; gold: number; pvpKills: number; killer?: string; bossesSlain?: number }) {

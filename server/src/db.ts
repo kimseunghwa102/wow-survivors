@@ -70,6 +70,7 @@ export type Profile = {
   totalKills: number
   armory: number
   daily: { streak: number; claimable: boolean; next: number; doubleReady: boolean }
+  belt: { hp: number; rage: number; phoenix: number }
 }
 
 export function toProfile(r: any): Profile {
@@ -84,7 +85,8 @@ export function toProfile(r: any): Profile {
     totalRuns: r.total_runs,
     totalKills: r.total_kills,
     armory: r.armory ?? 0,
-    daily: dailyInfo(r)
+    daily: dailyInfo(r),
+    belt: { hp: r.pot_hp ?? 0, rage: r.pot_rage ?? 0, phoenix: r.pot_phoenix ?? 0 }
   }
 }
 

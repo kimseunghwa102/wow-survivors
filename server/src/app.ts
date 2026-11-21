@@ -3,7 +3,7 @@ import { verify } from '@dcl/platform-crypto-middleware'
 import { GOLD_PACK, GOLD_PACKS, FIRST_BUY_BONUS, hasBought, createQuote, confirmPurchase, settlePending, Rpc, PriceFeed, coingecko, Currency } from './payments'
 import { Sql, getOrCreate, toProfile, startRun, getOpenRun, finishRun, buy, leaderboard, rankOf, buyArmory, claimDaily, getResume, saveCheckpoint, bankAbandoned } from './db'
 import { raidRoutes, inventory } from './raid'
-import { boards, questState, claimQuest } from './progress'
+import { boards, questState, claimQuest, buyPotion, packBelt } from './progress'
 import { META_KEYS, META_MAX, MetaKey, metaCost, clampRun, LIMITS } from './rules'
 
 export type Auth = { address: string; guest: boolean; meta: Record<string, any> }
@@ -98,7 +98,8 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
         return res.status(429).json({ ok: false, error: 'too many runs' })
       const weapon = String(req.body?.weapon || '').slice(0, 16)
       const runId = await startRun(db, a.address, weapon)
-      res.json({ ok: true, runId })
+      const belt = await packBelt(db, a.address)
+      res.json({ ok: true, runId, belt })
     })
   )
 
@@ -208,6 +209,16 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
   )
 
   raidRoutes(app as any, db, authed as any, getOrCreate)
+
+  // potion belt (lobby shop)
+  app.post(
+    '/api/potion/buy',
+    authed(async (req, res, a) => {
+      const ok = await buyPotion(db, a.address, String(req.body?.id || ''))
+      const p = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
+      res.status(ok ? 200 : 400).json({ ok, profile: p ? toProfile(p) : null, error: ok ? undefined : 'not enough gold or belt full' })
+    })
+  )
 
   // daily quests (reset at midnight KST)
   app.post(

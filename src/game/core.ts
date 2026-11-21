@@ -49,7 +49,7 @@ export type Enemy = {
   cvx?: number
   cvz?: number
 }
-export type PickKind = 'gem' | 'coin' | 'chest' | 'heal'
+export type PickKind = 'gem' | 'coin' | 'chest' | 'heal' | 'potion'
 export type Pickup = { id: number; kind: PickKind; x: number; z: number; value: number; alive: boolean; flying: boolean; big?: boolean; born: number }
 export type Proj = { id: number; x: number; z: number; vx: number; vz: number; dmg: number; pierce: number; life: number; hit: number[]; k?: 'feather' }
 export type Hostile = { id: number; x: number; z: number; vx: number; vz: number; life: number; dmg: number }
@@ -87,6 +87,10 @@ export type Ev =
   | { t: 'charge'; x: number; z: number; yaw: number; len: number }
   | { t: 'combo'; n: number; name: string }
   | { t: 'awaken' }
+  | { t: 'potion'; kind: PotionKind }
+  | { t: 'potionGet'; kind: PotionKind }
+  | { t: 'revive'; x: number; z: number }
+  | { t: 'rageEnd' }
   | { t: 'kame'; x: number; z: number; yaw: number; len: number; w: number; dur: number; max: boolean }
   | { t: 'meteorFall'; x: number; z: number; delay: number; big: boolean }
   | { t: 'gnuke'; x: number; z: number; r: number }
@@ -104,6 +108,15 @@ export type Ev =
   | { t: 'boom'; id: number; x: number; z: number; r: number }
   | { t: 'sweep'; x: number; z: number; yaw: number; len: number; dur: number; n: number }
   | { t: 'dash'; x0: number; z0: number; x1: number; z1: number }
+
+export type PotionKind = 'hp' | 'rage' | 'phoenix'
+export const POTION_DEFS: Record<PotionKind, { name: string; key: string; color: string; desc: string; carry: number; shop: number; shopMax: number }> = {
+  hp: { name: 'Blood Potion', key: '3', color: '#FF3B4A', desc: 'heal 45% HP instantly', carry: 9, shop: 150, shopMax: 5 },
+  rage: { name: 'Rage Elixir', key: '4', color: '#FF8A1A', desc: '12s: damage ×1.6, attacks 25% faster, kills heal you', carry: 5, shop: 400, shopMax: 3 },
+  phoenix: { name: 'Phoenix Tear', key: 'auto', color: '#FFD86A', desc: 'cheat death once: revive at 60% HP with a firestorm', carry: 1, shop: 2500, shopMax: 1 }
+}
+/** monsters scale with how strong the hunter has become (the "threat"): healing is scarce, potions decide fights */
+export const THREAT = { perLevel: 0.08, from: 12, dmgShare: 1.0 }
 
 export type ArenaKind = 'bloodmoon' | 'goldrush' | 'elitehunt'
 export const ARENA_EVENTS: Record<ArenaKind, { name: string; desc: string; dur: number; color: string }> = {
@@ -141,7 +154,7 @@ export function setRandom(fn: () => number) {
 export type RunSnap = {
   v: number; time: number; level: number; xp: number; kills: number; gold: number; hp: number; maxHp: number
   pendingLevels: number; rerolls: number; pvpKills: number
-  weapons: [WeaponId, number][]; passives: [PassiveId, number][]; evolved: WeaponId[]; gods?: [GodId, number][]
+  weapons: [WeaponId, number][]; passives: [PassiveId, number][]; evolved: WeaponId[]; gods?: [GodId, number][]; potions?: Record<PotionKind, number>
   bossIndex: number; bossQueue: number; bossesSlain: number; boostDmg: number; boostArea: number; boostRegen: number
   nextElite: number; nextRing: number
 }
@@ -194,6 +207,12 @@ export class Run {
   sweeps: { t: number; dur: number; yaw: number; len: number; n: number; dmg: number; hit: Set<number>; pv: Set<string> }[] = []
   wisps: { x: number; z: number; cd: number; ph: number; dash: number; tx: number; tz: number }[] = []
 
+  // potions + threat
+  potions: Record<PotionKind, number> = { hp: 0, rage: 0, phoenix: 0 }
+  potCd = 0
+  rageT = 0
+  revives = 0
+
   // god powers (Lv 200+)
   gods = new Map<GodId, number>()
   awakened = false
@@ -244,7 +263,7 @@ export class Run {
       v: 1,
       time: Math.floor(this.time), level: this.level, xp: Math.floor(this.xp), kills: this.kills, gold: Math.floor(this.gold),
       hp: Math.ceil(this.hp), maxHp: this.maxHp, pendingLevels: this.pendingLevels, rerolls: this.rerolls, pvpKills: this.pvpKills,
-      weapons: [...this.weapons.entries()], passives: [...this.passives.entries()], evolved: [...this.evolved], gods: [...this.gods.entries()],
+      weapons: [...this.weapons.entries()], passives: [...this.passives.entries()], evolved: [...this.evolved], gods: [...this.gods.entries()], potions: { ...this.potions },
       // bosses on the field come back (twins: both, so the pair stays together)
       bossIndex: this.bossIndex - this.bossesAlive().length, bossQueue: this.bossQueue + this.bossesAlive().length, bossesSlain: this.bossesSlain,
       boostDmg: this.boostDmg, boostArea: this.boostArea, boostRegen: this.boostRegen,
@@ -259,6 +278,7 @@ export class Run {
     r.passives = new Map(s.passives)
     r.evolved = new Set(s.evolved)
     r.gods = new Map(s.gods ?? [])
+    if (s.potions) r.potions = { hp: Math.min(9, s.potions.hp | 0), rage: Math.min(5, s.potions.rage | 0), phoenix: Math.min(1, s.potions.phoenix | 0) }
     r.awakened = s.level >= GOD_UNLOCK
     r.time = s.time
     r.level = s.level
@@ -287,10 +307,10 @@ export class Run {
     return this.passives.get(id) ?? 0
   }
   get might() {
-    return 1 + 0.12 * this.p('might') + 0.05 * this.meta.might + this.boostDmg
+    return (1 + 0.12 * this.p('might') + 0.05 * this.meta.might + this.boostDmg) * (this.rageT > 0 ? 1.6 : 1)
   }
   get cdMul() {
-    return Math.max(0.4, 1 - 0.07 * this.p('haste'))
+    return Math.max(0.3, (1 - 0.07 * this.p('haste')) * (this.rageT > 0 ? 0.75 : 1))
   }
   get area() {
     return 1 + 0.1 * this.p('expanse') + this.boostArea
@@ -301,8 +321,13 @@ export class Run {
   get armor() {
     return this.p('plating')
   }
+  /** how hard the horde hits back: grows with the hunter's level */
+  get threat() {
+    return 1 + Math.max(0, this.level - THREAT.from) * THREAT.perLevel
+  }
   get regen() {
-    return 0.25 + 0.4 * this.p('bloodstone') + this.boostRegen
+    // healing is scarce on purpose: potions are the real lifeline
+    return 0.12 + 0.25 * this.p('bloodstone') + this.boostRegen * 0.5
   }
   get magnet() {
     return TUNING.baseMagnet * (1 + 0.35 * this.p('magnet') + 0.1 * this.meta.magnet)
@@ -350,6 +375,8 @@ export class Run {
     this.bossStep(dt)
     this.manualStep(dt)
     this.arenaStep(dt)
+    if (this.potCd > 0) this.potCd -= dt
+    if (this.rageT > 0 && (this.rageT -= dt) <= 0) this.events.push({ t: 'rageEnd' })
     if (this.combo && (this.comboT -= dt) <= 0) this.breakCombo()
     this.flushPvp(dt)
     return this.events
@@ -403,11 +430,11 @@ export class Run {
         z = c.z
       }
     }
-    const scale = 1 + this.time / 150
+    const scale = (1 + this.time / 150) * (kind === 'boss' ? 1 : this.threat)
     const hp = d.hp * scale
     const e: Enemy = {
       id: this.nextId++, kind, x: x!, z: z!, hp, maxHp: hp,
-      speed: d.speed * (1 + Math.min(0.25, this.time / 1200)), dmg: d.dmg * (1 + this.time / 400),
+      speed: d.speed * (1 + Math.min(0.25, this.time / 1200)), dmg: d.dmg * (1 + this.time / 220) * (1 + (this.threat - 1) * THREAT.dmgShare),
       r: d.r, xp: d.xp, alive: true, wob: rand() * 6.28, kx: 0, kz: 0, lastHit: {},
       sc: 1 + Math.min(0.5, this.time / 2400)
     }
@@ -467,6 +494,20 @@ export class Run {
 
   die(killer: string) {
     if (!this.alive) return
+    // Phoenix Tear: cheat death once
+    if (this.potions.phoenix > 0) {
+      this.potions.phoenix--
+      this.revives++
+      this.hp = this.maxHp * 0.6
+      this.invuln = 3
+      this.events.push({ t: 'revive', x: this.x, z: this.z })
+      for (const e of this.enemies) {
+        if (!e.alive) continue
+        const d = Math.hypot(e.x - this.x, e.z - this.z)
+        if (d < 7) this.hitEnemy(e, e.kind === 'boss' ? 0 : e.maxHp * 2 / this.might, ((e.x - this.x) / (d || 1)) * 10, ((e.z - this.z) / (d || 1)) * 10)
+      }
+      return
+    }
     this.alive = false
     this.hp = 0
     this.events.push({ t: 'dead', killer: killer || undefined })
@@ -508,6 +549,7 @@ export class Run {
     this.kills++
     this.combo++
     this.comboT = 3
+    if (this.rageT > 0) this.hp = Math.min(this.maxHp, this.hp + 0.35)
     if (this.combo > this.bestCombo) this.bestCombo = this.combo
     const tier = COMBO_TIERS.filter(([n]) => this.combo >= n).length
     if (tier > this.comboTier) {
@@ -527,15 +569,21 @@ export class Run {
       this.drop('chest', e.x, e.z, 1, true)
       this.drop('gem', e.x + 0.8, e.z, Math.round(this.need * 1.2))
       for (let i = 0; i < 6 + Math.min(14, bi * 2); i++) this.drop('coin', e.x + (rand() - 0.5) * 3, e.z + (rand() - 0.5) * 3, 1)
+      this.drop('potion', e.x - 1, e.z, 0)
+      this.drop('potion', e.x - 1.4, e.z + 0.8, 0)
+      this.drop('potion', e.x + 1.2, e.z - 0.6, 1)
       this.events.push({ t: 'bossDown', boss: bi })
     } else if (e.kind === 'elite') {
       this.drop('chest', e.x, e.z, 1, false)
+      this.drop('potion', e.x - 0.6, e.z, 0)
+      if (rand() < 0.4) this.drop('potion', e.x + 0.6, e.z + 0.4, 1)
       this.drop('gem', e.x + 0.5, e.z, e.xp)
     } else {
       this.drop('gem', e.x, e.z, e.xp)
       const r = rand()
       if (r < 0.02 * (1 + 0.12 * this.p('fortune'))) this.drop('coin', e.x + 0.3, e.z, 1)
-      else if (r > 0.996) this.drop('heal', e.x, e.z + 0.3, 30)
+      else if (r > 0.997) this.drop('heal', e.x, e.z + 0.3, 30)
+      else if (r > 0.9945) this.drop('potion', e.x - 0.3, e.z, rand() < 0.8 ? 0 : 1)
     }
   }
 
@@ -1007,6 +1055,11 @@ export class Run {
         } else if (p.kind === 'heal') {
           this.hp = Math.min(this.maxHp, this.hp + p.value)
           this.events.push({ t: 'heal' })
+        } else if (p.kind === 'potion') {
+          const k: PotionKind = p.value === 1 ? 'rage' : 'hp'
+          if (this.potions[k] < POTION_DEFS[k].carry) this.potions[k]++
+          else this.hp = Math.min(this.maxHp, this.hp + this.maxHp * 0.1)
+          this.events.push({ t: 'potionGet', kind: k })
         } else if (p.kind === 'chest') this.events.push({ t: 'chest', big: !!p.big })
       }
     }
@@ -1345,6 +1398,22 @@ export class Run {
       }
     }
     this.hostile = this.hostile.filter((h) => h.life > 0 && inArena(h.x, h.z, -2))
+  }
+
+  // ───────── potions ─────────
+  drink(k: 'hp' | 'rage') {
+    if (!this.alive || this.potions[k] <= 0) return false
+    if (k === 'hp') {
+      if (this.potCd > 0 || this.hp >= this.maxHp) return false
+      this.hp = Math.min(this.maxHp, this.hp + this.maxHp * 0.45)
+      this.potCd = 2.5
+    } else {
+      if (this.rageT > 3) return false
+      this.rageT = 12
+    }
+    this.potions[k]--
+    this.events.push({ t: 'potion', kind: k })
+    return true
   }
 
   /** timeout ends the streak; getting hit (soft) halves it */

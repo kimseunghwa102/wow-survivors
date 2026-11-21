@@ -114,6 +114,21 @@ async function main() {
   const gained = r3.json.profile.bank - ab.json.profile.bank
   assert(gained > 0 && gained <= 32 * 72, `left run's gold stays banked, clamped (${gained})`)
 
+  console.log('potion belt')
+  {
+    const b0 = (await signed(alice, 'POST', '/api/profile', {})).json.profile
+    const p1 = await signed(alice, 'POST', '/api/potion/buy', { id: 'hp' })
+    const p2 = await signed(alice, 'POST', '/api/potion/buy', { id: 'phoenix' })
+    const p3 = await signed(alice, 'POST', '/api/potion/buy', { id: 'phoenix' })
+    assert(p1.json.ok && p2.json.ok && p3.status === 400, 'buy potions; phoenix belt max 1')
+    assert(p2.json.profile.bank === b0.bank - 150 - 2500 && p2.json.profile.belt.hp === 1 && p2.json.profile.belt.phoenix === 1, 'gold paid, belt filled')
+    await new Promise((r) => setTimeout(r, 4200))
+    const st = await signed(alice, 'POST', '/api/run/start', { weapon: 'lash' })
+    assert(st.json.belt.hp === 1 && st.json.belt.phoenix === 1, 'run start packs the belt')
+    const after = (await signed(alice, 'POST', '/api/profile', {})).json.profile
+    assert(after.belt.hp === 0 && after.belt.phoenix === 0, 'belt is empty after packing (no duplicates)')
+  }
+
   console.log('daily quests + NIGHTSWARM slayer')
   {
     const q0 = await signed(alice, 'POST', '/api/quests', {})

@@ -51,7 +51,7 @@ const rotOf = new Map<Entity, Entity>()
 /** how often each monster gets a new movement segment; the renderer interpolates in between (smooth at any FPS) */
 const MOVE_STEP = 0.14
 
-type PickVisual = 'gem_blue' | 'gem_green' | 'gem_red' | 'coin' | 'chest' | 'heal'
+type PickVisual = 'gem_blue' | 'gem_green' | 'gem_red' | 'coin' | 'chest' | 'heal' | 'pot_hp' | 'pot_rage'
 const pickPools = {} as Record<PickVisual, Pool>
 const pickEnt = new Map<number, { e: Entity; v: PickVisual }>()
 
@@ -137,6 +137,8 @@ export function setupView() {
   pickPools.coin = pick('models/coin.glb', 20, 200)
   pickPools.chest = pick('models/chest.glb', 4, 30)
   pickPools.heal = pick('models/fx_heal.glb', 4, 90)
+  pickPools.pot_hp = pick('models/pot_hp.glb', 3, 90)
+  pickPools.pot_rage = pick('models/pot_rage.glb', 2, 90)
 
   boltPool = fxPool('shard', 20, 0, 40)
   for (let i = 0; i < 12; i++) {
@@ -186,6 +188,7 @@ export function setupView() {
 
 function pickVisual(kind: string, value: number): PickVisual {
   if (kind === 'gem') return value <= 2 ? 'gem_blue' : value <= 20 ? 'gem_green' : 'gem_red'
+  if (kind === 'potion') return value === 1 ? 'pot_rage' : 'pot_hp'
   return kind as PickVisual
 }
 
@@ -314,7 +317,7 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
         v = { e, v: want }
         pickEnt.set(p.id, v)
       }
-      Transform.getMutable(v.e).position = V(p.x, p.kind === 'heal' ? 0.4 : 0.05, p.z)
+      Transform.getMutable(v.e).position = V(p.x, p.kind === 'heal' ? 0.4 : p.kind === 'potion' ? 0.5 : 0.05, p.z)
     }
   }
   for (const [id, v] of pickEnt)
@@ -892,7 +895,7 @@ function playSkill2(ev: Ev, run: Run | null, tiers?: number[]): boolean {
       const t = tier2(run, tiers, 'frost')
       const s = 0.8 + ev.r * 0.35
       anim('comet', t, 0.38, (k, tr) => {
-        tr.position = V(ev.x - 2.2 * (1 - k), 9 * (1 - k) + 0.1, ev.z - 1.2 * (1 - k))
+        tr.position = V(ev.x - 2.2 * (1 - k), 9 * (1 - k) + s * 0.9, ev.z - 1.2 * (1 - k))
         tr.rotation = Quaternion.fromEulerDegrees(-14, 60, 0)
         tr.scale = V(s, s, s)
       })
@@ -1132,7 +1135,7 @@ function playGod(ev: Ev, run: Run | null, tiers?: number[]): boolean {
       const pool = GP.meteor[ev.big ? 1 : 0]
       const s = ev.big ? 1.6 : 1.1
       gAnim(pool, ev.delay, (k, tr) => {
-        tr.position = V(ev.x - 7 * (1 - k), 0.2 + 20 * (1 - k), ev.z - 4 * (1 - k))
+        tr.position = V(ev.x - 7 * (1 - k), 1.7 * s + 20 * (1 - k), ev.z - 4 * (1 - k))
         tr.rotation = Quaternion.fromEulerDegrees(-28, 60, 0)
         tr.scale = V(s, s, s)
       })

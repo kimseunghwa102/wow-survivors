@@ -1,7 +1,8 @@
 import ReactEcs, { ReactEcsRenderer, UiEntity, Label, Button } from '@dcl/sdk/react-ecs'
 import { Color4 } from '@dcl/sdk/math'
+import { buyPotion, drinkPotion } from './game/game'
 import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard } from './game/game'
-import { optionLabel, Option, ARENA_EVENTS, VAULT_PRIZES, COMBO_TIERS } from './game/core'
+import { optionLabel, Option, ARENA_EVENTS, VAULT_PRIZES, COMBO_TIERS, POTION_DEFS, PotionKind } from './game/core'
 import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable, GODS, MAX_GOD_LVL, GOD_UNLOCK } from './game/defs'
 import { feed, topRuns } from './game/net'
 import { save } from './game/persist'
@@ -263,7 +264,7 @@ function Dock() {
         uiBackground={BTN(G.boardOpen ? C('#7B3BFF') : C('#2A1A40'))}
         onMouseDown={tap(openBoard)}
       />
-      <Label value="keys: 1 upgrades · 2 switch weapon · 3 buy next · 4 gold shop · E auto · F nuke" fontSize={11} color={DIM} uiTransform={{ height: 16 }} />
+      <Label value={G.run && G.phase === 'running' ? 'keys: 1 upgrades · 2 switch weapon · 3 BLOOD POTION · 4 RAGE · E auto · F nuke' : 'keys: 1 upgrades · 2 switch weapon · 3 buy next · 4 gold shop · E auto · F nuke'} fontSize={11} color={DIM} uiTransform={{ height: 16 }} />
     </UiEntity>
   )
 }
@@ -462,6 +463,14 @@ function LobbyHint() {
             onMouseDown={tap(openQuests)}
           />
           <Button value="🏆 RANKINGS" fontSize={13} color={WHITE} uiTransform={{ width: 150, height: 32, margin: 4 }} uiBackground={BTN(C('#3A2A5A'))} onMouseDown={tap(openBoard)} />
+          <Button
+            value={`🧪 POTIONS ${G.profileBelt.hp + G.profileBelt.rage + G.profileBelt.phoenix ? `(${G.profileBelt.hp}/${G.profileBelt.rage}/${G.profileBelt.phoenix})` : '!'}`}
+            fontSize={13}
+            color={WHITE}
+            uiTransform={{ width: 170, height: 32, margin: 4 }}
+            uiBackground={BTN(G.profileBelt.hp ? C('#5A1A2A') : C('#A0202E'))}
+            onMouseDown={tap(() => (G.potionOpen = !G.potionOpen))}
+          />
         </UiEntity>
         {G.daily?.doubleReady ? <Label value="First run today banks DOUBLE gold!" fontSize={12} color={C('#3DFF8E')} /> : null}
         <Label value={save.status} fontSize={11} color={save.online ? C('#3DFF8E') : DIM} />
@@ -670,6 +679,78 @@ function Hurt() {
   return <UiEntity uiTransform={{ positionType: 'absolute', width: '100%', height: '100%' }} uiBackground={{ color: C('#FF0000', 0.18 * (G.hurtFlash / 0.25)) }} />
 }
 
+// ───────────────────────── potions · low-HP dread ─────────────────────────
+function LowHp() {
+  const r = G.run
+  if (!r || !r.alive || G.phase === 'dead') return null
+  const f = r.hp / r.maxHp
+  if (f > 0.35) return null
+  // the screen bleeds and pulses with your heartbeat
+  const beat = Math.pow(Math.max(0, Math.sin(Date.now() / (f < 0.15 ? 140 : 220))), 6)
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', width: '100%', height: '100%', justifyContent: 'center', alignItems: 'flex-end' }} uiBackground={{ color: C('#8A0000', (0.35 - f) * 0.9 + beat * 0.12) }}>
+      {r.potions.hp > 0 && r.potCd <= 0 ? <Label value="<b>PRESS [3] — DRINK!</b>" fontSize={22} color={C('#FFFFFF', 0.5 + beat * 0.5)} uiTransform={{ height: 30, margin: { bottom: 210 } }} /> : null}
+    </UiEntity>
+  )
+}
+
+function PotionBelt() {
+  const r = G.run
+  if (!r || G.phase === 'dead') return null
+  const slot = (k: PotionKind, key: string) => {
+    const d = POTION_DEFS[k]
+    const n = r.potions[k]
+    const cd = k === 'hp' ? r.potCd : 0
+    const active = k === 'rage' && r.rageT > 0
+    return (
+      <UiEntity key={k} uiTransform={{ width: 96, height: 74, margin: 4, flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }} uiBackground={BTN(active ? C('#7A3A00') : n ? C('#2A1A24') : C('#151018'))}>
+        <Label value={`<b>${k === 'phoenix' ? '🔥' : '🧪'} ×${n}</b>`} fontSize={18} color={n ? C(d.color) : DIM} uiTransform={{ height: 24 }} />
+        <Label value={d.name} fontSize={10} color={WHITE} uiTransform={{ height: 13 }} />
+        <Label value={active ? `RAGE ${r.rageT.toFixed(0)}s` : cd > 0 ? `${cd.toFixed(1)}s` : key === 'auto' ? 'auto' : `[${key}]`} fontSize={11} color={active ? C('#FFB060') : GOLD} uiTransform={{ height: 14 }} />
+      </UiEntity>
+    )
+  }
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: 18 }, width: '100%', justifyContent: 'center', flexDirection: 'row' }}>
+      <UiEntity uiTransform={{ flexDirection: 'row' }} onMouseDown={tap(() => drinkPotion('hp'))}>
+        {slot('hp', '3')}
+      </UiEntity>
+      <UiEntity uiTransform={{ flexDirection: 'row' }} onMouseDown={tap(() => drinkPotion('rage'))}>
+        {slot('rage', '4')}
+      </UiEntity>
+      {slot('phoenix', 'auto')}
+    </UiEntity>
+  )
+}
+
+function PotionShop() {
+  const b = G.profileBelt
+  const row = (k: PotionKind) => {
+    const d = POTION_DEFS[k]
+    const full = b[k] >= d.shopMax
+    return (
+      <UiEntity key={k} uiTransform={{ flexDirection: 'row', alignItems: 'center', width: '100%', height: 58, margin: 3, padding: { left: 10, right: 10 } }} uiBackground={BTN(C('#24182E'))}>
+        <UiEntity uiTransform={{ flexDirection: 'column', flexGrow: 1 }}>
+          <Label value={`<b>${k === 'phoenix' ? '🔥' : '🧪'} ${d.name}</b>   in belt ${b[k]}/${d.shopMax}`} fontSize={15} color={C(d.color)} uiTransform={{ height: 20 }} textAlign="middle-left" />
+          <Label value={d.desc + (k === 'phoenix' ? '' : `  ·  key [${d.key}]`)} fontSize={11} color={WHITE} uiTransform={{ height: 16 }} textAlign="middle-left" />
+        </UiEntity>
+        <Button value={full ? 'FULL' : `BUY ● ${d.shop.toLocaleString()}`} fontSize={13} color={WHITE} uiTransform={{ width: 140, height: 36 }} uiBackground={BTN(full ? C('#2A2A2A') : G.bank >= d.shop ? C('#1FA85A') : C('#4A2A2A'))} onMouseDown={tap(() => buyPotion(k))} />
+      </UiEntity>
+    )
+  }
+  return (
+    <Modal title="POTION SHOP" color={C('#FF3B4A')} sub="the horde grows with you — without potions you will not last. Your belt goes into your next run.">
+      <UiEntity uiTransform={{ flexDirection: 'column', width: 600, alignItems: 'center' }}>
+        {row('hp')}
+        {row('rage')}
+        {row('phoenix')}
+        <Label value="monsters also drop potions: brutes always, bosses three — unused potions are lost when the run ends" fontSize={11} color={DIM} uiTransform={{ height: 18, margin: { top: 6 } }} />
+        <Button value="CLOSE" fontSize={14} color={WHITE} uiTransform={{ width: 160, height: 36, margin: { top: 8 } }} uiBackground={BTN(C('#2A2A3A'))} onMouseDown={tap(() => (G.potionOpen = false))} />
+      </UiEntity>
+    </Modal>
+  )
+}
+
 // ───────────────────────── combo · arena events ─────────────────────────
 function ComboHud() {
   const r = G.run
@@ -823,10 +904,12 @@ function SlayerReveal() {
 const Root = () => (
   <UiEntity uiTransform={{ width: '100%', height: '100%', positionType: 'absolute' }}>
     <Hurt />
+    <LowHp />
     <Flash />
     <TopHud />
     <ArenaHud />
     <ComboHud />
+    {G.phase === 'running' || G.phase === 'levelup' || G.phase === 'chest' ? <PotionBelt /> : null}
     <BossBar />
     <Dock />
     <InfoPanel />
@@ -841,6 +924,7 @@ const Root = () => (
     {G.phase === 'dead' ? <DeadModal /> : null}
     {G.shopOpen && G.phase !== 'levelup' && G.phase !== 'chest' ? <ShopModal /> : null}
     {G.armoryOpen && !G.shopOpen && (G.phase === 'idle' || G.phase === 'dead' || G.phase === 'start') ? <ArmoryModal /> : null}
+    {G.potionOpen && !G.run ? <PotionShop /> : null}
     {G.questOpen && (G.phase === 'idle' || G.phase === 'dead' || G.phase === 'start') ? <QuestModal /> : null}
     {G.boardOpen && G.phase !== 'levelup' && G.phase !== 'chest' && !G.questOpen ? <BoardModal /> : null}
     <GoldShop />

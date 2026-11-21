@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS player_quests (
   claimed INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (day, address)
 );
+ALTER TABLE players ADD COLUMN IF NOT EXISTS pot_hp INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS pot_rage INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS pot_phoenix INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS weekly_paid (
   week    TEXT PRIMARY KEY,
   paid_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -207,4 +210,29 @@ export async function payWeekly(db: Sql, now = Date.now()) {
     }
   }
   return true
+}
+
+
+// ───────────── potion belt: bought in the lobby, packed into the next run ─────────────
+export const POTIONS = {
+  hp: { cost: 150, max: 5, col: 'pot_hp' },
+  rage: { cost: 400, max: 3, col: 'pot_rage' },
+  phoenix: { cost: 2500, max: 1, col: 'pot_phoenix' }
+} as const
+export type PotionId = keyof typeof POTIONS
+export const beltOf = (p: any) => ({ hp: n(p?.pot_hp), rage: n(p?.pot_rage), phoenix: n(p?.pot_phoenix) })
+
+export async function buyPotion(db: Sql, address: string, id: string) {
+  const d = (POTIONS as any)[id] as (typeof POTIONS)[PotionId] | undefined
+  if (!d) return false
+  const r = await db.query(`UPDATE players SET bank = bank - $1::integer, ${d.col} = ${d.col} + 1, updated_at = NOW() WHERE address = $2 AND bank >= $3::integer AND ${d.col} < $4::integer`, [d.cost, address, d.cost, d.max])
+  return (r.rowCount ?? 0) > 0
+}
+
+/** the whole belt goes into the run that starts now */
+export async function packBelt(db: Sql, address: string) {
+  const p = (await db.query('SELECT pot_hp, pot_rage, pot_phoenix FROM players WHERE address = $1', [address])).rows[0]
+  const belt = beltOf(p)
+  await db.query('UPDATE players SET pot_hp = 0, pot_rage = 0, pot_phoenix = 0 WHERE address = $1', [address])
+  return belt
 }
