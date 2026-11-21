@@ -321,6 +321,7 @@ async function main() {
     assert((await A.call('dcl:join', { name: 'Alice' })).ok && (await B.call('dcl:join', { name: 'Bob' })).ok, 'wallet login only (no nickname/PIN)')
     assert(!(await A.call('login', { name: 'x', pin: '1234' })).ok, 'nickname/PIN accounts are refused')
     casinoT.S.cfg.ai = false
+    await A.call('stand')
     await db.query('UPDATE players SET bank = 300 WHERE address = $1', [bA])
     const poor = await B.call('sit', { seat: 1 })
     assert(!poor.ok, 'cannot sit with less than the minimum buy-in')

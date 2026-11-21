@@ -166,14 +166,14 @@ function aiTick() {
   if (p.chips < CASINO.bb * 4 && !dealt) p.chips = CASINO.aiStack
   const humans = S.seats.filter((k: string | null) => k && k !== AI_KEY).length
   if (p.seat == null) {
-    if (S.cfg.ai && humans >= 1 && humans <= 3) {
+    if (S.cfg.ai && humans <= 3) {
       const seat = AI.SEAT_ORDER.find((i: number) => !S.seats[i])
       if (seat != null) {
         S.seats[seat] = AI_KEY
         p.seat = seat
       }
     }
-  } else if ((humans === 0 || humans >= 4) && !inHand) stand(AI_KEY)
+  } else if ((!S.cfg.ai || humans >= 4) && !inHand) stand(AI_KEY)
 }
 function scheduleNext() {
   const h = S.hand
@@ -264,7 +264,8 @@ async function leaveTable(key: string) {
 function viewFor(key: string | null) {
   const now = Date.now(), h = S.hand, me = key ? (S.players[key] as P) : null
   const inHand = key ? E.inActiveHand(S, key) : false
-  const broke = !!me && me.chips === 0 && !inHand
+  // broke = sitting at the table with an empty stack (standing players just buy in when they sit)
+  const broke = !!me && me.seat != null && me.chips === 0 && !inHand
   const amt = me ? Math.min(CASINO.maxBuyIn, me.bank) : 0
   const v: any = {
     cfg: { start: 0, sb: S.cfg.sb, bb: S.cfg.bb, turnSecs: S.cfg.turnSecs, ai: !!S.cfg.ai, gold: true, minBuyIn: CASINO.minBuyIn, maxBuyIn: CASINO.maxBuyIn },

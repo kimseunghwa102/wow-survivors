@@ -376,7 +376,7 @@ async function onSeat(i: number) {
   if (s && s.me) return toast('This is your seat. Use "Stand up" to leave.')
   if (s) return toast(s.bot ? 'AI Alpha is sitting here. Pick an open seat.' : displayName(s.name) + ' is sitting here.')
   if (v.me.seat != null) return toast('You are already seated.')
-  if (v.me.chips <= 0) return toast('Your stack is empty. Rebuy first.')
+  if (v.me.chips <= 0 && (v.me.bank || 0) < (v.cfg.minBuyIn || 500)) return toast(`You need ${v.cfg.minBuyIn || 500} gold in your bank to sit. Hunt in WOW NIGHTSWARM!`)
   await act('sit', { seat: i }, 'You sat down. Good luck!')
 }
 

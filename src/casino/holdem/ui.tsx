@@ -58,7 +58,7 @@ function AccountPanel() {
   const rank = me && v ? v.ranking.findIndex((r) => r.name === me.name) : -1
   return (
     <UiEntity
-      uiTransform={{ positionType: 'absolute', position: { top: 90, right: 16 }, width: 320, flexDirection: 'column' }}
+      uiTransform={{ positionType: 'absolute', position: { top: 150, right: 16 }, width: 320, flexDirection: 'column' }}
       uiBackground={{ color: C.panel }}
     >
       <UiEntity uiTransform={{ height: 40, width: 320, justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: C.goldBtn }}>
@@ -78,7 +78,7 @@ function AccountPanel() {
             textAlign="middle-left"
           />
           <UiEntity uiTransform={{ flexDirection: 'row', flexWrap: 'wrap', margin: { top: 4 } }}>
-            {me.seat == null && !me.broke ? <Btn label="[E] Sit down" color={C.green} w={140} h={34} fs={14} onClick={() => sitAnywhere()} /> : null}
+            {me.seat == null && !me.broke ? <Btn label={'[E] Sit · buy-in ● ' + fmt(Math.min(v!.cfg.maxBuyIn || 5000, me.bank || 0))} color={C.green} w={200} h={34} fs={13} onClick={() => sitAnywhere()} /> : null}
             {me.seat != null ? <Btn label={store.standArmUntil > Date.now() ? '[Shift+F] Stand up?' : '[Shift+F] Stand up'} color={C.gray} w={140} h={34} fs={14} onClick={() => act('stand', {}, 'You left your seat.')} /> : null}
             {me.seat != null && me.away ? <Btn label="[F] I'm back" color={C.green} w={140} h={34} fs={14} onClick={() => act('away')} /> : null}
             {me.seat != null && !me.away ? <Btn label={store.awayArmUntil > Date.now() ? '[F] Sit out?' : '[F] Sit out'} color={C.gray} w={140} h={34} fs={14} onClick={() => act('away')} /> : null}
@@ -311,7 +311,7 @@ function ChipGauge() {
       uiBackground={{ color: C.panel }}
     >
       <UiEntity uiTransform={{ flexDirection: 'row', justifyContent: 'space-between', height: 20 }}>
-        <Label value="MY CHIPS" fontSize={13} color={C.dim} textAlign="middle-left" uiTransform={{ width: 120, height: 20 }} />
+        <Label value="GOLD AT TABLE" fontSize={13} color={C.dim} textAlign="middle-left" uiTransform={{ width: 120, height: 20 }} />
         <Label value={rank >= 0 ? 'RANK #' + (rank + 1) : ''} fontSize={13} color={C.cyan} textAlign="middle-right" uiTransform={{ width: 140, height: 20 }} />
       </UiEntity>
       <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', height: 46 }}>
@@ -482,7 +482,7 @@ async function sitAnywhere() {
   if (!v.me && !(await autoLogin())) return
   const me = store.view && store.view.me
   if (!me || me.seat != null) return
-  if (me.chips <= 0) return toast('Your stack is empty. Rebuy first.')
+  if (me.chips <= 0 && (me.bank || 0) < (v.cfg.minBuyIn || 500)) return toast(`You need ${v.cfg.minBuyIn || 500} gold in your bank to sit. Hunt in WOW NIGHTSWARM!`)
   const order = [2, 1, 3, 0, 4]
   const seat = order.find((i) => !store.view!.seats[i])
   if (seat === undefined) return toast('The table is full.')

@@ -483,14 +483,16 @@ for x in (4.0, 12.0):
     banner_on(x, 3.3, T + E, 'n', BANNER, 1.3, 2.6)
 lamp(4.5, 3.0)
 
-# ═══════════ HALL OF LEGENDS BOARD — on the arena side of the R1 east wall (faces west) ═══════════
+# ═══════════ HALL OF LEGENDS BOARD — freestanding in front of the R1 east wall (clear of its buttresses), faces west ═══════════
 lx, _, lz = L['leaderboard']
-B.box(lx, 3.4, lz, 0.3, 6.4, 9.0, BLOCK_D)
-B.box(lx - 0.17, 3.4, lz, 0.04, 5.8, 8.4, SCREEN)
-B.box(lx, 6.75, lz, 0.5, 0.3, 9.4, GOLD)
+BW, BH = 13.0, 7.4                          # board size (z width, height)
+B.box(lx + 0.2, BH / 2 + 0.1, lz, 0.4, BH, BW, BLOCK_D)
+B.box(lx - 0.02, BH / 2 + 0.1, lz, 0.04, BH - 0.5, BW - 0.5, SCREEN)
+B.box(lx + 0.1, BH + 0.2, lz, 0.7, 0.35, BW + 0.6, GOLD)
+B.box(lx + 0.1, 0.15, lz, 0.7, 0.3, BW + 0.6, GOLD)
 for s_ in (-1, 1):
-    B.box(lx, 3.3, lz + s_ * 4.8, 0.6, 6.6, 0.6, BLOCK)
-    B.billboard_cross(lx - 0.2, 6.7, lz + s_ * 4.8, 0.6, 1.0, FLAME)
+    B.box(lx + 0.2, BH / 2 + 0.2, lz + s_ * (BW / 2 + 0.35), 0.8, BH + 0.6, 0.7, BLOCK)
+    B.billboard_cross(lx - 0.1, BH + 0.9, lz + s_ * (BW / 2 + 0.35), 0.7, 1.2, FLAME)
 
 # ═══════════ RIBBED DOMES WITH OPEN OCULUS (concept B) ═══════════
 DGLASS = M.add('dome_glass', '#8A5BFF', 0.1, 0.1, '#5A2BCF', 1.2, alpha=0.55)

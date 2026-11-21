@@ -154,15 +154,15 @@ export function buildWorld() {
   // ── Hall of Legends leaderboard ──
   // the board hangs on the arena side of the R1 east wall, facing west: board-local u (reader's right) = −z
   const [lx, , lz] = LAYOUT.leaderboard
-  const bp = (u: number, y: number) => V(lx - 0.22, y, lz - u)
+  const bp = (u: number, y: number) => V(lx - 0.12, y, lz - u)
   const W = { rot: FACE.west }
-  text(bp(0, 6.1), 'HALL OF LEGENDS', 5.5, '#FFD86A', { ...W, outline: '#2A1A00' })
-  text(bp(-4.6, 5.35), 'THIS WEEK (LIVE)', 2.6, '#3DFF8E', { ...W, align: TextAlignMode.TAM_MIDDLE_LEFT })
-  text(bp(-1.3, 5.35), 'ALL-TIME (LIVE)', 2.6, '#5EF2FF', { ...W, align: TextAlignMode.TAM_MIDDLE_LEFT })
-  text(bp(2.0, 5.35), 'PvP · SLAYERS', 2.6, '#FF5468', { ...W, align: TextAlignMode.TAM_MIDDLE_LEFT })
-  const weekT = text(bp(-4.6, 3.0), '', 2.0, '#FFFFFF', { ...W, align: TextAlignMode.TAM_MIDDLE_LEFT })
-  const runsT = text(bp(-1.3, 3.0), '', 2.0, '#FFFFFF', { ...W, align: TextAlignMode.TAM_MIDDLE_LEFT })
-  const pvpT = text(bp(2.0, 3.0), '', 2.0, '#FFFFFF', { ...W, align: TextAlignMode.TAM_MIDDLE_LEFT })
+  text(bp(0, 6.85), 'HALL OF LEGENDS', 7.5, '#FFD86A', { ...W, outline: '#2A1A00' })
+  text(bp(-5.9, 5.75), 'THIS WEEK (LIVE)', 3.4, '#3DFF8E', { ...W, align: TextAlignMode.TAM_MIDDLE_LEFT })
+  text(bp(-1.7, 5.75), 'ALL-TIME (LIVE)', 3.4, '#5EF2FF', { ...W, align: TextAlignMode.TAM_MIDDLE_LEFT })
+  text(bp(2.5, 5.75), 'PvP · SLAYERS', 3.4, '#FF5468', { ...W, align: TextAlignMode.TAM_MIDDLE_LEFT })
+  const weekT = text(bp(-5.9, 3.2), '', 2.5, '#FFFFFF', { ...W, align: TextAlignMode.TAM_MIDDLE_LEFT })
+  const runsT = text(bp(-1.7, 3.2), '', 2.5, '#FFFFFF', { ...W, align: TextAlignMode.TAM_MIDDLE_LEFT })
+  const pvpT = text(bp(2.5, 3.2), '', 2.5, '#FFFFFF', { ...W, align: TextAlignMode.TAM_MIDDLE_LEFT })
   let acc = 2
   let boardT = 0
   engine.addSystem((dt) => {
@@ -175,7 +175,7 @@ export function buildWorld() {
     }
     if (acc < 2) return
     acc = 0
-    const row = (r: { n: string; t: number; l: number; live?: boolean }, i: number) => `${i + 1}. ${r.live ? '● ' : ''}${r.n.substring(0, 11)}  ${mmss(r.t)}  Lv${r.l}`
+    const row = (r: { n: string; t: number; l: number; live?: boolean }, i: number) => `${i + 1}. ${r.live ? '● ' : ''}${r.n.substring(0, 10)}  ${mmss(r.t)}  Lv${r.l}`
     const wk = save.board?.weekly ?? []
     setText(weekT, wk.length ? wk.slice(0, 8).map(row).join('\n') : 'Nobody yet this week.\nTop 10 win gold!')
     // all-time board from the save server; falls back to this session's synced board

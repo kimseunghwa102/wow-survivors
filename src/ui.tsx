@@ -913,7 +913,7 @@ const Root = () => (
     <ComboHud />
     {G.phase === 'running' || G.phase === 'levelup' || G.phase === 'chest' ? <PotionBelt /> : null}
     <BossBar />
-    <Dock />
+    {playerInCasino() ? null : <Dock />}
     <InfoPanel />
     <NextBoss />
     <SidePanel />
