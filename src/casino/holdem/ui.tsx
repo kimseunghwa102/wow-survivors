@@ -3,7 +3,8 @@ import ReactEcs, { ReactEcsRenderer, UiEntity, Label, Button, Input } from '@dcl
 import { Color4 } from '@dcl/sdk/math'
 import { engine, inputSystem, InputAction, PointerEventType, Transform } from '@dcl/sdk/ecs'
 import { store, toast } from './store'
-import { act, autoLogin, login, logout } from './net'
+import { act, autoLogin, login, logout, standIfSeated } from './net'
+import { pushFeed } from '../../game/net'
 import { uiCardUvs, CARD_TEXTURE } from './table'
 import { displayName, handName, fmt, mmss, hasHangul, KR_FONT } from './text'
 
@@ -491,8 +492,15 @@ async function sitAnywhere() {
 
 export function startUi() {
   // the WOW UI root draws <Ui/> while the hunter is inside the casino
+  let wasIn = false
   engine.addSystem(() => {
-    if (playerInCasino()) hotkeys()
+    const inside = playerInCasino()
+    if (inside) hotkeys()
+    // walked out of the casino still seated: stand up and send the table gold home right away
+    else if (wasIn) void standIfSeated().then((chips) => {
+      if (chips > 0) pushFeed(`Left the hold'em table · ● ${fmt(chips)} back to your bank`, '#FFD86A')
+    })
+    wasIn = inside
   })
   engine.addSystem(chipMeter)
 }

@@ -22,7 +22,7 @@ import { Vector3, Quaternion, Color4, Color3 } from '@dcl/sdk/math'
 import { teleportTo } from '~system/RestrictedActions'
 import { buildTable, renderTable } from './holdem/table'
 import { startUi } from './holdem/ui'
-import { startNet } from './holdem/net'
+import { startNet, standIfSeated } from './holdem/net'
 
 // ═════════════════ 설정 ═════════════════
 const MUSIC = 'sounds/casino/lounge.mp3'
@@ -177,6 +177,7 @@ function build() {
       wrapped = 7
       VisibilityComponent.getMutable(bubble).visible = true
       playChime(V(PX, 1, PZ))
+      void standIfSeated() // table gold goes home before you leave
       void teleportTo({ worldCoordinates: { x: -76, y: -48 } })
     }
     if (wrapped > 0) {

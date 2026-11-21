@@ -351,6 +351,16 @@ export async function logout() {
   toast('Logged out.')
 }
 
+/** leaving the casino while seated (walked out / took the wormhole): stand up so the table gold goes
+ *  straight back to the bank instead of waiting for the offline sweep. Returns the chips sent home. */
+export async function standIfSeated() {
+  const me = store.view?.me
+  if (!me || me.seat == null) return 0
+  const chips = me.chips
+  const r = await call('stand', {})
+  return r.ok ? chips : 0
+}
+
 export async function act(e: string, d: Record<string, unknown> = {}, okMsg = '') {
   const r = await call(e, d)
   if (!r.ok) {

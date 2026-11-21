@@ -4,7 +4,7 @@ import { COSMETICS } from './defs'
 
 /** wear a raid relic on an avatar (undefined = me). returns the attachment entity (or undefined) */
 export function attachCosmetic(avatarId: string | undefined, id: string | null | undefined, prev?: Entity) {
-  if (prev) engine.removeEntity(prev)
+  if (prev) engine.removeEntityWithChildren(prev)
   const c = COSMETICS.find((x) => x.id === id)
   if (!c || !c.model) return undefined
   const e = engine.addEntity()
@@ -26,3 +26,9 @@ export function attachCosmetic(avatarId: string | undefined, id: string | null |
   return e
 }
 export const titleOf = (id: string | null | undefined) => COSMETICS.find((x) => x.id === id)?.title ?? ''
+export const anchorOf = (id: string | null | undefined) => COSMETICS.find((x) => x.id === id)?.anchor
+/** take an attachment off (the model hangs on a child entity) */
+export function detach(e: Entity | undefined) {
+  if (e) engine.removeEntityWithChildren(e)
+  return undefined
+}

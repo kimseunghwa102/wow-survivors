@@ -108,6 +108,7 @@ export type Ev =
   | { t: 'boom'; id: number; x: number; z: number; r: number }
   | { t: 'sweep'; x: number; z: number; yaw: number; len: number; dur: number; n: number }
   | { t: 'dash'; x0: number; z0: number; x1: number; z1: number }
+  | { t: 'proj'; x: number; z: number; vx: number; vz: number; life: number; k: number } // k 0-3 shard tier · 4 feather · 5 gold feather (network only)
 
 export type PotionKind = 'hp' | 'rage' | 'phoenix'
 export const POTION_DEFS: Record<PotionKind, { name: string; key: string; color: string; desc: string; carry: number; shop: number; shopMax: number }> = {

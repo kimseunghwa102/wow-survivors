@@ -392,6 +392,16 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
 
   playEvents(events, run)
   for (const q of remoteQ.splice(0)) playEvents(q.evs, null, q.tiers)
+  for (let i = remoteProjs.length - 1; i >= 0; i--) {
+    const p = remoteProjs[i]
+    p.life -= dt
+    if (p.life > 0) continue
+    Tween.deleteFrom(p.e)
+    Transform.getMutable(p.e).position = HIDE
+    p.pool.give(p.e)
+    remoteProjs.splice(i, 1)
+  }
+  for (let i = remoteMines.length - 1; i >= 0; i--) if (remoteMines[i].a.life <= 0) remoteMines.splice(i, 1)
   renderSkills2(run, dt)
   renderGods(run, dt)
   renderHalos(run, dt)
@@ -500,6 +510,19 @@ export function queueRemoteFx(evs: Ev[], tiers: number[]) {
 /** my orbit-blade and aura tiers (shown to other players) */
 export function haloTiersOf(run: Run) {
   return { tb: tierOf(run, 'orbit'), ta: tierOf(run, 'aura') }
+}
+/** a projectile of mine as a network packet kind: 0-3 shard tier, 4 feather, 5 gold feather */
+export function projKind(run: Run, k: string | undefined) {
+  return k === 'feather' ? (run.g('wings') >= 5 ? 5 : 4) : tierOf(run, 'bolt')
+}
+const PASSIVE_IDS = Object.keys(PASSIVES) as PassiveId[]
+/** what other hunters draw around me: wisps, passive rings */
+export function lookOf(run: Run) {
+  return {
+    wc: Math.min(6, run.wisps.length),
+    wt: tierOf(run, 'wisp'),
+    ps: ([...run.passives.entries()] as [PassiveId, number][]).slice(0, 6).map(([p, l]) => PASSIVE_IDS.indexOf(p) * 10 + Math.min(MAX_PASSIVE_LVL, l))
+  }
 }
 /** my skill tiers for slash / nova / strike, sent along with my effects */
 export function fxTiers(run: Run) {
@@ -678,6 +701,7 @@ const RANKS = [
 ]
 export const rankOf = (lvl: number) => RANKS.filter((r) => lvl >= r.lvl).length - 1
 export const rankName = (i: number) => RANKS[i]?.name ?? ''
+export const rankColor = (i: number) => RANKS[i]?.color ?? '#FFFFFF'
 function hex3(h: string) {
   const c = Color4.fromHexString(h + 'FF')
   return Color3.create(c.r, c.g, c.b)
@@ -863,6 +887,8 @@ const mineEnt = new Map<number, { e: Entity; t: number }>()
 let wispEnt: { e: Entity; t: number }[] = []
 const chakLocal: { e: Entity; t: number }[] = []
 const chakRemote: { x: number; z: number; fx: number; fz: number; d: number; t: number; dur: number; e: Entity; pool: Pool }[] = []
+const remoteMines: { a: Anim; x: number; z: number }[] = []
+const remoteProjs: { e: Entity; pool: Pool; life: number }[] = []
 
 function setupSkills2() {
   pools2('comet', 4, 16)
@@ -935,9 +961,46 @@ function playSkill2(ev: Ev, run: Run | null, tiers?: number[]): boolean {
       chakRemote.push({ x: ev.x, z: ev.z, fx: Math.sin(a), fz: Math.cos(a), d: Math.min(14, ev.d), t: 0, dur: Math.min(2, ev.dur), e, pool: P2.chakram[t] })
       return true
     }
-    case 'mine':
-      return true // drawn from the simulation
+    case 'mine': {
+      if (run && !tiers) return true // my own mines are drawn from the simulation
+      // another hunter's hex mine: sits on the ground until it blows (or ~9 s)
+      const t = tier2(run, tiers, 'mine')
+      const a = anim('hex', t, 9, (_k, tr) => {
+        tr.position = V(ev.x, 0.02, ev.z)
+        tr.scale = V(1.1, 1.1, 1.1)
+      })
+      if (a) remoteMines.push({ a, x: ev.x, z: ev.z })
+      return true
+    }
+    case 'proj': {
+      if (run && !tiers) return true
+      // another hunter's crystal shard / seraph feather in flight
+      const feather = ev.k >= 4
+      const pool = feather ? featherPool[ev.k - 4] : boltPool[Math.max(0, Math.min(3, ev.k))]
+      const e = pool?.take()
+      if (!e) return true
+      const tr = Transform.getMutable(e)
+      tr.position = V(ev.x, 1.1, ev.z)
+      tr.rotation = yawQ((Math.atan2(ev.vx, ev.vz) * 180) / Math.PI)
+      const sz = feather ? 1.3 : 1.1
+      tr.scale = V(sz, sz, sz)
+      Tween.createOrReplace(e, {
+        mode: Tween.Mode.Move({ start: V(ev.x, 1.1, ev.z), end: V(ev.x + ev.vx * ev.life, 1.1, ev.z + ev.vz * ev.life) }),
+        duration: ev.life * 1000,
+        easingFunction: EasingFunction.EF_LINEAR
+      })
+      remoteProjs.push({ e, pool, life: ev.life })
+      return true
+    }
     case 'boom': {
+      if (tiers)
+        for (let i = remoteMines.length - 1; i >= 0; i--) {
+          const m = remoteMines[i]
+          if (Math.hypot(m.x - ev.x, m.z - ev.z) < 1.6) {
+            m.a.life = Math.min(m.a.life, 0.01)
+            remoteMines.splice(i, 1)
+          }
+        }
       const t = tier2(run, tiers, 'mine')
       anim('boom', t, 0.5, (k, tr) => {
         const d = ev.r * 2 * (0.3 + 0.7 * Math.sqrt(k))

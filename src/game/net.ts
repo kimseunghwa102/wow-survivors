@@ -5,7 +5,9 @@ import {
 } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { MessageBus } from '@dcl/sdk/message-bus'
-import { attachCosmetic, titleOf } from './cosmetics'
+import { attachCosmetic, titleOf, anchorOf, detach } from './cosmetics'
+import { ARMORY, PASSIVES, PassiveId, MAX_PASSIVE_LVL } from './defs'
+import { rankOf, rankColor } from './view'
 import { syncEntity } from '@dcl/sdk/network'
 import { getPlayer } from '@dcl/sdk/players'
 import { Remote } from './core'
@@ -30,6 +32,11 @@ export type Status = {
   ta?: number // aura skill tier
   cs?: string | null // raid relic worn
   ti?: string | null // raid title
+  w?: number // armory weapon in hand during a run (-1 none)
+  sw?: boolean // Seraph Wings god power active
+  wc?: number // spirit wisps
+  wt?: number // wisp tier
+  ps?: number[] // passives: index*10 + level
 }
 type RemoteInfo = Status & { seen: number; x: number; z: number; entity?: Entity }
 
@@ -114,6 +121,7 @@ export function setupNet(h: Handlers) {
   })
   bus.on('fx', (m: { id: string; a: number[]; e: number[][] }) => {
     if (!m || m.id === me().id || !Array.isArray(m.e)) return
+    if (m.e.some((p) => Array.isArray(p) && (p[0] === 3 || p[0] === 5))) noteRemoteSwing(m.id)
     H.onFx(m.id, m.a || [0, 0, 0], m.e.slice(0, 24))
   })
   setupRemoteVisuals()
@@ -134,7 +142,7 @@ const fxOut: number[][] = []
 const fxCount = new Map<number, number>()
 let fxTiers: number[] = [0, 0, 0]
 /** per-flush caps so a minigun or a maxed build never floods the channel */
-const FX_CAP: Record<number, number> = { 0: 3, 1: 2, 2: 4, 3: 2, 4: 2, 5: 3, 6: 2, 7: 2, 8: 1, 9: 1, 10: 1, 11: 1, 12: 1, 13: 1, 14: 1, 15: 2, 16: 2, 17: 2, 18: 2, 19: 2, 20: 1, 21: 3, 22: 1, 23: 2, 24: 2, 25: 1, 26: 4 }
+const FX_CAP: Record<number, number> = { 0: 3, 1: 2, 2: 4, 3: 2, 4: 2, 5: 3, 6: 2, 7: 2, 8: 1, 9: 1, 10: 1, 11: 1, 12: 1, 13: 1, 14: 1, 15: 2, 16: 2, 17: 2, 18: 2, 19: 2, 20: 1, 21: 3, 22: 1, 23: 2, 24: 2, 25: 1, 26: 4, 27: 4, 28: 2 }
 export function sendFx(code: number, nums: number[], tiers: number[]) {
   const c = fxCount.get(code) ?? 0
   if (c >= (FX_CAP[code] ?? 1)) return
@@ -171,43 +179,54 @@ export function attackable(myRunActive: boolean, meInArena: boolean): Remote[] {
   return out.filter((r) => r.attackable)
 }
 
-// ───────────── remote player visuals: level tag, HP bar, their blades & aura ─────────────
-type Vis = { tag: Entity; aura: Entity; blades: Entity[]; god?: Entity; ta: number; tb: number; cos?: Entity; cosId?: string | null }
+// ───────────── remote player visuals: everything another hunter carries, drawn on their avatar ─────────────
+// Always (lobby, casino, arena): worn relic / wings, title, divine form.
+// During their run: level/HP tag, orbit glaives, aura, the armory weapon in hand, Seraph Wings, spirit wisps,
+// passive rings and the level-rank aura. One-shot skill effects arrive on the 'fx' channel.
+type Vis = {
+  tag: Entity
+  aura: Entity
+  blades: Entity[]
+  ta: number
+  tb: number
+  god?: Entity
+  cos?: Entity
+  cosId?: string | null
+  wings?: Entity
+  held?: Entity
+  heldT: number
+  swingT: number
+  wisps: Entity[]
+  wispT: number
+  rings: Entity[]
+  ringKey: string
+  rank?: Entity
+  rankShown: number
+}
 const SUF = ['', '_t2', '_t3', '_asc']
 const tierN = (v: number | undefined) => Math.max(0, Math.min(3, Math.round(v ?? 0)))
 const vis = new Map<string, Vis>()
 const HIDE = Vector3.create(32, -40, 24)
+const PASSIVE_IDS = Object.keys(PASSIVES) as PassiveId[]
 
-function mk(kind: 'box' | 'cyl', hex: string, alpha: number, glow: number) {
+function ent(): Entity {
   const e = engine.addEntity()
   Transform.create(e, { position: HIDE })
-  if (kind === 'box') MeshRenderer.setBox(e)
-  else MeshRenderer.setCylinder(e)
-  const c = Color4.fromHexString(hex)
-  Material.setPbrMaterial(e, {
-    albedoColor: Color4.create(c.r, c.g, c.b, alpha),
-    emissiveColor: Color3.create(c.r, c.g, c.b),
-    emissiveIntensity: glow,
-    transparencyMode: alpha < 1 ? MaterialTransparencyMode.MTM_ALPHA_BLEND : undefined
-  })
   return e
 }
 
 function visFor(id: string): Vis {
   let v = vis.get(id)
   if (v) return v
-  const tag = engine.addEntity()
-  Transform.create(tag, { position: HIDE })
+  const tag = ent()
   TextShape.create(tag, { text: '', fontSize: 2.4, textColor: Color4.White(), font: Font.F_SANS_SERIF, textAlign: TextAlignMode.TAM_MIDDLE_CENTER, outlineWidth: 0.2, outlineColor: Color3.Black() })
   Billboard.create(tag, { billboardMode: BillboardMode.BM_Y })
   // their aura magic circle and orbiting glaives, drawn with the real skill models at their tier
-  const aura = engine.addEntity()
-  Transform.create(aura, { position: HIDE })
+  const aura = ent()
   GltfContainer.create(aura, { src: 'models/fx_bloom.glb' })
-  v = { tag, aura, blades: [], ta: 0, tb: 0 }
+  v = { tag, aura, blades: [], ta: 0, tb: 0, heldT: -1, swingT: 0, wisps: [], wispT: -1, rings: [], ringKey: '', rankShown: -1 }
   for (let i = 0; i < 8; i++) {
-    const b = engine.addEntity()
-    Transform.create(b, { position: HIDE })
+    const b = ent()
     GltfContainer.create(b, { src: 'models/fx_glaive.glb' })
     v.blades.push(b)
   }
@@ -215,12 +234,54 @@ function visFor(id: string): Vis {
   return v
 }
 
+/** their attack landed (swing / shot): swing the weapon in their hand */
+export function noteRemoteSwing(id: string) {
+  const v = vis.get(id)
+  if (v) v.swingT = 0.2
+}
+
+function takeOff(v: Vis) {
+  v.god = detach(v.god)
+  v.cos = detach(v.cos)
+  v.cosId = undefined
+  v.wings = detach(v.wings)
+}
+function hideRun(v: Vis) {
+  const hide = (e: Entity | undefined) => {
+    if (e) Transform.getMutable(e).position = HIDE
+  }
+  ;[v.aura, ...v.blades, v.held, ...v.wisps, ...v.rings, v.rank].forEach(hide)
+}
+function dropVis(id: string) {
+  const v = vis.get(id)
+  if (!v) return
+  takeOff(v)
+  for (const e of [v.tag, v.aura, ...v.blades, ...v.wisps, ...v.rings]) engine.removeEntity(e)
+  if (v.held) engine.removeEntity(v.held)
+  if (v.rank) engine.removeEntity(v.rank)
+  vis.delete(id)
+}
+
+function glowMat(e: Entity, tex: string, col: string, glow: number) {
+  const c = Color4.fromHexString(col + 'FF')
+  Material.setPbrMaterial(e, {
+    texture: Material.Texture.Common({ src: tex }),
+    emissiveTexture: Material.Texture.Common({ src: tex }),
+    albedoColor: c,
+    emissiveColor: Color3.create(c.r, c.g, c.b),
+    emissiveIntensity: glow,
+    transparencyMode: MaterialTransparencyMode.MTM_ALPHA_BLEND,
+    castShadows: false
+  })
+}
+
 function setupRemoteVisuals() {
   let spin = 0
   engine.addSystem((dt) => {
     now += dt
     spin += dt * 200
-    // read real avatar positions
+    // read real avatar positions + facing
+    const yawOf = new Map<string, number>()
     for (const [entity, ident, t] of engine.getEntitiesWith(PlayerIdentityData, Transform)) {
       if (entity === engine.PlayerEntity) continue
       const r = remotes.get(ident.address)
@@ -228,37 +289,53 @@ function setupRemoteVisuals() {
         r.x = t.position.x
         r.z = t.position.z
         r.entity = entity
+        const f = Vector3.rotate(Vector3.Forward(), t.rotation)
+        yawOf.set(ident.address, (Math.atan2(f.x, f.z) * 180) / Math.PI)
       }
     }
     for (const [id, r] of remotes) {
       const v = visFor(id)
-      const active = now - r.seen < 3 && r.run
-      const hide = (e: Entity) => (Transform.getMutable(e).position = HIDE)
-      if (!active) {
-        ;[v.tag, v.aura, ...v.blades].forEach(hide)
-        if (v.god) {
-          engine.removeEntity(v.god)
-          v.god = undefined
+      if (now - r.seen >= 3) {
+        // gone quiet (left, or loading): take everything off
+        if (v.god || v.cos || v.wings) takeOff(v)
+        Transform.getMutable(v.tag).position = HIDE
+        hideRun(v)
+        if (now - r.seen > 30) {
+          dropVis(id)
+          remotes.delete(id)
         }
-        if (now - r.seen > 30) remotes.delete(id)
         continue
       }
-      // remote god: show their divine form on their avatar
+      const inRun = !!r.run
+      // ── what they wear, everywhere ──
+      const seraph = inRun && !!r.sw
+      const wear = seraph && anchorOf(r.cs) === 'back' ? null : r.cs ?? null // Seraph Wings cover a back relic
+      if (wear !== (v.cosId ?? null)) {
+        v.cosId = wear
+        v.cos = attachCosmetic(id, wear, v.cos)
+      }
+      if (seraph && !v.wings) v.wings = attachCosmetic(id, 'seraph_wings')
+      else if (!seraph && v.wings) v.wings = detach(v.wings)
       if (r.gd && !v.god) {
         v.god = engine.addEntity()
         GltfContainer.create(v.god, { src: 'models/god_aura.glb' })
         AvatarAttach.create(v.god, { avatarId: id, anchorPointId: AvatarAnchorPointType.AAPT_POSITION })
-      } else if (!r.gd && v.god) {
-        engine.removeEntity(v.god)
-        v.god = undefined
-      }
-      if ((r.cs ?? null) !== (v.cosId ?? null)) {
-        v.cosId = r.cs ?? null
-        v.cos = attachCosmetic(id, v.cosId, v.cos)
-      }
+      } else if (!r.gd && v.god) v.god = detach(v.god)
+      const title = titleOf(r.ti)
       const ts = TextShape.getMutable(v.tag)
+      if (!inRun) {
+        // in the lobby / casino: just their title over the name
+        hideRun(v)
+        if (title) {
+          ts.text = `« ${title} »`
+          ts.textColor = Color4.fromHexString('#FFD86A')
+          Transform.getMutable(v.tag).position = Vector3.create(r.x, 2.75, r.z)
+        } else Transform.getMutable(v.tag).position = HIDE
+        continue
+      }
+      // ── their run: tag, skills, weapon ──
       const frac = Math.max(0, Math.min(1, r.hp / Math.max(1, r.mh)))
-      ts.text = `${titleOf(r.ti) ? `« ${titleOf(r.ti)} »\n` : ''}${r.ar ? 'PVP · ' : 'SAFE · '}Lv ${r.l}\nHP ${Math.round(frac * 100)}% · ${r.k} kills`
+      ts.text = `${title ? `« ${title} »\n` : ''}${r.ar ? 'PVP · ' : 'SAFE · '}Lv ${r.l}\nHP ${Math.round(frac * 100)}% · ${r.k} kills`
       ts.textColor = r.ar ? Color4.fromHexString('#FF5468') : Color4.fromHexString('#9AA0AA')
       Transform.getMutable(v.tag).position = Vector3.create(r.x, 2.7, r.z)
       if (tierN(r.ta) !== v.ta) {
@@ -286,6 +363,100 @@ function setupRemoteVisuals() {
         t.position = Vector3.create(r.x + Math.sin(rad) * r.orr, 1.0, r.z + Math.cos(rad) * r.orr)
         t.rotation = Quaternion.fromEulerDegrees(0, a * 4, 0)
       })
+      // the armory weapon in their right hand (swings when their attacks arrive)
+      const w = r.w ?? -1
+      if (w !== v.heldT) {
+        v.heldT = w
+        if (w >= 0 && ARMORY[w]) {
+          if (!v.held) v.held = ent()
+          GltfContainer.createOrReplace(v.held, { src: ARMORY[w].model })
+        } else if (v.held) Transform.getMutable(v.held).position = HIDE
+      }
+      if (v.held && w >= 0 && ARMORY[w]) {
+        const yaw = yawOf.get(id) ?? 0
+        const a = (yaw * Math.PI) / 180
+        const fx = Math.sin(a)
+        const fz = Math.cos(a)
+        const gun = !!ARMORY[w].gun
+        if (v.swingT > 0) v.swingT -= dt
+        const sk = Math.max(0, v.swingT) / 0.2
+        const swing = gun ? 0 : (1 - sk) * 150 - 80
+        const t = Transform.getMutable(v.held)
+        t.position = Vector3.create(r.x + fz * 0.5 + fx * 0.25, gun ? 1.15 : 1.25, r.z - fx * 0.5 + fz * 0.25)
+        t.rotation = Quaternion.multiply(Quaternion.fromEulerDegrees(0, yaw + (v.swingT > 0 ? swing : -20), 0), Quaternion.fromEulerDegrees(gun ? 0 : v.swingT > 0 ? 10 : -35, 0, 0))
+        t.scale = Vector3.One()
+      }
+      // spirit wisps circling them
+      const wc = Math.max(0, Math.min(6, Math.round(r.wc ?? 0)))
+      const wt = tierN(r.wt)
+      if (wt !== v.wispT) {
+        v.wispT = wt
+        for (const e of v.wisps) GltfContainer.getMutable(e).src = `models/fx_wisp${SUF[wt]}.glb`
+      }
+      while (v.wisps.length < wc) {
+        const e = ent()
+        GltfContainer.create(e, { src: `models/fx_wisp${SUF[wt]}.glb` })
+        v.wisps.push(e)
+      }
+      v.wisps.forEach((e, i) => {
+        const t = Transform.getMutable(e)
+        if (i >= wc) {
+          t.position = HIDE
+          return
+        }
+        const a = ((spin * 0.45 + (i * 360) / wc) * Math.PI) / 180
+        t.position = Vector3.create(r.x + Math.sin(a) * 1.5, 1.3 + Math.sin(a * 2 + i) * 0.15, r.z + Math.cos(a) * 1.5)
+        t.rotation = Quaternion.fromEulerDegrees(0, (a * 180) / Math.PI + 90, 0)
+      })
+      // passive rings at their feet (one per passive, brighter with level)
+      const ps = (Array.isArray(r.ps) ? r.ps : []).slice(0, 6)
+      const key = ps.join(',')
+      if (key !== v.ringKey) {
+        v.ringKey = key
+        while (v.rings.length < ps.length) {
+          const e = ent()
+          MeshRenderer.setPlane(e)
+          v.rings.push(e)
+        }
+        ps.forEach((code, i) => {
+          const pid = PASSIVE_IDS[Math.floor(code / 10)]
+          const lv = code % 10
+          if (!pid) return
+          glowMat(v.rings[i], 'images/ring.png', PASSIVES[pid].color, 0.8 + lv * 0.7 + (lv >= MAX_PASSIVE_LVL ? 2 : 0))
+        })
+      }
+      v.rings.forEach((e, i) => {
+        const t = Transform.getMutable(e)
+        if (i >= ps.length) {
+          t.position = HIDE
+          return
+        }
+        const R = 0.75 + i * 0.24
+        t.position = Vector3.create(r.x, 0.05 + i * 0.01, r.z)
+        t.rotation = Quaternion.multiply(Quaternion.fromEulerDegrees(0, spin * 0.2 * (i % 2 ? -1 : 1), 0), Quaternion.fromEulerDegrees(90, 0, 0))
+        t.scale = Vector3.create(R * 2, R * 2, 1)
+      })
+      // level-rank aura (Lv 50 bronze → 200 void)
+      const rk = rankOf(r.l)
+      if (rk !== v.rankShown) {
+        v.rankShown = rk
+        if (rk >= 0) {
+          if (!v.rank) {
+            v.rank = ent()
+            MeshRenderer.setPlane(v.rank)
+          }
+          glowMat(v.rank, 'images/rank.png', rankColor(rk), 2 + rk * 1.2)
+        }
+      }
+      if (v.rank) {
+        const t = Transform.getMutable(v.rank)
+        if (rk >= 0) {
+          const d = 4.2 + rk * 0.5
+          t.position = Vector3.create(r.x, 0.04, r.z)
+          t.rotation = Quaternion.multiply(Quaternion.fromEulerDegrees(0, -spin * 0.1, 0), Quaternion.fromEulerDegrees(90, 0, 0))
+          t.scale = Vector3.create(d, d, 1)
+        } else t.position = HIDE
+      }
     }
   })
 }

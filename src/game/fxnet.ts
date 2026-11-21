@@ -31,6 +31,8 @@ export function encodeFx(e: Ev, x: number, z: number): [number, number[]] | null
     case 'gnuke': return [24, [e.x, e.z, e.r]]
     case 'hole': return [25, [e.x, e.z, e.r, e.dur, e.max ? 1 : 0]]
     case 'gsword': return [26, [e.x, e.z, e.delay, e.max ? 1 : 0]]
+    case 'proj': return [27, [e.x, e.z, e.vx, e.vz, e.life, e.k]]
+    case 'mine': return [28, [e.x, e.z]]
   }
   return null
 }
@@ -74,6 +76,8 @@ export function decodeFx(p: number[]): Ev | null {
     case 24: return { t: 'gnuke', x: a, z: b, r: Math.min(12, d) }
     case 25: return { t: 'hole', x: a, z: b, r: Math.min(12, d), dur: Math.min(3, f), max: !!g }
     case 26: return { t: 'gsword', x: a, z: b, delay: Math.min(2, d), max: !!f }
+    case 27: return { t: 'proj', x: a, z: b, vx: Math.max(-25, Math.min(25, d)), vz: Math.max(-25, Math.min(25, f)), life: Math.max(0.1, Math.min(2, g)), k: Math.max(0, Math.min(5, Math.round(h))) }
+    case 28: return { t: 'mine', id: 0, x: a, z: b }
   }
   return null
 }

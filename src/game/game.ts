@@ -6,14 +6,14 @@ import LAYOUT from '../../layout.json'
 import { Run, Option, Ev, inArena } from './core'
 import type { Entity } from '@dcl/sdk/ecs'
 import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS, GODS, MAX_GOD_LVL } from './defs'
-import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm, queueRemoteFx, fxTiers, haloTiersOf } from './view'
+import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm, queueRemoteFx, fxTiers, haloTiersOf, projKind, lookOf } from './view'
 import { encodeFx, decodeFx } from './fxnet'
 import { playerInCasino } from '../casino/holdem/ui'
 import { duckMusic } from './sfx'
 import { store as casinoStore } from '../casino/holdem/store'
 let lastCasinoView = 0
 import { ARENA_EVENTS, VaultPrize, VAULT_PRIZES, POTION_DEFS, PotionKind } from './core'
-import { attachCosmetic } from './cosmetics'
+import { attachCosmetic, anchorOf, detach } from './cosmetics'
 import { play, setupSfx, musicLevel } from './sfx'
 import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf, sendFx, pushFeed } from './net'
 import { serverQuests, serverClaimQuest, QuestState, serverBuyPotion } from './persist'
@@ -116,11 +116,16 @@ export function applyProfile(p: ServerProfile | null) {
 let myCos: string | null = null
 let myCosEnt: Entity | undefined
 let seraphEnt: Entity | undefined
+let seraphOn = false
 function wearMine() {
-  if (save.inv.cosmetic === myCos) return
-  myCos = save.inv.cosmetic
+  const c = save.inv.cosmetic
+  const want = seraphOn && anchorOf(c) === 'back' ? null : c // Seraph Wings cover a back relic
+  if (want === myCos) return
+  myCos = want
   myCosEnt = attachCosmetic(undefined, myCos, myCosEnt)
 }
+// my shards / feathers already sent to the other hunters
+const sentProj = new Set<number>()
 
 export function buyArmory(tier: number) {
   if (G.armoryBusy) return
@@ -996,11 +1001,22 @@ export function setupGame() {
       renderRun(r, evs, dt)
       handle(evs)
       // share my skill effects so other hunters see the magic
-      if (G.inArena && G.phase !== 'dead' && evs.length) {
+      if (G.inArena && G.phase !== 'dead') {
         const tiers = fxTiers(r)
         for (const e of evs) {
           const p = encodeFx(e, r.x, r.z)
           if (p) sendFx(p[0], p[1], tiers)
+        }
+        // crystal shards and seraph feathers live in the sim, not in events: send each new one once
+        for (const b of r.projs)
+          if (!sentProj.has(b.id)) {
+            sentProj.add(b.id)
+            const p = encodeFx({ t: 'proj', x: b.x, z: b.z, vx: b.vx, vz: b.vz, life: b.life, k: projKind(r, b.k) }, r.x, r.z)
+            if (p) sendFx(p[0], p[1], tiers)
+          }
+        if (sentProj.size > 400) {
+          const live = new Set(r.projs.map((b) => b.id))
+          for (const id of sentProj) if (!live.has(id)) sentProj.delete(id)
         }
       }
     } else {
@@ -1010,10 +1026,11 @@ export function setupGame() {
     // golden wings on my back while Seraph Wings is active
     {
       const want = !!G.run && G.run.alive && G.run.g('wings') > 0
-      if (want && !seraphEnt) seraphEnt = attachCosmetic(undefined, 'seraph_wings')
-      else if (!want && seraphEnt) {
-        engine.removeEntity(seraphEnt)
-        seraphEnt = undefined
+      if (want !== seraphOn) {
+        seraphOn = want
+        if (want) seraphEnt = attachCosmetic(undefined, 'seraph_wings', seraphEnt)
+        else seraphEnt = detach(seraphEnt)
+        wearMine()
       }
     }
     // swiftness passive → avatar speed; divine form → god flight (huge jumps, double jump, gliding)
@@ -1053,7 +1070,11 @@ export function setupGame() {
         gd: equipped() === GOD_TIER,
         ...(rr ? haloTiersOf(rr) : { tb: 0, ta: 0 }),
         cs: save.inv.cosmetic,
-        ti: save.inv.title
+        ti: save.inv.title,
+        // what the other hunters draw on me during a run
+        w: rr && rr.alive && G.phase !== 'dead' ? rr.equip : -1,
+        sw: seraphOn,
+        ...(rr && rr.alive ? lookOf(rr) : { wc: 0, wt: 0, ps: [] })
       })
     }
   })
