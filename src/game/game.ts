@@ -1,4 +1,5 @@
 // Game controller: glues the simulation, rendering, sound, multiplayer and UI state together.
+import { WORLD_EDITION } from '../edition'
 import { engine, Transform, AvatarLocomotionSettings, inputSystem, InputAction, PointerEventType } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
 import { movePlayerTo } from '~system/RestrictedActions'
@@ -210,6 +211,7 @@ function decToHex(dec: string) {
 const pad64 = (h: string) => h.replace(/^0x/, '').toLowerCase().padStart(64, '0')
 
 export function openGoldShop() {
+  if (WORLD_EDITION) return // no paid gold in the test World
   G.goldShopOpen = true
   G.payMsg = ''
   shopConfig()

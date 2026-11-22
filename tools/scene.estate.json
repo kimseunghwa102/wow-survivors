@@ -1,0 +1,70 @@
+{
+  "ecs7": true,
+  "runtimeVersion": "7",
+  "display": {
+    "title": "WOW Nightswarm",
+    "description": "WOW NIGHTSWARM — a free horde-survival arena with PvP. Your skills fire on their own; hold LEFT CLICK to swing your own weapon (fists → frying pan → hammer → flame sword → reaper blade → minigun → DOOMSDAY NUKE). Level up to 200+, power up and ascend 6 skills, spin the jackpot vault, and slay a boss every few levels, from the Hollow King to dragons and the 3-headed World Eater. Other hunters can fight you in the rift. Gold and upgrades are saved to your wallet. Daily login rewards, and your first run each day banks double gold. Created by @bitcoinisnotall on X.",
+    "navmapThumbnail": "images/thumbnail.jpg"
+  },
+  "owner": "",
+  "contact": {
+    "name": "@bitcoinisnotall",
+    "email": ""
+  },
+  "main": "bin/index.js",
+  "tags": [
+    "game",
+    "pvp",
+    "survival",
+    "roguelike",
+    "arcade",
+    "boss",
+    "social"
+  ],
+  "scene": {
+    "parcels": [
+      "-106,76",
+      "-105,76",
+      "-104,76",
+      "-105,77",
+      "-104,77",
+      "-105,78",
+      "-104,78",
+      "-103,78",
+      "-106,79",
+      "-105,79",
+      "-106,80",
+      "-105,80"
+    ],
+    "base": "-106,76"
+  },
+  "spawnPoints": [
+    {
+      "name": "sanctuary",
+      "default": true,
+      "position": {
+        "x": [
+          5,
+          9
+        ],
+        "y": [
+          0,
+          0
+        ],
+        "z": [
+          2,
+          4
+        ]
+      },
+      "cameraTarget": {
+        "x": 16,
+        "y": 2,
+        "z": 8
+      }
+    }
+  ],
+  "requiredPermissions": [
+    "ALLOW_TO_MOVE_PLAYER_INSIDE_SCENE"
+  ],
+  "featureToggles": {}
+}

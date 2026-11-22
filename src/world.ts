@@ -5,6 +5,7 @@ import LAYOUT from '../layout.json'
 import { node, text, setText, hitbox, bob, V, FACE } from './helpers'
 import { topRuns, topPvp } from './game/net'
 import { save, loadBoard, raidPublic } from './game/persist'
+import { WORLD_EDITION } from './edition'
 import { G, equipped, openGoldShop } from './game/game'
 import { ARMORY, RAID_PARCEL } from './game/defs'
 
@@ -92,6 +93,8 @@ export function buildWorld() {
     void openExternalUrl({ url: 'https://x.com/bitcoinisnotall' })
   })
 
+  // the test World has no raid gate and no gold shop (core game only)
+  if (!WORLD_EDITION) {
   // GATE TO THE REAPER'S REALM — co-op world boss on parcel -91,71
   const gate = node(V(6.0, 0, 14.4), Quaternion.fromEulerDegrees(0, 180, 0))
   GltfContainer.create(gate, { src: 'models/raid_gate.glb' })
@@ -139,6 +142,8 @@ export function buildWorld() {
   LightSource.create(node(V(tx, 3.5, tz)), { type: LightSource.Type.Point({}), color: Color3.create(1, 0.78, 0.35), intensity: 3000, range: 10 })
   const treHit = hitbox(V(tx, 1.5, tz), V(4, 3, 4))
   pointerEventsSystem.onPointerDown({ entity: treHit, opts: { button: InputAction.IA_POINTER, hoverText: 'The Treasury — buy gold', maxDistance: 10 } }, () => openGoldShop())
+
+  }
 
   // Armory: the weapon you'd swing floats over a pedestal; click to open the shop
   const [ax, , az] = LAYOUT.armory
