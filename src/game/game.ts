@@ -3,7 +3,7 @@ import { engine, Transform, AvatarLocomotionSettings, inputSystem, InputAction, 
 import { Vector3 } from '@dcl/sdk/math'
 import { movePlayerTo } from '~system/RestrictedActions'
 import LAYOUT from '../../layout.json'
-import { Run, Option, Ev, inArena } from './core'
+import { Run, Option, Ev, inArena, optionLabel } from './core'
 import type { Entity } from '@dcl/sdk/ecs'
 import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS, GODS, MAX_GOD_LVL, ARTS, MAX_ART_LVL } from './defs'
 import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm, queueRemoteFx, fxTiers, haloTiersOf, projKind, lookOf, ascendFx, skyText } from './view'
@@ -417,7 +417,11 @@ export function showUpgrade(o: Option) {
     const w = WEAPONS[o.id]
     upgradeFx(r, 'evolve', o.id, `✦ ${w.evo.toUpperCase()} ✦`, '#FFFFFF')
     play('evolve')
-  } else if (o.kind === 'boost') upgradeFx(r, 'passive', 'boost', 'RIFT BOOST', '#FFD86A')
+  } else if (o.kind === 'boost') {
+    const l = optionLabel(o)
+    upgradeFx(r, (o.m ?? 1) >= 3 ? 'evolve' : 'passive', 'boost', `${l.title.toUpperCase()}${(o.m ?? 1) > 1 ? '  ×' + o.m : ''}`, l.color)
+    if ((o.m ?? 1) >= 5) play('jackpot', 1.1)
+  }
   else if (o.kind === 'art') {
     const a = ARTS[o.id]
     upgradeFx(r, o.to === 1 ? 'evolve' : 'weapon', o.id, `${a.boss ? '✧ ' : ''}${a.name.toUpperCase()}  ${o.to >= MAX_ART_LVL ? 'MAX' : 'Lv' + o.to}`, a.color)

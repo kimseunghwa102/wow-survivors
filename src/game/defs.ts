@@ -104,7 +104,7 @@ export const PASSIVES: Record<PassiveId, { name: string; desc: string; color: st
   plating: { name: 'Obsidian Shell', desc: '+1 armor (less contact damage)', color: '#C9CFDA' },
   vitality: { name: 'Heartstone', desc: '+20 max HP', color: '#3DFF8E' },
   bloodstone: { name: 'Lifebloom', desc: '+0.4 HP regen / sec', color: '#FF2A3D' },
-  magnet: { name: 'Lodestar', desc: '+35% pickup range', color: '#4AA8FF' },
+  magnet: { name: 'Lodestar', desc: '+35% pickup range (max +300%)', color: '#4AA8FF' },
   swiftness: { name: 'Wind Treads', desc: '+8% move speed', color: '#FFFFFF' },
   fortune: { name: 'Lucky Chip', desc: '+12% gold & coins, luckier vaults', color: '#FFD86A' }
 }
@@ -317,14 +317,39 @@ export const ARTS: Record<ArtId, ArtDef> = {
 }
 
 // ───────────── endless level-ups once every skill is maxed ─────────────
-export type BoostId = 'dmg' | 'hp' | 'area' | 'regen' | 'gold'
-export const BOOSTS: Record<BoostId, { name: string; desc: string; color: string }> = {
-  dmg: { name: 'Rift Power', desc: '+8% all damage', color: '#FF5468' },
-  hp: { name: 'Rift Vigor', desc: '+25 max HP and heal 25', color: '#3DFF8E' },
-  area: { name: 'Rift Reach', desc: '+4% area (max +60%)', color: '#9FE8FF' },
-  regen: { name: 'Rift Bloom', desc: '+0.5 HP regen / sec', color: '#FF7AC8' },
-  gold: { name: 'Rift Tithe', desc: '+30 gold now', color: '#FFD86A' }
+// 20 boons; each offer rolls a rarity that multiplies the effect (×1 common · ×2 rare · ×3 epic · ×5 legendary)
+export type BoostId =
+  | 'dmg' | 'hp' | 'area' | 'regen' | 'gold'
+  | 'crit' | 'critdmg' | 'haste' | 'speed' | 'magnet' | 'xp' | 'armor' | 'artdmg' | 'bossdmg' | 'vamp' | 'execute' | 'greed' | 'potion' | 'reroll' | 'phoenix'
+/** {n} in desc is replaced by the rolled amount */
+export const BOOSTS: Record<BoostId, { name: string; desc: string; color: string; per: number; cap?: number }> = {
+  dmg: { name: 'Rift Power', desc: '+{n}% all damage', color: '#FF5468', per: 8 },
+  hp: { name: 'Rift Vigor', desc: '+{n} max HP and heal it', color: '#3DFF8E', per: 25 },
+  area: { name: 'Rift Reach', desc: '+{n}% area (max +60%)', color: '#9FE8FF', per: 4, cap: 60 },
+  regen: { name: 'Rift Bloom', desc: '+{n} HP regen / sec', color: '#FF7AC8', per: 0.5 },
+  gold: { name: 'Rift Tithe', desc: '+{n} gold now', color: '#FFD86A', per: 30 },
+  crit: { name: 'Keen Edge', desc: '+{n}% crit chance (max +40%)', color: '#FFE45A', per: 3, cap: 40 },
+  critdmg: { name: 'Executioner\'s Eye', desc: '+{n}% crit damage (max +400%)', color: '#FF8A3D', per: 25, cap: 400 },
+  haste: { name: 'Quickened Rift', desc: '-{n}% cooldowns (max -30%)', color: '#5EF2FF', per: 3, cap: 30 },
+  speed: { name: 'Fleet Step', desc: '+{n}% move speed (max +40%)', color: '#FFFFFF', per: 4, cap: 40 },
+  magnet: { name: 'Gravity Well', desc: '+{n}% pickup range', color: '#4AA8FF', per: 15 },
+  xp: { name: 'Scholar\'s Rune', desc: '+{n}% XP (max +200%)', color: '#B9A8FF', per: 5, cap: 200 },
+  armor: { name: 'Bastion', desc: '+{n} armor (max +10)', color: '#C9CFDA', per: 1, cap: 10 },
+  artdmg: { name: 'Art Mastery', desc: '+{n}% damage of your ARTS (max +500%)', color: '#E8D28A', per: 12, cap: 500 },
+  bossdmg: { name: 'Giantslayer', desc: '+{n}% damage to bosses & elites (max +300%)', color: '#FF2A3D', per: 10, cap: 300 },
+  vamp: { name: 'Blood Pact', desc: 'every kill heals {n} HP (max 30)', color: '#C0182E', per: 0.4, cap: 30 },
+  execute: { name: 'Reaper\'s Mark', desc: 'foes under {n}% HP die at once (not bosses, max 20%)', color: '#7A2AFF', per: 2, cap: 20 },
+  greed: { name: 'Golden Hunger', desc: '+{n}% gold from everything (max +50%)', color: '#FFC83D', per: 4, cap: 50 },
+  potion: { name: 'Alchemist\'s Gift', desc: '+{n} health potion (max 9)', color: '#FF4A6A', per: 1 },
+  reroll: { name: 'Twist of Fate', desc: '+{n} reroll', color: '#8EC5FF', per: 1 },
+  phoenix: { name: 'Ember of Rebirth', desc: 'a phoenix feather (revive once, max 1)', color: '#FF9A2A', per: 1, cap: 1 }
 }
+export const RARITY = [
+  { name: 'COMMON', m: 1, w: 62, color: '#C9CFDA' },
+  { name: 'RARE', m: 2, w: 26, color: '#4AA8FF' },
+  { name: 'EPIC', m: 3, w: 10, color: '#B04BFF' },
+  { name: 'LEGENDARY', m: 5, w: 2, color: '#FFD86A' }
+]
 
 // ───────────── TREASURY: real-money gold packs (must match server/src/payments.ts) ─────────────
 export const GOLD_PACKS = [

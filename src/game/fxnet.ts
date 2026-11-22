@@ -2,6 +2,8 @@
 import { Ev } from './core'
 
 /** my run events → [code, ...numbers] packets (null = not shared) */
+const RAIN = ['spear', 'cannon', 'kunai', 'fire', 'fist', 'bolt', 'star', 'pillar', 'sun']
+
 export function encodeFx(e: Ev, x: number, z: number): [number, number[]] | null {
   switch (e.t) {
     case 'slash': return [0, [e.x, e.z, e.yaw, e.w, e.l]]
@@ -33,6 +35,13 @@ export function encodeFx(e: Ev, x: number, z: number): [number, number[]] | null
     case 'gsword': return [26, [e.x, e.z, e.delay, e.max ? 1 : 0]]
     case 'proj': return [27, [e.x, e.z, e.vx, e.vz, e.life, e.k]]
     case 'mine': return [28, [e.x, e.z]]
+    // arts (only my own patterns, never a boss's)
+    case 'mStrike': return e.own ? [29, [e.x, e.z, e.r, e.delay, RAIN.indexOf(e.k)]] : null
+    case 'mSpokes': return e.own ? [30, [e.x, e.z, e.n, e.len, e.w, e.a0, e.omega, e.dur]] : null
+    case 'mRing': return e.own ? [31, [e.x, e.z, e.r0]] : null
+    case 'genesis': return [32, [e.x, e.z, e.r]]
+    case 'mChrono': return e.own ? [33, [e.x ?? x, e.z ?? z, e.dur]] : null
+    case 'allyOut': return [34, [e.x, e.z, e.vx, e.vz, e.life, e.k]]
   }
   return null
 }
@@ -76,8 +85,14 @@ export function decodeFx(p: number[]): Ev | null {
     case 24: return { t: 'gnuke', x: a, z: b, r: Math.min(12, d) }
     case 25: return { t: 'hole', x: a, z: b, r: Math.min(12, d), dur: Math.min(3, f), max: !!g }
     case 26: return { t: 'gsword', x: a, z: b, delay: Math.min(2, d), max: !!f }
-    case 27: return { t: 'proj', x: a, z: b, vx: Math.max(-25, Math.min(25, d)), vz: Math.max(-25, Math.min(25, f)), life: Math.max(0.1, Math.min(2, g)), k: Math.max(0, Math.min(5, Math.round(h))) }
+    case 27: return { t: 'proj', x: a, z: b, vx: Math.max(-25, Math.min(25, d)), vz: Math.max(-25, Math.min(25, f)), life: Math.max(0.1, Math.min(2, g)), k: Math.round(h) === 9 ? 9 : Math.max(0, Math.min(5, Math.round(h))) }
     case 28: return { t: 'mine', id: 0, x: a, z: b }
+    case 29: return { t: 'mStrike', x: a, z: b, r: Math.min(6, d), delay: Math.max(0.05, Math.min(2, f)), k: RAIN[Math.round(g)] ?? 'star', own: true }
+    case 30: return { t: 'mSpokes', x: a, z: b, n: Math.max(1, Math.min(9, Math.round(d))), len: Math.min(24, f), w: Math.min(6, g), a0: h, omega: Math.max(-200, Math.min(200, p[7] ?? 0)), warm: 0.05, dur: Math.max(0.2, Math.min(4, p[8] ?? 1)), own: true }
+    case 31: return { t: 'mRing', x: a, z: b, r0: Math.max(2.2, Math.min(22.2, d)), r1: Math.min(24.2, d + 2), own: true }
+    case 32: return { t: 'genesis', x: a, z: b, r: Math.min(40, d) }
+    case 33: return { t: 'mChrono', x: a, z: b, dur: Math.max(0.5, Math.min(6, d)), own: true }
+    case 34: return { t: 'allyOut', x: a, z: b, vx: Math.max(-12, Math.min(12, d)), vz: Math.max(-12, Math.min(12, f)), life: Math.max(0.2, Math.min(2.5, g)), k: h ? 1 : 0 }
   }
   return null
 }

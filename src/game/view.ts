@@ -522,6 +522,7 @@ export function haloTiersOf(run: Run) {
 }
 /** a projectile of mine as a network packet kind: 0-3 shard tier, 4 feather, 5 gold feather */
 export function projKind(run: Run, k: string | undefined) {
+  if (k === 'knife') return 9
   return k === 'feather' ? (run.g('wings') >= 5 ? 5 : 4) : tierOf(run, 'bolt')
 }
 const PASSIVE_IDS = Object.keys(PASSIVES) as PassiveId[]
@@ -566,7 +567,7 @@ function playEvents(events: Ev[], run: Run | null, tiers?: number[]) {
       active.push({ e, life: 0.28, max: 0.28, kind: 'strike', r: ev.r, asc })
     } else if (playGod(ev, run, tiers)) {
       // handled
-    } else if (!tiers && playMyth(ev, run)) {
+    } else if ((!tiers || ('own' in ev && ev.own) || ev.t === 'genesis' || ev.t === 'allyOut') && playMyth(ev, tiers ? null : run)) {
       // handled
     } else if (playSkill2(ev, run, tiers)) {
       // handled
@@ -986,8 +987,8 @@ function playSkill2(ev: Ev, run: Run | null, tiers?: number[]): boolean {
     case 'proj': {
       if (run && !tiers) return true
       // another hunter's crystal shard / seraph feather in flight
-      const feather = ev.k >= 4
-      const pool = feather ? featherPool[ev.k - 4] : boltPool[Math.max(0, Math.min(3, ev.k))]
+      const feather = ev.k >= 4 && ev.k <= 5
+      const pool = ev.k === 9 ? MP.knife : feather ? featherPool[ev.k - 4] : boltPool[Math.max(0, Math.min(3, ev.k))]
       const e = pool?.take()
       if (!e) return true
       const tr = Transform.getMutable(e)
@@ -1328,12 +1329,23 @@ function playMyth(ev: Ev, run: Run | null): boolean {
       return true
     }
     case 'mChrono': {
-      const x0 = run ? run.x : 32
-      const z0 = run ? run.z : 24
+      const x0 = ev.x ?? (run ? run.x : 32)
+      const z0 = ev.z ?? (run ? run.z : 24)
       gAnim(MP.chrono, ev.dur, (k, tr) => {
         const s = 8 * Math.min(1, k * 10) * (k > 0.88 ? (1 - k) / 0.12 : 1)
         tr.position = V(run ? run.x : x0, 0, run ? run.z : z0)
         tr.scale = V(s, 1, s)
+      })
+      return true
+    }
+    case 'allyOut': {
+      // another hunter's foxfire / shadow clone, flying out (local ones are drawn from run.allies)
+      if (run) return true
+      const pool = ev.k ? MP.allyShade : MP.allyFox
+      const life = ev.life
+      gAnim(pool, life, (k, tr) => {
+        tr.position = V(ev.x + ev.vx * k * life, ev.k ? 0 : 0.2, ev.z + ev.vz * k * life)
+        if (ev.k) tr.rotation = yawQ((Math.atan2(ev.vx, ev.vz) * 180) / Math.PI)
       })
       return true
     }

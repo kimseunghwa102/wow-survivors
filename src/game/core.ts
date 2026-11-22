@@ -3,7 +3,7 @@ import LAYOUT from '../../layout.json'
 import {
   WeaponId, PassiveId, EnemyKind, WEAPONS, PASSIVES, ENEMIES, MAX_WEAPON_LVL, MAX_PASSIVE_LVL,
   MAX_WEAPONS, MAX_PASSIVES, waveMix, xpNeed, ARMORY, NUKE, NUKE_TIER, GOD_TIER, isHoldable, manualLevelScale, bossFor, BossDef,
-  BOOSTS, BoostId, GodId, GODS, GOD_UNLOCK, MAX_GODS, MAX_GOD_LVL, ARTS, ArtId, MAX_ART_LVL, BOSSES
+  BOOSTS, BoostId, RARITY, GodId, GODS, GOD_UNLOCK, MAX_GODS, MAX_GOD_LVL, ARTS, ArtId, MAX_ART_LVL, BOSSES
 } from './defs'
 
 export type Rect = { x0: number; z0: number; x1: number; z1: number }
@@ -115,13 +115,14 @@ export type Ev =
   | { t: 'proj'; x: number; z: number; vx: number; vz: number; life: number; k: number } // k 0-3 shard tier · 4 feather · 5 gold feather (network only)
   // mythic boss patterns (Lv 350+)
   | { t: 'mRingWarn'; x: number; z: number; r0: number; r1: number; dur: number }
-  | { t: 'mRing'; x: number; z: number; r0: number; r1: number }
+  | { t: 'mRing'; x: number; z: number; r0: number; r1: number; own?: boolean }
   | { t: 'mStrike'; x: number; z: number; r: number; delay: number; k: string; own?: boolean }
   | { t: 'mSpokes'; x: number; z: number; n: number; len: number; w: number; a0: number; omega: number; warm: number; dur: number; own?: boolean }
   | { t: 'mBlink'; x0: number; z0: number; x1: number; z1: number }
   | { t: 'mLight'; safe: [number, number, number][]; dur: number }
   | { t: 'mLightHit'; ok: boolean }
-  | { t: 'mChrono'; dur: number; own?: boolean }
+  | { t: 'mChrono'; dur: number; own?: boolean; x?: number; z?: number }
+  | { t: 'allyOut'; x: number; z: number; vx: number; vz: number; life: number; k: number }
   | { t: 'genesis'; x: number; z: number; r: number }
   | { t: 'mPhase'; boss: number; phase: number }
   | { t: 'ascend' }
@@ -160,7 +161,7 @@ export type Option =
   | { kind: 'evolve'; id: WeaponId }
   | { kind: 'gold'; amount: number }
   | { kind: 'heal'; amount: number }
-  | { kind: 'boost'; id: BoostId }
+  | { kind: 'boost'; id: BoostId; m?: number }
   | { kind: 'god'; id: GodId; to: number }
   | { kind: 'art'; id: ArtId; to: number }
 
@@ -175,6 +176,7 @@ export type RunSnap = {
   weapons: [WeaponId, number][]; passives: [PassiveId, number][]; evolved: WeaponId[]; gods?: [GodId, number][]; arts?: [ArtId, number][]; potions?: Record<PotionKind, number>
   bossIndex: number; bossQueue: number; bossesSlain: number; boostDmg: number; boostArea: number; boostRegen: number
   nextElite: number; nextRing: number
+  boons?: Record<string, number>
   ascended?: boolean
   godBorn?: boolean
 }
@@ -271,6 +273,8 @@ export class Run {
   projs: Proj[] = []
   // arts
   arts = new Map<ArtId, number>()
+  /** stacked boons (percent / flat amounts as in BOOSTS) */
+  boons: Record<string, number> = {}
   allies: Ally[] = []
   private ownStrikes: { x: number; z: number; r: number; t: number; dmg: number; slow: number }[] = []
   private ownSpokes: { x: number; z: number; n: number; len: number; w: number; a0: number; omega: number; age: number; warm: number; dur: number; dmg: number; tick: number }[] = []
@@ -314,7 +318,8 @@ export class Run {
       boostDmg: this.boostDmg, boostArea: this.boostArea, boostRegen: this.boostRegen,
       nextElite: this.nextElite, nextRing: this.nextRing,
       ascended: this.ascended,
-      godBorn: this.godBorn
+      godBorn: this.godBorn,
+      boons: { ...this.boons }
     }
   }
 
@@ -347,6 +352,7 @@ export class Run {
     r.boostRegen = s.boostRegen
     r.nextElite = s.nextElite
     r.ascended = !!s.ascended
+    if (s.boons) for (const k of Object.keys(s.boons)) if (k in BOOSTS && Number.isFinite(s.boons[k])) r.boons[k] = s.boons[k]
     r.godBorn = !!s.godBorn // maxHp in the snapshot already holds the ×2
     if (r.godBorn) r.awakened = true
     r.nextRing = s.nextRing
@@ -362,7 +368,7 @@ export class Run {
     return (1 + 0.12 * this.p('might') + 0.05 * this.meta.might + this.boostDmg) * (this.rageT > 0 ? 1.6 : 1) * (this.godBorn ? 2 : 1)
   }
   get cdMul() {
-    return Math.max(0.3, (1 - 0.07 * this.p('haste')) * (this.rageT > 0 ? 0.75 : 1))
+    return Math.max(0.3, (1 - 0.07 * this.p('haste')) * (1 - (this.boons.haste ?? 0) / 100) * (this.rageT > 0 ? 0.75 : 1))
   }
   get area() {
     return 1 + 0.1 * this.p('expanse') + this.boostArea
@@ -371,7 +377,7 @@ export class Run {
     return Math.floor((this.p('duplicator') + 1) / 2)
   }
   get armor() {
-    return this.p('plating')
+    return this.p('plating') + (this.boons.armor ?? 0)
   }
   /** how hard the horde hits back: grows with the hunter's level */
   get threat() {
@@ -388,16 +394,16 @@ export class Run {
     return 0.12 + 0.25 * this.p('bloodstone') + this.boostRegen * 0.5 + (this.godBorn ? 3 : 0)
   }
   get magnet() {
-    return TUNING.baseMagnet * (1 + 0.35 * this.p('magnet') + 0.1 * this.meta.magnet)
+    return TUNING.baseMagnet * (1 + 0.35 * this.p('magnet') + 0.1 * this.meta.magnet + (this.boons.magnet ?? 0) / 100)
   }
   get speedMul() {
-    return (1 + 0.08 * this.p('swiftness') + (this.g('wings') ? 0.15 : 0)) * (this.slowT > 0 ? 0.5 : 1)
+    return (1 + 0.08 * this.p('swiftness') + (this.g('wings') ? 0.15 : 0) + (this.boons.speed ?? 0) / 100) * (this.slowT > 0 ? 0.5 : 1)
   }
   get xpMul() {
-    return 1 + 0.05 * this.meta.xp
+    return 1 + 0.05 * this.meta.xp + (this.boons.xp ?? 0) / 100
   }
   get goldMul() {
-    return (1 + 0.12 * this.p('fortune')) * this.comboMul * (this.arena?.kind === 'bloodmoon' ? 1.5 : 1)
+    return (1 + 0.12 * this.p('fortune') + (this.boons.greed ?? 0) / 100) * this.comboMul * (this.arena?.kind === 'bloodmoon' ? 1.5 : 1)
   }
   /** gold ×1 → ×1.5: +10% every 50 kills in a streak */
   get comboMul() {
@@ -588,11 +594,14 @@ export class Run {
   // ───────── damage ─────────
   private hitEnemy(e: Enemy, dmg: number, kx = 0, kz = 0) {
     if (!e.alive) return
-    const crit = rand() < 0.05 + 0.02 * this.p('fortune')
-    let d = dmg * this.might * (crit ? 2 : 1)
+    const crit = rand() < 0.05 + 0.02 * this.p('fortune') + (this.boons.crit ?? 0) / 100
+    let d = dmg * this.might * (crit ? 2 + (this.boons.critdmg ?? 0) / 100 : 1)
+    if (e.kind === 'boss' || e.kind === 'elite') d *= 1 + (this.boons.bossdmg ?? 0) / 100
+    if (this.artHit) d *= 1 + (this.boons.artdmg ?? 0) / 100
     // Divine Ascension one-shots everything except the mythic ladder (Lv 350+), which only takes its heavy blows
     if (this.god && !(e.kind === 'boss' && bossFor(e.boss ?? 0).divine)) d = Math.max(d, e.hp + 1)
     e.hp -= d
+    if (this.boons.execute && e.kind !== 'boss' && e.hp > 0 && e.hp < e.maxHp * this.boons.execute / 100) e.hp = 0
     e.kx += kx
     e.kz += kz
     this.events.push({ t: 'hit', id: e.id, x: e.x, z: e.z, dmg: d, crit })
@@ -607,6 +616,7 @@ export class Run {
   private killEnemy(e: Enemy) {
     e.alive = false
     this.kills++
+    if (this.boons.vamp) this.hp = Math.min(this.maxHp, this.hp + this.boons.vamp)
     this.combo++
     this.comboT = 3
     if (this.rageT > 0) this.hp = Math.min(this.maxHp, this.hp + 0.35)
@@ -1219,24 +1229,48 @@ export class Run {
     return this.levelChoicesBase(arts, n)
   }
 
+  /** boons still worth taking (capped ones drop out) */
+  private boonPool(): BoostId[] {
+    return (Object.keys(BOOSTS) as BoostId[]).filter((b) => {
+      if (b === 'area') return this.boostArea < 0.6
+      if (b === 'potion') return this.potions.hp < 9
+      if (b === 'phoenix') return this.potions.phoenix < 1
+      const cap = BOOSTS[b].cap
+      return cap === undefined || (this.boons[b] ?? 0) < cap
+    })
+  }
+  private rollRarity() {
+    const total = RARITY.reduce((s, r) => s + r.w, 0)
+    let x = rand() * total
+    for (const r of RARITY) {
+      if (x < r.w) return r.m
+      x -= r.w
+    }
+    return 1
+  }
+  boostChoices(n: number): Option[] {
+    const ids = this.boonPool()
+    const out: Option[] = []
+    while (out.length < n && ids.length) {
+      const id = ids.splice(Math.floor(rand() * ids.length), 1)[0]
+      out.push({ kind: 'boost', id, m: id === 'phoenix' ? 1 : this.rollRarity() })
+    }
+    return out
+  }
+
   private levelChoicesBase(arts: Option[], n: number): Option[] {
     const all = this.allUpgrades().concat(arts)
     // after the awakening, every level-up offers a god power (if any is left)
     const gods = this.godUpgrades()
     if (gods.length) {
       const g = gods[Math.floor(rand() * gods.length)]
-      const rest = all.length ? all : (Object.keys(BOOSTS) as BoostId[]).map((id) => ({ kind: 'boost', id }) as Option)
+      const rest = all.length ? all : this.boostChoices(6)
       const others = gods.filter((x) => x !== g).concat(rest)
       const out: Option[] = [g]
       while (out.length < n && others.length) out.push(others.splice(Math.floor(rand() * others.length), 1)[0])
       return out
     }
-    if (!all.length) {
-      const ids = (Object.keys(BOOSTS) as BoostId[]).filter((b) => !(b === 'area' && this.boostArea >= 0.6))
-      const out: Option[] = []
-      while (out.length < 3 && ids.length) out.push({ kind: 'boost', id: ids.splice(Math.floor(rand() * ids.length), 1)[0] })
-      return out
-    }
+    if (!all.length) return this.boostChoices(Math.max(3, n))
     // owned items are twice as likely, so builds snowball
     const weighted = all.map((o) => ({ o, w: (o.kind === 'weapon' ? this.w(o.id) : o.kind === 'passive' ? this.p(o.id) : o.kind === 'art' ? this.arts.get(o.id) ?? 0 : 0) > 0 ? 2.2 : 1 }))
     const out: Option[] = []
@@ -1265,18 +1299,36 @@ export class Run {
     else if (o.kind === 'gold') this.gold += o.amount
     else if (o.kind === 'heal') this.hp = Math.min(this.maxHp, this.hp + o.amount)
     else if (o.kind === 'boost') {
-      if (o.id === 'dmg') this.boostDmg += 0.08
+      const m = o.m ?? 1
+      const n = BOOSTS[o.id].per * m
+      if (o.id === 'dmg') this.boostDmg += n / 100
       else if (o.id === 'hp') {
-        this.maxHp += 25
-        this.hp = Math.min(this.maxHp, this.hp + 25)
-      } else if (o.id === 'area') this.boostArea = Math.min(0.6, this.boostArea + 0.04)
-      else if (o.id === 'regen') this.boostRegen += 0.5
-      else if (o.id === 'gold') this.gold += 30
+        this.maxHp += n
+        this.hp = Math.min(this.maxHp, this.hp + n)
+      } else if (o.id === 'area') this.boostArea = Math.min(0.6, this.boostArea + n / 100)
+      else if (o.id === 'regen') this.boostRegen += n
+      else if (o.id === 'gold') this.gold += n
+      else if (o.id === 'potion') this.potions.hp = Math.min(9, this.potions.hp + n)
+      else if (o.id === 'reroll') this.rerolls += n
+      else if (o.id === 'phoenix') this.potions.phoenix = 1
+      else {
+        const cap = BOOSTS[o.id].cap
+        this.boons[o.id] = Math.min(cap ?? Infinity, (this.boons[o.id] ?? 0) + n)
+      }
     }
   }
 
   // ───────── ARTS ─────────
+  private artHit = false
   private fireArts(dt: number, foes: Enemy[]) {
+    this.artHit = true
+    try {
+      this.fireArts_(dt, foes)
+    } finally {
+      this.artHit = false
+    }
+  }
+  private fireArts_(dt: number, foes: Enemy[]) {
     // resolve what is already falling / spinning / flying
     for (const st of this.ownStrikes) {
       st.t -= dt
@@ -1365,7 +1417,7 @@ export class Run {
     }
     const ring = (i: number, dmg: number) => {
       const r0 = 2.2 + 4 * i
-      this.events.push({ t: 'mRing', x: this.x, z: this.z, r0, r1: r0 + 2 })
+      this.events.push({ t: 'mRing', x: this.x, z: this.z, r0, r1: r0 + 2, own: true })
       for (const e of foes) {
         if (!e.alive) continue
         const d = Math.hypot(e.x - this.x, e.z - this.z)
@@ -1510,7 +1562,12 @@ export class Run {
         const e = pick(pool)
         slashAt(e.x, e.z, rand() * 360, 1.0 * A, 3.2 * A, dmgOf(45, lv))
       }
-      if (lv >= 5) for (let i = 0; i < 2; i++) this.allies.push({ id: this.nextId++, x: this.x + (i ? 1 : -1), z: this.z - 0.5, vx: 0, vz: 0, life: 4, dmg: dmgOf(60, lv), k: 'shade', hit: [] })
+      if (lv >= 5)
+        for (let i = 0; i < 2; i++) {
+          this.allies.push({ id: this.nextId++, x: this.x + (i ? 1 : -1), z: this.z - 0.5, vx: 0, vz: 0, life: 4, dmg: dmgOf(60, lv), k: 'shade', hit: [] })
+          const y = ((this.yaw + (i ? 40 : -40)) * Math.PI) / 180
+          this.events.push({ t: 'allyOut', x: this.x, z: this.z, vx: Math.sin(y) * 6, vz: Math.cos(y) * 6, life: 1.8, k: 1 })
+        }
     }
     if ((lv = go('judgment', 3.6))) {
       const c = nearest(14) ?? { x: this.x, z: this.z }
@@ -1543,6 +1600,7 @@ export class Run {
       for (let i = 0; i < n; i++) {
         const a = (i / n) * Math.PI * 2
         this.allies.push({ id: this.nextId++, x: this.x + Math.sin(a), z: this.z + Math.cos(a), vx: Math.sin(a) * 6, vz: Math.cos(a) * 6, life: 3.5, dmg: dmgOf(55, lv), k: 'fox', hit: [] })
+        this.events.push({ t: 'allyOut', x: this.x, z: this.z, vx: Math.sin(a) * 7, vz: Math.cos(a) * 7, life: 1.6, k: 0 })
       }
     }
     if ((lv = go('phantom', 3.2))) {
@@ -1603,7 +1661,7 @@ export class Run {
       const R = (10 + (lv >= 3 ? 4 : 0)) * A
       for (const e of near(R)) if (e.kind !== 'boss') e.frozen = Math.max(e.frozen ?? 0, dur)
         else e.slow = Math.max(e.slow ?? 0, dur)
-      this.events.push({ t: 'mChrono', dur, own: true })
+      this.events.push({ t: 'mChrono', dur, own: true, x: this.x, z: this.z })
     }
     if ((lv = go('wrath', 4.0))) {
       const c = crowd(16) ?? nearest(16)
@@ -2438,8 +2496,7 @@ export class Run {
       const owned = this.allUpgrades().filter((o) => (o.kind === 'weapon' ? this.w(o.id) : o.kind === 'passive' ? this.p(o.id) : 0) > 0)
       const pool = owned.length ? owned : this.allUpgrades()
       if (!pool.length) {
-        const ids = Object.keys(BOOSTS) as BoostId[]
-        const o: Option = { kind: 'boost', id: ids[Math.floor(rand() * ids.length)] }
+        const o: Option = this.boostChoices(1)[0] ?? { kind: 'boost', id: 'dmg' }
         this.apply(o)
         rolls.push(o)
         continue
@@ -2509,7 +2566,10 @@ export function optionLabel(o: Option): { title: string; sub: string; desc: stri
   if (o.kind === 'gold') return { title: `+${o.amount} Gold`, sub: 'VAULT', desc: 'Spend it at the Arcane Forge', color: '#FFD86A', isNew: false }
   if (o.kind === 'boost') {
     const b = BOOSTS[o.id]
-    return { title: b.name, sub: 'RIFT BOOST', desc: b.desc, color: b.color, isNew: false }
+    const m = o.m ?? 1
+    const rar = RARITY.find((r) => r.m === m) ?? RARITY[0]
+    const amt = Math.round(b.per * m * 10) / 10
+    return { title: b.name, sub: `${rar.name} BOON${m > 1 ? ' ×' + m : ''}`, desc: b.desc.replace('{n}', String(amt)), color: m >= 3 ? rar.color : b.color, isNew: m >= 3 }
   }
   if (o.kind === 'art') {
     const a = ARTS[o.id]
