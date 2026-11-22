@@ -22,6 +22,10 @@ export const TUNING = {
 
 export type Enemy = {
   id: number
+  /** bosses: spawn time, damage taken while being measured, sized yet */
+  b0?: number
+  bTaken?: number
+  sized?: boolean
   kind: EnemyKind
   x: number
   z: number
@@ -124,6 +128,8 @@ export type Ev =
   | { t: 'mChrono'; dur: number; own?: boolean; x?: number; z?: number }
   | { t: 'allyOut'; x: number; z: number; vx: number; vz: number; life: number; k: number }
   | { t: 'genesis'; x: number; z: number; r: number }
+  | { t: 'secondWind' }
+  | { t: 'autoPick'; label: string; color: string }
   | { t: 'mPhase'; boss: number; phase: number }
   | { t: 'ascend' }
 
@@ -273,6 +279,13 @@ export class Run {
   projs: Proj[] = []
   // arts
   arts = new Map<ArtId, number>()
+  /** recent damage per second (rolling ~30 s), so bosses can be sized to the hunter */
+  dps = 0
+  private dpsAcc = 0
+  private dpsT = 0
+  /** one free comeback for newcomers (before Lv 60) */
+  secondWind = true
+  private emptyT = 0
   /** stacked boons (percent / flat amounts as in BOOSTS) */
   boons: Record<string, number> = {}
   allies: Ally[] = []
@@ -443,6 +456,12 @@ export class Run {
     if (this.rageT > 0 && (this.rageT -= dt) <= 0) this.events.push({ t: 'rageEnd' })
     if (this.combo && (this.comboT -= dt) <= 0) this.breakCombo()
     this.flushPvp(dt)
+    this.dpsT += dt
+    if (this.dpsT >= 1) {
+      this.dps = this.dps * 0.965 + (this.dpsAcc / this.dpsT) * 0.035
+      this.dpsAcc = 0
+      this.dpsT = 0
+    }
     return this.events
   }
 
@@ -458,6 +477,18 @@ export class Run {
       if (alive >= TUNING.maxEnemies) continue
       alive++
       this.spawnEnemy(pick(waveMix(t)))
+    }
+    // a strong hunter clears the screen: if nothing is near for 2 s, a pack rushes in around them
+    const near = this.enemies.some((e) => e.alive && Math.abs(e.x - this.x) < 11 && Math.abs(e.z - this.z) < 11)
+    this.emptyT = near ? 0 : this.emptyT + dt
+    if (this.emptyT > 1.2 && t > 15) {
+      this.emptyT = 0
+      const n = Math.min(TUNING.maxEnemies - alive, 10 + Math.floor(Math.min(t, 1800) / 90) + 4 * this.armory)
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + rand()
+        const c = clampArena(this.x + Math.sin(a) * (9 + rand() * 3), this.z + Math.cos(a) * (9 + rand() * 3), 0.6)
+        this.spawnEnemy(pick(waveMix(t)), c.x, c.z)
+      }
     }
     if (t >= this.nextElite) {
       this.nextElite += TUNING.eliteEvery
@@ -559,6 +590,20 @@ export class Run {
 
   die(killer: string) {
     if (!this.alive) return
+    // second wind: a newcomer's first death (before Lv 60) is forgiven once
+    if (this.secondWind && this.level < 60 && !killer) {
+      this.secondWind = false
+      this.hp = this.maxHp * 0.7
+      this.invuln = 3
+      this.events.push({ t: 'revive', x: this.x, z: this.z })
+      this.events.push({ t: 'secondWind' })
+      for (const e of this.enemies) {
+        if (!e.alive) continue
+        const d = Math.hypot(e.x - this.x, e.z - this.z)
+        if (d < 8) this.hitEnemy(e, e.kind === 'boss' ? 0 : e.maxHp * 2 / this.might, ((e.x - this.x) / (d || 1)) * 12, ((e.z - this.z) / (d || 1)) * 12)
+      }
+      return
+    }
     // Phoenix Tear: cheat death once
     if (this.potions.phoenix > 0) {
       this.potions.phoenix--
@@ -600,6 +645,11 @@ export class Run {
     if (this.artHit) d *= 1 + (this.boons.artdmg ?? 0) / 100
     // Divine Ascension one-shots everything except the mythic ladder (Lv 350+), which only takes its heavy blows
     if (this.god && !(e.kind === 'boss' && bossFor(e.boss ?? 0).divine)) d = Math.max(d, e.hp + 1)
+    this.dpsAcc += Math.min(d, Math.max(0, e.hp))
+    if (e.kind === 'boss' && !e.sized) {
+      e.bTaken = (e.bTaken ?? 0) + d
+      d = Math.min(d, Math.max(0, e.hp - e.maxHp * 0.5)) // can't fall below half before it has been sized
+    }
     e.hp -= d
     if (this.boons.execute && e.kind !== 'boss' && e.hp > 0 && e.hp < e.maxHp * this.boons.execute / 100) e.hp = 0
     e.kx += kx
@@ -643,6 +693,7 @@ export class Run {
       this.drop('potion', e.x - 1.4, e.z + 0.8, 0)
       this.drop('potion', e.x + 1.2, e.z - 0.6, 1)
       this.events.push({ t: 'bossDown', boss: bi })
+      this.hp = Math.min(this.maxHp, this.hp + this.maxHp * 0.25) // a breather after every boss
       if (bossFor(bi).god && !this.ascended) {
         // the story ends: no boss comes after God
         this.ascended = true
@@ -1283,6 +1334,15 @@ export class Run {
       weighted.splice(i, 1)
     }
     return out
+  }
+
+  /** a level-up that changes your build gets a pause; routine upgrades are taken automatically */
+  isMeaningful(opts: Option[]) {
+    return opts.some((o) => o.kind === 'evolve' || o.kind === 'god' || ((o.kind === 'weapon' || o.kind === 'passive' || o.kind === 'art') && o.to === 1) || (o.kind === 'boost' && (o.m ?? 1) >= 3))
+  }
+  autoPick(opts: Option[]): Option {
+    const sc = (o: Option) => (o.kind === 'weapon' ? 3 + o.to * 0.1 : o.kind === 'art' ? 2.9 : o.kind === 'passive' ? 2.4 : o.kind === 'boost' ? 1 + (o.m ?? 1) * 0.4 : 1)
+    return [...opts].sort((a, b) => sc(b) - sc(a))[0]
   }
 
   apply(o: Option) {
@@ -2027,9 +2087,15 @@ export class Run {
       }
       const e = this.spawnEnemy('boss', x, z)
       e.boss = idx
-      e.hp = e.maxHp = d.hp
+      // size the boss to the hunter: never melted in a few seconds, never a slog for a newcomer
+      const share = group.length > 1 ? 0.6 : 1
+      const maxSec = idx < 8 ? 38 * share : Infinity
+      const dps = Math.max(1, this.dps)
+      e.hp = e.maxHp = Math.round(Math.min(d.hp, Math.max(d.hp * 0.35, dps * maxSec)))
+      e.b0 = this.time
+      e.bTaken = 0
       // mythic bosses hit for a share of your max HP, so they stay deadly however strong you are
-      e.dmg = d.pct ? Math.max(d.dmg, this.maxHp * d.pct * 0.5) : d.dmg
+      e.dmg = d.pct ? Math.max(d.dmg, this.maxHp * d.pct * 0.5) : d.dmg * (idx < 5 ? 0.6 : idx < 8 ? 0.8 : 1) // the first bosses go easier on newcomers
       e.speed = d.speed
       e.r = d.r
       e.sc = d.scale
@@ -2040,7 +2106,26 @@ export class Run {
     })
   }
 
+  /** 3 s into a boss fight, measure how fast the hunter hurts it and stretch its HP so the fight lasts */
+  private sizeBosses() {
+    for (const e of this.enemies) {
+      if (!e.alive || e.kind !== 'boss' || e.sized || e.b0 === undefined || this.time - e.b0 < 3) continue
+      e.sized = true
+      const d = bossFor(e.boss ?? 0)
+      const twins = this.bossesAlive().length > 1 ? 0.6 : 1
+      const minSec = (d.god ? 150 : d.divine ? 70 : d.name === 'NIGHTSWARM' || d.name === 'AETHERION' ? 50 : 28) * twins
+      const rate = (e.bTaken ?? 0) / (this.time - e.b0)
+      const need = rate * (minSec - 3)
+      if (need > e.hp) {
+        const f = Math.min(d.divine ? 2 : 1e6, need / e.hp)
+        e.hp *= f
+        e.maxHp *= f
+      }
+    }
+  }
+
   private bossStep(dt: number) {
+    this.sizeBosses()
     const alive = this.bossesAlive()
     if (alive.length !== this.bossIds.length) this.bossIds = alive.map((e) => e.id)
     for (const b of alive) this.bossAct(b, dt)

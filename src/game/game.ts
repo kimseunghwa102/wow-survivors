@@ -90,6 +90,10 @@ export const G = {
   ascendT: 0,
   /** standing in THE BLOOD RING (PvP) */
   inPvp: false,
+  /** take routine upgrades automatically (toggle in the level-up window) */
+  autoPick: true,
+  lastModalT: -99,
+  autoToast: null as null | { text: string; color: string; t: number },
   ascendName: '',
   // potion belt in the lobby (server-owned) + run feel
   profileBelt: { hp: 0, rage: 0, phoenix: 0 },
@@ -536,10 +540,23 @@ export function collectChest() {
 function nextModal() {
   const r = G.run
   if (!r) return
-  if (r.pendingLevels > 0) {
-    G.phase = 'levelup'
-    G.choices = r.levelChoices()
-    return
+  // routine level-ups (only upgrades of what you already have / common boons) are taken for you, no pause
+  while (r.pendingLevels > 0) {
+    const ch = r.levelChoices()
+    // big moments always pause; other "new item" offers wait at least 6 s after the last window
+    const big = ch.some((o) => o.kind === 'evolve' || o.kind === 'god' || (o.kind === 'art' && o.to === 1) || (o.kind === 'boost' && (o.m ?? 1) >= 5))
+    if (!G.autoPick || !ch.length || big || (r.isMeaningful(ch) && r.time - G.lastModalT >= 6)) {
+      G.lastModalT = r.time
+      G.phase = 'levelup'
+      G.choices = ch
+      return
+    }
+    const o = r.autoPick(ch)
+    r.apply(o)
+    r.pendingLevels--
+    const l = optionLabel(o)
+    G.autoToast = { text: `▲ ${l.title}  ${l.sub}`, color: l.color, t: 2.2 }
+    play('buy', 1.4)
   }
   const big = G.chestQueue.shift()
   if (big !== undefined) {
@@ -765,6 +782,9 @@ function handle(evs: Ev[]) {
         break
       case 'rageEnd':
         banner('rage wears off…', 1.2)
+        break
+      case 'secondWind':
+        banner('✦ SECOND WIND ✦  the rift gives newcomers one more chance', 4)
         break
       case 'revive':
         G.flash = 0.9
@@ -1028,6 +1048,7 @@ export function setupGame() {
     if (G.bannerT > 0) G.bannerT -= dt
     if (G.comboFlash > 0) G.comboFlash -= dt
     if (G.slayerReveal > 0) G.slayerReveal -= dt
+    if (G.autoToast && (G.autoToast.t -= dt) <= 0) G.autoToast = null
     if (G.ascendT > 0) {
       G.ascendT += dt
       if (G.ascendT > 19) {

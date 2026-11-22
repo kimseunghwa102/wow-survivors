@@ -577,7 +577,16 @@ function LevelModal() {
       <UiEntity uiTransform={{ flexDirection: 'row', margin: { top: 8 } }}>
         <Button value={`REROLL (${r.rerolls})`} fontSize={14} color={WHITE} uiTransform={{ width: 150, height: 34, margin: 6 }} uiBackground={BTN(r.rerolls > 0 ? C('#3A2A5A') : C('#222222'))} onMouseDown={tap(reroll)} />
         <Button value="SKIP (+10 gold)" fontSize={14} color={WHITE} uiTransform={{ width: 150, height: 34, margin: 6 }} uiBackground={BTN(C('#2A2A2A'))} onMouseDown={tap(skipLevel)} />
+        <Button
+          value={G.autoPick ? 'AUTO-UPGRADE: ON' : 'AUTO-UPGRADE: OFF'}
+          fontSize={13}
+          color={WHITE}
+          uiTransform={{ width: 190, height: 34, margin: 6 }}
+          uiBackground={BTN(G.autoPick ? C('#1F7A4A') : C('#3A2A2A'))}
+          onMouseDown={tap(() => (G.autoPick = !G.autoPick))}
+        />
       </UiEntity>
+      <Label value={G.autoPick ? 'routine upgrades are taken for you — this window only opens for new skills, god powers and epic boons' : 'every level-up opens this window'} fontSize={11} color={DIM} uiTransform={{ height: 16 }} />
     </Modal>
   )
 }
@@ -937,6 +946,19 @@ function SlayerReveal() {
   )
 }
 
+/** auto-taken upgrade, shown without pausing */
+function AutoToast() {
+  const t = G.autoToast
+  if (!t || G.phase !== 'running') return null
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: 150 }, width: '100%', justifyContent: 'center' }}>
+      <UiEntity uiTransform={{ padding: { left: 12, right: 12, top: 3, bottom: 3 } }} uiBackground={{ color: C('#0C0A14', 0.7 * Math.min(1, t.t * 2)) }}>
+        <Label value={t.text} fontSize={14} color={C(t.color, Math.min(1, t.t * 2))} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
 /** PvP status under the top bar */
 function PvpBadge() {
   const r = G.run
@@ -1006,6 +1028,7 @@ const Root = () => (
     <GoldShop />
     <SlayerReveal />
     <PvpBadge />
+    <AutoToast />
     <AscendEnding />
     <Banner />
   </UiEntity>
