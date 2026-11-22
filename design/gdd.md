@@ -184,13 +184,11 @@ Players who want a slow story or building — this is fast arcade combat.
 
 ### Comparables
 
-| | Comparable A — outside Decentraland: Vampire Survivors | Comparable B — outside Decentraland: Brawl Stars |
+| | Comparable A — Decentraland: Antrom RPG | Comparable B — outside Decentraland: Vampire Survivors |
 |---|---|---|
-| What we observed works | One-stick play, auto-firing skills, three-card level-ups and evolutions make the first minute obvious and every run different | Short sessions, visible trophies and daily quests bring players back on mobile; friends queue together |
-| What does not fit our audience or context—and why | Fully solo — nothing changes when another person is nearby; runs are 30 minutes, long for mobile | Matchmaking and 3v3 lobbies need many players online; Decentraland traffic is small and uneven |
-| What we will do differently | One shared arena with visible hunters, an opt-in PvP block, and progress that banks every 5 minutes | No lobby: party up at the gate in the same arena, and solo play is always complete |
-
-`[agent-decided — owner: swap one for a Featured Decentraland game you played, with what you observed]`
+| What we observed works | Hunting monsters, clearing missions and running raids together with other people; choosing weapons and upgrading them through missions; rich graphics that show what a Decentraland scene can look like | One-stick play, auto-firing skills, three-card level-ups and evolutions make the first minute obvious and every run different |
+| What does not fit our audience or context—and why | `[agent-decided]` Missions and raids take planning and a group; a solo phone player with five minutes needs a faster start | Fully solo — nothing changes when another person is nearby; runs are 30 minutes, long for mobile |
+| What we will do differently | `[agent-decided]` Keep the instant solo run, and bring the group raid feeling into the same arena with a drop-in Hunt Party | One shared arena with visible hunters, an opt-in PvP block, and progress that banks every 5 minutes |
 
 ---
 

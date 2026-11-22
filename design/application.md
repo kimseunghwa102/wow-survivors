@@ -23,9 +23,9 @@ Deadline for the first V0 round: **2026-11-30** (reviewed weekly — earlier is 
 
 | Game (Featured) | Day 1 minutes | Return day + minutes | Understood in first minute? | How other players changed it | What I'd change | What made me want to return |
 |---|---|---|---|---|---|---|
-| 1. | | | | | | |
-| 2. | | | | | | |
-| 3. | | | | | | |
+| 1. Antrom RPG | `TBD:` | `TBD: return day` | | Hunting monsters, missions and raids together with other people was the interesting part | | Weapon choice and upgrades through missions; the range of graphics Decentraland supports |
+| 2. Sky Chaser | `TBD:` | `TBD: return day` | | | | Flying through the sky; that Decentraland can support these graphics — made me think about how big the LAND needs to be |
+| 3. Zombie Heads | `TBD:` | | | | | That a defense game works in Decentraland; a lot to learn from its graphics |
 
 ## Form answer drafts (English — edit freely)
 
@@ -33,7 +33,7 @@ Deadline for the first V0 round: **2026-11-30** (reviewed weekly — earlier is 
 > I'm a solo developer (WOW Automation, an RPA / automation consultancy) based in Hanoi, building with Claude Code and Blender scripts. I shipped WOW Nightswarm to my 12-parcel estate at -106,76 in November 2026 and update it almost daily, with a small save server (wallet-signed saves, quests, streaks, boards) on Render + Postgres.
 
 **What you learned from the Featured games**
-> `TBD: write from your own notes above — 3–5 sentences: what you understood fast, what other players changed, what you'd copy or avoid in Nightswarm.`
+> In Antrom RPG, the best part was hunting monsters, clearing missions and running raids together with other people, and choosing weapons and upgrading them through missions. Sky Chaser showed me that flying across the sky works in Decentraland, and made me think about how much LAND a game needs. Zombie Heads proved that a defense game works here, and I learned a lot from its graphics. All three showed me that Decentraland can carry much richer graphics than I expected. For WOW Nightswarm this means two things: bring the group raid feeling of Antrom into our arena with a drop-in Hunt Party, and keep raising the visual quality of our fortress and bosses.
 
 **Deployed test scene link**
 > https://decentraland.org/play/?position=-106,76 (Genesis City estate — no NAME yet, so not a World)
