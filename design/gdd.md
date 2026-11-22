@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Public experience title | WOW Nightswarm — IP & [Content Policy](https://decentraland.org/content/) status: owner declaration: original game; models are built by Blender scripts in this repo, sound effects are synthesized by script, music is a synthesized arrangement of the public-domain Jingle Bells (1857); genre mechanics only; the Lv 350+ bosses use broad archetypes (pirate captain, ninja, angel, demon) with original names and models — names checked against well-known franchises on 2026-11-22, one renamed; name screening: not searched; unresolved: none — the estate's hold'em room and paid gold are switched off in the build under review and stay out of v1 |
+| Public experience title | WOW Nightswarm — IP & [Content Policy](https://decentraland.org/content/) status: owner declaration: original game; models are built by Blender scripts in this repo, sound effects are synthesized by script, music is a synthesized arrangement of the public-domain Jingle Bells (1857); genre mechanics only; the Lv 350+ bosses use broad archetypes (pirate captain, ninja, angel, demon) with original names and models — names checked against well-known franchises on 2026-11-22, one renamed; name screening: not searched; disclosure: the estate also has a separate hold'em room (parcel -103,78) played for in-game gold, and gold can be bought with ETH/MANA; neither is part of this proposal, the World build (`src/edition.ts`) has neither, and v1 keeps both out |
 | Deployment target | Genesis City -106,76 (12 parcels, our LAND estate) — we do not own a NAME yet, so the test scene is the live estate; a World follows if V0 is funded |
 | Studio / team name | WOW Automation — 1 developer, building with Claude Code |
 | Date | 2026-11-22 |

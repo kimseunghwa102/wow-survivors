@@ -6,6 +6,6 @@
  *   Set it to false and redeploy to bring the casino and the Treasury back.
  */
 export const WORLD_EDITION: boolean = false
-export const REVIEW_BUILD: boolean = true
+export const REVIEW_BUILD: boolean = false
 /** core game only: no gambling, no paid currency */
 export const CORE_ONLY: boolean = WORLD_EDITION || REVIEW_BUILD
