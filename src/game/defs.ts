@@ -277,6 +277,45 @@ export const GODS: Record<GodId, { name: string; color: string; desc: string[] }
   wings: { name: 'Seraph Wings', color: '#FFD86A', desc: ['Grow wings: FLY (big jumps, glide), +15% speed, feather storm', '+feathers, +damage', '+damage, faster', '+feathers, +damage', 'MAX: golden storm'] }
 }
 
+// ───────────── ARTS: a new skill every 15-50 levels, all the way to God (no slot limit, 5 levels each) ─────────────
+// Rift arts unlock by level (Lv 25-300); mythic arts are taken from each mythic boss you slay (Lv 350-1111).
+export type ArtId =
+  | 'ember' | 'fan' | 'tide' | 'lances' | 'kunai' | 'drums' | 'fist' | 'stars' | 'broadside' | 'pillars' | 'blacksun' | 'wheel'
+  | 'kiburst' | 'cannonade' | 'cuts' | 'judgment' | 'hellrain' | 'horizon' | 'foxfire' | 'phantom' | 'raijin' | 'eyes' | 'abyss' | 'sixarms' | 'timestop' | 'wrath' | 'genesis'
+export const MAX_ART_LVL = 8
+export type ArtDef = { name: string; color: string; lvl?: number; boss?: string; desc: string[] }
+const up = (first: string, a: string, b: string, c: string, max: string) => [first, a, b, '+damage', c, '+damage, faster', '+damage', 'MAX: ' + max]
+export const ARTS: Record<ArtId, ArtDef> = {
+  ember: { name: 'Ember Rain', color: '#FF7A2A', lvl: 25, desc: up('Fireballs rain on nearby foes', '+2 fireballs', '+damage', '+2 fireballs, faster', 'a firestorm') },
+  fan: { name: 'Blade Fan', color: '#D8E0F0', lvl: 40, desc: up('A fan of piercing knives at the nearest foe', '+2 knives', '+damage, pierce more', '+2 knives', 'knives in every direction') },
+  tide: { name: 'Tidal Rings', color: '#3FD8FF', lvl: 55, desc: up('Rings of force roll out from you', '+1 ring', '+damage', '+1 ring, faster', 'three tides at once') },
+  lances: { name: 'Sky Lances', color: '#FFE9A8', lvl: 70, desc: up('Spears of light pierce the strongest foes', '+1 lance', '+damage', '+2 lances', 'lances on everything big') },
+  kunai: { name: 'Shadow Kunai', color: '#E03A5A', lvl: 85, desc: up('Kunai burst out in a full circle', '+4 kunai', '+damage', '+4 kunai, faster', 'twin bursts') },
+  drums: { name: 'Thunder Drums', color: '#FFD02B', lvl: 100, desc: up('Lightning hammers a ring around you', '+2 bolts', '+damage', 'wider ring, faster', 'a double ring') },
+  fist: { name: 'Meteor Fist', color: '#FF3B4E', lvl: 120, desc: up('A giant fist smashes the thickest crowd', '+damage', '+size', '+1 fist', 'three fists') },
+  stars: { name: 'Star Shower', color: '#B9A8FF', lvl: 140, desc: up('Falling stars scatter over the field', '+3 stars', '+damage', '+3 stars, faster', 'a meteor shower') },
+  broadside: { name: 'Broadside', color: '#2BD4C4', lvl: 165, desc: up('A line of cannon fire walks into the horde', '+2 shells', '+damage', 'second line', 'a full broadside') },
+  pillars: { name: 'Judgment Pillars', color: '#FFF2B0', lvl: 230, desc: up('Pillars of light erupt under foes', '+2 pillars', '+damage', '+2 pillars, faster', 'a field of judgment') },
+  blacksun: { name: 'Black Sun', color: '#B04BFF', lvl: 260, desc: up('A black sun crashes down and slows the crowd', '+size', '+damage', '+1 sun', 'twin eclipses') },
+  wheel: { name: 'Prism Wheel', color: '#FFF27A', lvl: 290, desc: up('Rotating beams of light spin around you', '+1 beam', '+damage', '+1 beam, longer', 'a blinding wheel') },
+  // ── mythic arts: taken from the bosses you slay ──
+  kiburst: { name: 'Ki Burst', color: '#FF3B4E', boss: 'VARKOS', desc: up("VARKOS's power: a crimson ki wave", 'wider', '+damage', 'faster', 'waves both ways') },
+  cannonade: { name: 'Ghost Cannonade', color: '#2BD4C4', boss: 'CAPTAIN DRAKKAR', desc: up("DRAKKAR's guns: cannonballs rain around you", '+3 shells', '+damage', '+3 shells, faster', 'the whole fleet fires') },
+  cuts: { name: 'Thousand Cuts', color: '#E03A5A', boss: 'KAGEROU', desc: up("KAGEROU's art: slashes on every nearby foe", '+3 cuts', '+damage', '+3 cuts, faster', 'shadow clones join in') },
+  judgment: { name: "Heaven's Judgment", color: '#FFE9A8', boss: 'SOLARIEL', desc: up("SOLARIEL's verdict: a grid of light pillars", 'bigger grid', '+damage', 'faster', 'judgment twice') },
+  hellrain: { name: 'Hellfire Rain', color: '#FF5A1E', boss: 'MALGOROTH', desc: up("MALGOROTH's forge: a storm of hellfire", '+4 drops', '+damage', '+4 drops, faster', 'the forge overflows') },
+  horizon: { name: 'Event Horizon', color: '#8A6BFF', boss: 'ZERATH', desc: up("ZERATH's heart: black suns on the biggest crowds", '+1 sun', '+damage, slow', '+1 sun', 'a dying galaxy') },
+  foxfire: { name: 'Foxfire Swarm', color: '#7FD8FF', boss: 'YORUMI', desc: up("YORUMI's tails: homing foxfire", '+2 flames', '+damage', '+2 flames, faster', 'nine tails of fire') },
+  phantom: { name: 'Phantom Broadside', color: '#39FFB0', boss: 'THE DROWNED ARMADA', desc: up('The ARMADA fires along both your flanks', 'longer lines', '+damage', 'faster', 'four lines of fire') },
+  raijin: { name: "Raijin's Drums", color: '#FFE45A', boss: 'RAIKOU', desc: up("RAIKOU's storm: bolts in a ring + chain lightning", '+2 bolts', '+damage', '+chain jumps', 'the sky splits') },
+  eyes: { name: 'Wheel of Eyes', color: '#FFB347', boss: 'OPHANOS', desc: up("OPHANOS's gaze: spinning beams of fire", '+1 beam', '+damage', 'faster spin', 'every eye opens') },
+  abyss: { name: 'Abyssal Rings', color: '#C35BFF', boss: 'NYXARA', desc: up("NYXARA's void: rings of darkness erupt", '+1 ring', '+damage', 'faster', 'the abyss opens') },
+  sixarms: { name: 'Six-Armed Fury', color: '#FF6A3D', boss: 'ASURAKH', desc: up("ASURAKH's arms: six blades strike at once", '+damage', 'longer reach', 'faster', 'twelve blades') },
+  timestop: { name: 'Time Stop', color: '#E8D28A', boss: 'KHRONOS', desc: up("KHRONOS's clock: every foe near you freezes", 'longer', 'wider', 'faster', 'time itself obeys') },
+  wrath: { name: "Demon King's Wrath", color: '#FF2A3D', boss: 'MORTHAEL', desc: up("MORTHAEL's wrath: a hell-sun and fire around it", '+damage', '+size', 'faster', 'the last king rises in you') },
+  genesis: { name: 'Genesis Light', color: '#FFF6D8', boss: 'THE ALMIGHTY', desc: up('The light of creation smites everything around you', '+radius', '+damage', 'faster', 'let there be light') }
+}
+
 // ───────────── endless level-ups once every skill is maxed ─────────────
 export type BoostId = 'dmg' | 'hp' | 'area' | 'regen' | 'gold'
 export const BOOSTS: Record<BoostId, { name: string; desc: string; color: string }> = {

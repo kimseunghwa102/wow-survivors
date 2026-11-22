@@ -5,7 +5,7 @@ import { movePlayerTo } from '~system/RestrictedActions'
 import LAYOUT from '../../layout.json'
 import { Run, Option, Ev, inArena } from './core'
 import type { Entity } from '@dcl/sdk/ecs'
-import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS, GODS, MAX_GOD_LVL } from './defs'
+import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS, GODS, MAX_GOD_LVL, ARTS, MAX_ART_LVL } from './defs'
 import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm, queueRemoteFx, fxTiers, haloTiersOf, projKind, lookOf, ascendFx, skyText } from './view'
 import { encodeFx, decodeFx } from './fxnet'
 import { playerInCasino } from '../casino/holdem/ui'
@@ -418,7 +418,12 @@ export function showUpgrade(o: Option) {
     upgradeFx(r, 'evolve', o.id, `✦ ${w.evo.toUpperCase()} ✦`, '#FFFFFF')
     play('evolve')
   } else if (o.kind === 'boost') upgradeFx(r, 'passive', 'boost', 'RIFT BOOST', '#FFD86A')
-  else if (o.kind === 'god') {
+  else if (o.kind === 'art') {
+    const a = ARTS[o.id]
+    upgradeFx(r, o.to === 1 ? 'evolve' : 'weapon', o.id, `${a.boss ? '✧ ' : ''}${a.name.toUpperCase()}  ${o.to >= MAX_ART_LVL ? 'MAX' : 'Lv' + o.to}`, a.color)
+    play(o.to === 1 ? 'evolve' : 'buy', o.to === 1 ? 1.1 : 1.2)
+    if (o.to === 1) banner(a.boss ? `✧ MYTHIC ART taken from ${a.boss}: ${a.name}` : `NEW ART: ${a.name}`, 3)
+  } else if (o.kind === 'god') {
     const g = GODS[o.id]
     upgradeFx(r, 'evolve', o.id, `✦ ${g.name.toUpperCase()}  ${o.to >= MAX_GOD_LVL ? 'MAX' : 'Lv' + o.to} ✦`, g.color)
     play('evolve', 0.8)
@@ -826,7 +831,12 @@ function handle(evs: Ev[]) {
         break
       case 'mChrono':
         play('sigil', 0.5)
-        banner('⏳ TIME IS DEVOURED — you are slowed ⏳', 2)
+        if (!e.own) banner('⏳ TIME IS DEVOURED — you are slowed ⏳', 2)
+        break
+      case 'genesis':
+        play('choir', 1.3)
+        play('nuke', 1.4)
+        G.flash = Math.max(G.flash, 0.35)
         break
       case 'mLight':
         play('choir', 1.15)

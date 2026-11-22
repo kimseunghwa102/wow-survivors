@@ -3,7 +3,7 @@ import LAYOUT from '../../layout.json'
 import {
   WeaponId, PassiveId, EnemyKind, WEAPONS, PASSIVES, ENEMIES, MAX_WEAPON_LVL, MAX_PASSIVE_LVL,
   MAX_WEAPONS, MAX_PASSIVES, waveMix, xpNeed, ARMORY, NUKE, NUKE_TIER, GOD_TIER, isHoldable, manualLevelScale, bossFor, BossDef,
-  BOOSTS, BoostId, GodId, GODS, GOD_UNLOCK, MAX_GODS, MAX_GOD_LVL
+  BOOSTS, BoostId, GodId, GODS, GOD_UNLOCK, MAX_GODS, MAX_GOD_LVL, ARTS, ArtId, MAX_ART_LVL, BOSSES
 } from './defs'
 
 export type Rect = { x0: number; z0: number; x1: number; z1: number }
@@ -53,7 +53,9 @@ export type Enemy = {
 }
 export type PickKind = 'gem' | 'coin' | 'chest' | 'heal' | 'potion'
 export type Pickup = { id: number; kind: PickKind; x: number; z: number; value: number; alive: boolean; flying: boolean; big?: boolean; born: number }
-export type Proj = { id: number; x: number; z: number; vx: number; vz: number; dmg: number; pierce: number; life: number; hit: number[]; k?: 'feather' }
+export type Proj = { id: number; x: number; z: number; vx: number; vz: number; dmg: number; pierce: number; life: number; hit: number[]; k?: 'feather' | 'knife' }
+/** a friendly homing flame / shadow from an art */
+export type Ally = { id: number; x: number; z: number; vx: number; vz: number; life: number; dmg: number; k: 'fox' | 'shade'; hit: number[] }
 export type Hostile = { id: number; x: number; z: number; vx: number; vz: number; life: number; dmg: number; home?: number; k?: string }
 export type Remote = { id: string; x: number; z: number; attackable: boolean }
 
@@ -114,12 +116,13 @@ export type Ev =
   // mythic boss patterns (Lv 350+)
   | { t: 'mRingWarn'; x: number; z: number; r0: number; r1: number; dur: number }
   | { t: 'mRing'; x: number; z: number; r0: number; r1: number }
-  | { t: 'mStrike'; x: number; z: number; r: number; delay: number; k: string }
-  | { t: 'mSpokes'; x: number; z: number; n: number; len: number; w: number; a0: number; omega: number; warm: number; dur: number }
+  | { t: 'mStrike'; x: number; z: number; r: number; delay: number; k: string; own?: boolean }
+  | { t: 'mSpokes'; x: number; z: number; n: number; len: number; w: number; a0: number; omega: number; warm: number; dur: number; own?: boolean }
   | { t: 'mBlink'; x0: number; z0: number; x1: number; z1: number }
   | { t: 'mLight'; safe: [number, number, number][]; dur: number }
   | { t: 'mLightHit'; ok: boolean }
-  | { t: 'mChrono'; dur: number }
+  | { t: 'mChrono'; dur: number; own?: boolean }
+  | { t: 'genesis'; x: number; z: number; r: number }
   | { t: 'mPhase'; boss: number; phase: number }
   | { t: 'ascend' }
 
@@ -159,6 +162,7 @@ export type Option =
   | { kind: 'heal'; amount: number }
   | { kind: 'boost'; id: BoostId }
   | { kind: 'god'; id: GodId; to: number }
+  | { kind: 'art'; id: ArtId; to: number }
 
 let rand = Math.random
 export function setRandom(fn: () => number) {
@@ -168,7 +172,7 @@ export function setRandom(fn: () => number) {
 export type RunSnap = {
   v: number; time: number; level: number; xp: number; kills: number; gold: number; hp: number; maxHp: number
   pendingLevels: number; rerolls: number; pvpKills: number
-  weapons: [WeaponId, number][]; passives: [PassiveId, number][]; evolved: WeaponId[]; gods?: [GodId, number][]; potions?: Record<PotionKind, number>
+  weapons: [WeaponId, number][]; passives: [PassiveId, number][]; evolved: WeaponId[]; gods?: [GodId, number][]; arts?: [ArtId, number][]; potions?: Record<PotionKind, number>
   bossIndex: number; bossQueue: number; bossesSlain: number; boostDmg: number; boostArea: number; boostRegen: number
   nextElite: number; nextRing: number
   ascended?: boolean
@@ -265,6 +269,12 @@ export class Run {
   enemies: Enemy[] = []
   pickups: Pickup[] = []
   projs: Proj[] = []
+  // arts
+  arts = new Map<ArtId, number>()
+  allies: Ally[] = []
+  private ownStrikes: { x: number; z: number; r: number; t: number; dmg: number; slow: number }[] = []
+  private ownSpokes: { x: number; z: number; n: number; len: number; w: number; a0: number; omega: number; age: number; warm: number; dur: number; dmg: number; tick: number }[] = []
+  private artSeen = new Set<ArtId>()
   private nextId = 1
   private spawnAcc = 0
   nextElite = TUNING.eliteEvery
@@ -298,7 +308,7 @@ export class Run {
       v: 1,
       time: Math.floor(this.time), level: this.level, xp: Math.floor(this.xp), kills: this.kills, gold: Math.floor(this.gold),
       hp: Math.ceil(this.hp), maxHp: this.maxHp, pendingLevels: this.pendingLevels, rerolls: this.rerolls, pvpKills: this.pvpKills,
-      weapons: [...this.weapons.entries()], passives: [...this.passives.entries()], evolved: [...this.evolved], gods: [...this.gods.entries()], potions: { ...this.potions },
+      weapons: [...this.weapons.entries()], passives: [...this.passives.entries()], evolved: [...this.evolved], gods: [...this.gods.entries()], arts: [...this.arts.entries()], potions: { ...this.potions },
       // bosses on the field come back (twins: both, so the pair stays together)
       bossIndex: this.bossIndex - this.bossesAlive().length, bossQueue: this.bossQueue + this.bossesAlive().length, bossesSlain: this.bossesSlain,
       boostDmg: this.boostDmg, boostArea: this.boostArea, boostRegen: this.boostRegen,
@@ -315,6 +325,8 @@ export class Run {
     r.passives = new Map(s.passives)
     r.evolved = new Set(s.evolved)
     r.gods = new Map(s.gods ?? [])
+    r.arts = new Map((s.arts ?? []).filter(([id]) => ARTS[id]))
+    for (const id of r.arts.keys()) r.artSeen.add(id)
     if (s.potions) r.potions = { hp: Math.min(9, s.potions.hp | 0), rage: Math.min(5, s.potions.rage | 0), phoenix: Math.min(1, s.potions.phoenix | 0) }
     r.awakened = s.level >= GOD_UNLOCK
     r.time = s.time
@@ -822,6 +834,7 @@ export class Run {
     }
     this.fire2(dt, foes, remotes)
     this.fireGods(dt, foes, remotes)
+    this.fireArts(dt, foes)
   }
 
   // ───────── second wave of auto-skills ─────────
@@ -1174,9 +1187,40 @@ export class Run {
     return out
   }
 
+  /** has this boss of the ladder been slain in this run? */
+  private slain(name: string) {
+    const i = BOSSES.findIndex((b) => b.name === name)
+    return i >= 0 && i < this.bossIndex - this.bossesAlive().length
+  }
+  artUnlocked(id: ArtId) {
+    const d = ARTS[id]
+    return d.lvl ? this.level >= d.lvl : !!d.boss && this.slain(d.boss)
+  }
+  artUpgrades(): Option[] {
+    const out: Option[] = []
+    for (const id of Object.keys(ARTS) as ArtId[]) {
+      const lv = this.arts.get(id) ?? 0
+      if (lv < MAX_ART_LVL && this.artUnlocked(id)) out.push({ kind: 'art', id, to: lv + 1 })
+    }
+    return out
+  }
+
   levelChoices(): Option[] {
-    const all = this.allUpgrades()
     const n = 3 + (this.p('fortune') >= 3 ? 1 : 0)
+    // a freshly unlocked art is always on offer, then arts mix into the pool with everything else
+    const arts = this.artUpgrades()
+    const fresh = arts.filter((o) => o.kind === 'art' && o.to === 1 && !this.artSeen.has(o.id))
+    if (fresh.length) {
+      const f = fresh[0] as { kind: 'art'; id: ArtId; to: number }
+      this.artSeen.add(f.id)
+      const rest = this.levelChoicesBase(arts.filter((o) => o !== f), n - 1)
+      return [f as Option].concat(rest)
+    }
+    return this.levelChoicesBase(arts, n)
+  }
+
+  private levelChoicesBase(arts: Option[], n: number): Option[] {
+    const all = this.allUpgrades().concat(arts)
     // after the awakening, every level-up offers a god power (if any is left)
     const gods = this.godUpgrades()
     if (gods.length) {
@@ -1194,7 +1238,7 @@ export class Run {
       return out
     }
     // owned items are twice as likely, so builds snowball
-    const weighted = all.map((o) => ({ o, w: (o.kind === 'weapon' ? this.w(o.id) : o.kind === 'passive' ? this.p(o.id) : 0) > 0 ? 2.2 : 1 }))
+    const weighted = all.map((o) => ({ o, w: (o.kind === 'weapon' ? this.w(o.id) : o.kind === 'passive' ? this.p(o.id) : o.kind === 'art' ? this.arts.get(o.id) ?? 0 : 0) > 0 ? 2.2 : 1 }))
     const out: Option[] = []
     while (out.length < n && weighted.length) {
       const total = weighted.reduce((s, x) => s + x.w, 0)
@@ -1217,6 +1261,7 @@ export class Run {
       }
     } else if (o.kind === 'evolve') this.evolved.add(o.id)
     else if (o.kind === 'god') this.gods.set(o.id, o.to)
+    else if (o.kind === 'art') this.arts.set(o.id, o.to)
     else if (o.kind === 'gold') this.gold += o.amount
     else if (o.kind === 'heal') this.hp = Math.min(this.maxHp, this.hp + o.amount)
     else if (o.kind === 'boost') {
@@ -1227,6 +1272,355 @@ export class Run {
       } else if (o.id === 'area') this.boostArea = Math.min(0.6, this.boostArea + 0.04)
       else if (o.id === 'regen') this.boostRegen += 0.5
       else if (o.id === 'gold') this.gold += 30
+    }
+  }
+
+  // ───────── ARTS ─────────
+  private fireArts(dt: number, foes: Enemy[]) {
+    // resolve what is already falling / spinning / flying
+    for (const st of this.ownStrikes) {
+      st.t -= dt
+      if (st.t > 0) continue
+      if (st.r >= 2) this.events.push({ t: 'slam', x: st.x, z: st.z, r: st.r })
+      for (const e of foes)
+        if (e.alive && Math.hypot(e.x - st.x, e.z - st.z) < st.r + e.r) {
+          if (st.slow) e.slow = Math.max(e.slow ?? 0, st.slow)
+          this.hitEnemy(e, st.dmg)
+        }
+    }
+    this.ownStrikes = this.ownStrikes.filter((st) => st.t > 0)
+    for (const sp of this.ownSpokes) {
+      sp.age += dt
+      if (sp.age < sp.warm) continue
+      sp.tick -= dt
+      if (sp.tick > 0) continue
+      sp.tick = 0.25
+      const a0 = sp.a0 + sp.omega * (sp.age - sp.warm)
+      for (let i = 0; i < sp.n; i++) {
+        const a = ((a0 + (i * 360) / sp.n) * Math.PI) / 180
+        const fx = Math.sin(a)
+        const fz = Math.cos(a)
+        for (const e of foes) {
+          if (!e.alive) continue
+          const rx = e.x - sp.x
+          const rz = e.z - sp.z
+          const along = rx * fx + rz * fz
+          if (along > 0 && along < sp.len + e.r && Math.abs(rx * fz - rz * fx) < sp.w / 2 + e.r) this.hitEnemy(e, sp.dmg)
+        }
+      }
+    }
+    this.ownSpokes = this.ownSpokes.filter((sp) => sp.age < sp.warm + sp.dur)
+    for (const a of this.allies) {
+      a.life -= dt
+      let tg: Enemy | null = null
+      let bd = 14
+      for (const e of foes) {
+        if (!e.alive || a.hit.includes(e.id)) continue
+        const d = Math.hypot(e.x - a.x, e.z - a.z)
+        if (d < bd) (bd = d), (tg = e)
+      }
+      const sp = a.k === 'fox' ? 9 : 11
+      if (tg) {
+        const d = bd || 1
+        a.vx += (((tg.x - a.x) / d) * sp - a.vx) * Math.min(1, dt * 5)
+        a.vz += (((tg.z - a.z) / d) * sp - a.vz) * Math.min(1, dt * 5)
+        if (d < tg.r + 0.6) {
+          a.hit.push(tg.id)
+          this.hitEnemy(tg, a.dmg, a.vx * 0.2, a.vz * 0.2)
+          if (a.hit.length >= (a.k === 'shade' ? 4 : 2)) a.life = 0
+        }
+      }
+      a.x += a.vx * dt
+      a.z += a.vz * dt
+    }
+    this.allies = this.allies.filter((a) => a.life > 0)
+    if (!this.arts.size) return
+
+    const sc = manualLevelScale(this.level) * (this.godBorn ? 1.25 : 1)
+    const dmgOf = (base: number, _tier: number) => base * sc * (1 + 0.22 * (lvRaw - 1)) * (lvRaw >= MAX_ART_LVL ? 1.35 : 1)
+    const near = (R: number) => foes.filter((e) => e.alive && Math.hypot(e.x - this.x, e.z - this.z) < R)
+    const pick = <T>(a: T[]) => a[Math.floor(rand() * a.length)]
+    const nearest = (R: number) => {
+      let b: Enemy | null = null
+      let bd = R
+      for (const e of foes) {
+        if (!e.alive) continue
+        const d = Math.hypot(e.x - this.x, e.z - this.z)
+        if (d < bd) (bd = d), (b = e)
+      }
+      return b
+    }
+    const aimYaw = (R = 14) => {
+      const t = nearest(R)
+      return t ? (Math.atan2(t.x - this.x, t.z - this.z) * 180) / Math.PI : this.yaw
+    }
+    const strike = (k: string, x: number, z: number, r: number, delay: number, dmg: number, slow = 0) => {
+      const c = clampArena(x, z, 0.3)
+      this.ownStrikes.push({ x: c.x, z: c.z, r, t: delay, dmg, slow })
+      this.events.push({ t: 'mStrike', x: c.x, z: c.z, r, delay, k, own: true })
+    }
+    const spokes = (n: number, len: number, w: number, omega: number, dur: number, dmg: number, a0 = rand() * 360) => {
+      this.ownSpokes.push({ x: this.x, z: this.z, n, len, w, a0, omega, age: 0, warm: 0.05, dur, dmg, tick: 0 })
+      this.events.push({ t: 'mSpokes', x: this.x, z: this.z, n, len, w, a0, omega, warm: 0.05, dur, own: true })
+    }
+    const ring = (i: number, dmg: number) => {
+      const r0 = 2.2 + 4 * i
+      this.events.push({ t: 'mRing', x: this.x, z: this.z, r0, r1: r0 + 2 })
+      for (const e of foes) {
+        if (!e.alive) continue
+        const d = Math.hypot(e.x - this.x, e.z - this.z)
+        if (d > r0 - e.r - 0.6 && d < r0 + 2 + e.r) this.hitEnemy(e, dmg, ((e.x - this.x) / (d || 1)) * 3, ((e.z - this.z) / (d || 1)) * 3)
+      }
+    }
+    const slashAt = (x: number, z: number, yaw: number, w: number, l: number, dmg: number) => {
+      const a = (yaw * Math.PI) / 180
+      const fx = Math.sin(a)
+      const fz = Math.cos(a)
+      this.events.push({ t: 'slash', x, z, yaw, w, l })
+      for (const e of foes) {
+        if (!e.alive) continue
+        const rx = e.x - x
+        const rz = e.z - z
+        if (Math.abs(rx * fx + rz * fz) <= l / 2 + e.r && Math.abs(rx * fz - rz * fx) <= w / 2 + e.r) this.hitEnemy(e, dmg, fx * 2, fz * 2)
+      }
+    }
+    const crowd = (R = 14) => this.densest(foes, R)
+    const lvOf = (id: ArtId) => this.arts.get(id) ?? 0
+    // levels 1-8 map to tiers 1-5 (the tier decides counts/sizes; every level adds damage)
+    const TIER = [0, 1, 2, 3, 3, 4, 4, 4, 5]
+    let lvRaw = 1
+    const go = (id: ArtId, cd: number) => {
+      const lv = lvOf(id)
+      lvRaw = lv
+      const tier = TIER[lv] ?? 0
+      return lv > 0 && this.ready('art_' + id, cd * (tier >= 4 ? 0.85 : 1) * (lv >= 6 ? 0.92 : 1), dt) ? tier : 0
+    }
+    const A = this.area
+    let lv = 0
+    // ── rift arts ──
+    if ((lv = go('ember', 2.6))) {
+      const pool = near(12)
+      const n = 3 + 2 * Math.floor(lv / 2) + (lv >= 5 ? 4 : 0)
+      for (let i = 0; i < n && pool.length; i++) {
+        const e = pick(pool)
+        strike('fire', e.x + (rand() - 0.5) * 1.5, e.z + (rand() - 0.5) * 1.5, 1.3 * A, 0.55 + rand() * 0.3, dmgOf(28, lv))
+      }
+    }
+    if ((lv = go('fan', 1.6))) {
+      const n = 5 + 2 * Math.floor(lv / 2)
+      const base = aimYaw()
+      const spread = lv >= 5 ? 360 : 70
+      for (let i = 0; i < n; i++) {
+        const yaw = base + (spread >= 360 ? (i * 360) / n : (i / Math.max(1, n - 1) - 0.5) * spread)
+        const a = (yaw * Math.PI) / 180
+        this.projs.push({ id: this.nextId++, x: this.x, z: this.z, vx: Math.sin(a) * 16, vz: Math.cos(a) * 16, dmg: dmgOf(16, lv), pierce: lv >= 3 ? 4 : 2, life: 0.9, hit: [], k: 'knife' })
+      }
+      this.events.push({ t: 'shoot' })
+    }
+    if ((lv = go('tide', 3.4))) {
+      const n = 1 + (lv >= 2 ? 1 : 0) + (lv >= 4 ? 1 : 0)
+      for (let i = 0; i < n; i++) ring(i, dmgOf(34, lv) * (lv >= 5 ? 1.2 : 1))
+    }
+    if ((lv = go('lances', 2.2))) {
+      const pool = near(16).sort((a, b) => b.maxHp - a.maxHp)
+      const n = 1 + (lv >= 2 ? 1 : 0) + (lv >= 4 ? 2 : 0) + (lv >= 5 ? 2 : 0)
+      for (let i = 0; i < n && i < pool.length; i++) strike('spear', pool[i].x, pool[i].z, 1.4 * A, 0.45, dmgOf(60, lv))
+    }
+    if ((lv = go('kunai', 2.0))) {
+      const bursts = lv >= 5 ? 2 : 1
+      for (let b = 0; b < bursts; b++) {
+        const n = 8 + 4 * Math.floor(lv / 2)
+        for (let i = 0; i < n; i++) {
+          const a = ((i * 360) / n + b * (180 / n)) * (Math.PI / 180)
+          this.projs.push({ id: this.nextId++, x: this.x, z: this.z, vx: Math.sin(a) * (14 - b * 3), vz: Math.cos(a) * (14 - b * 3), dmg: dmgOf(14, lv), pierce: 2, life: 0.8, hit: [], k: 'knife' })
+        }
+      }
+    }
+    if ((lv = go('drums', 2.8))) {
+      const rings = lv >= 5 ? 2 : 1
+      for (let k = 0; k < rings; k++) {
+        const n = 6 + 2 * Math.floor(lv / 2) + k * 4
+        const R = (lv >= 4 ? 4.6 : 3.8) * A + k * 3
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2 + k * 0.3
+          strike('bolt', this.x + Math.sin(a) * R, this.z + Math.cos(a) * R, 1.3 * A, 0.2 + k * 0.15, dmgOf(30, lv))
+        }
+      }
+    }
+    if ((lv = go('fist', 3.6))) {
+      const n = 1 + (lv >= 4 ? 1 : 0) + (lv >= 5 ? 1 : 0)
+      for (let i = 0; i < n; i++) {
+        const c = crowd() ?? nearest(14)
+        if (!c) break
+        strike('fist', c.x + i * 1.5, c.z, (2.4 + (lv >= 3 ? 0.6 : 0)) * A, 0.6, dmgOf(95, lv))
+      }
+    }
+    if ((lv = go('stars', 2.4))) {
+      const n = 6 + 3 * Math.floor(lv / 2) + (lv >= 5 ? 6 : 0)
+      for (let i = 0; i < n; i++) {
+        const a = rand() * Math.PI * 2
+        const rr = 2 + rand() * 9
+        strike('star', this.x + Math.sin(a) * rr, this.z + Math.cos(a) * rr, 1.2 * A, 0.6 + rand() * 0.5, dmgOf(26, lv))
+      }
+    }
+    if ((lv = go('broadside', 3.0))) {
+      const lines = lv >= 3 ? 2 : 1
+      const shells = 5 + 2 * Math.floor(lv / 2) + (lv >= 5 ? 3 : 0)
+      const base = aimYaw(16)
+      for (let l = 0; l < lines; l++) {
+        const a = ((base + (l ? 180 : 0)) * Math.PI) / 180
+        for (let i = 0; i < shells; i++) strike('cannon', this.x + Math.sin(a) * (2 + i * 1.8), this.z + Math.cos(a) * (2 + i * 1.8), 1.4 * A, 0.3 + i * 0.12, dmgOf(38, lv))
+      }
+    }
+    if ((lv = go('pillars', 2.6))) {
+      const pool = near(13)
+      const n = 4 + 2 * Math.floor(lv / 2) + (lv >= 5 ? 4 : 0)
+      for (let i = 0; i < n && pool.length; i++) {
+        const e = pick(pool)
+        strike('pillar', e.x, e.z, 1.6 * A, 0.5, dmgOf(52, lv))
+      }
+    }
+    if ((lv = go('blacksun', 4.2))) {
+      const n = 1 + (lv >= 4 ? 1 : 0) + (lv >= 5 ? 1 : 0)
+      for (let i = 0; i < n; i++) {
+        const c = crowd() ?? nearest(14)
+        if (!c) break
+        strike('sun', c.x + (i ? (rand() - 0.5) * 6 : 0), c.z + (i ? (rand() - 0.5) * 6 : 0), (3.2 + (lv >= 2 ? 0.8 : 0)) * A, 1.2, dmgOf(120, lv), 2.5)
+      }
+    }
+    if ((lv = go('wheel', 4.5))) spokes(2 + Math.floor(lv / 2) + (lv >= 5 ? 2 : 0), (8 + (lv >= 4 ? 3 : 0)) * A, 1.2, 90, 2.8, dmgOf(14, lv))
+    // ── mythic arts ──
+    if ((lv = go('kiburst', 2.4))) {
+      const base = aimYaw()
+      const dirs = lv >= 5 ? [base, base + 180] : [base]
+      for (const y of dirs) spokes(1, 16 * A, (2.6 + (lv >= 2 ? 1 : 0)) * A, 0, 0.6, dmgOf(70, lv), y)
+    }
+    if ((lv = go('cannonade', 2.6))) {
+      const n = 6 + 3 * Math.floor(lv / 2) + (lv >= 5 ? 8 : 0)
+      for (let i = 0; i < n; i++) {
+        const a = rand() * Math.PI * 2
+        const rr = 2.5 + rand() * 10
+        strike('cannon', this.x + Math.sin(a) * rr, this.z + Math.cos(a) * rr, 1.6 * A, 0.5 + rand() * 0.6, dmgOf(60, lv))
+      }
+    }
+    if ((lv = go('cuts', 1.8))) {
+      const pool = near(9)
+      const n = 4 + 3 * Math.floor(lv / 2)
+      for (let i = 0; i < n && pool.length; i++) {
+        const e = pick(pool)
+        slashAt(e.x, e.z, rand() * 360, 1.0 * A, 3.2 * A, dmgOf(45, lv))
+      }
+      if (lv >= 5) for (let i = 0; i < 2; i++) this.allies.push({ id: this.nextId++, x: this.x + (i ? 1 : -1), z: this.z - 0.5, vx: 0, vz: 0, life: 4, dmg: dmgOf(60, lv), k: 'shade', hit: [] })
+    }
+    if ((lv = go('judgment', 3.6))) {
+      const c = nearest(14) ?? { x: this.x, z: this.z }
+      const g = 3 + (lv >= 2 ? 2 : 0)
+      const reps = lv >= 5 ? 2 : 1
+      for (let r = 0; r < reps; r++)
+        for (let i = 0; i < g; i++)
+          for (let j = 0; j < g; j++) if ((i + j + r) % 2 === 0) strike('pillar', c.x + (i - (g - 1) / 2) * 3.2, c.z + (j - (g - 1) / 2) * 3.2, 1.7 * A, 0.6 + r * 0.9, dmgOf(80, lv))
+    }
+    if ((lv = go('hellrain', 2.2))) {
+      const pool = near(13)
+      const n = 8 + 4 * Math.floor(lv / 2) + (lv >= 5 ? 8 : 0)
+      for (let i = 0; i < n; i++) {
+        const e = pool.length && rand() < 0.7 ? pick(pool) : null
+        const a = rand() * Math.PI * 2
+        const rr = 2 + rand() * 9
+        strike('fire', e ? e.x : this.x + Math.sin(a) * rr, e ? e.z : this.z + Math.cos(a) * rr, 1.5 * A, 0.5 + rand() * 0.7, dmgOf(55, lv))
+      }
+    }
+    if ((lv = go('horizon', 4.0))) {
+      const n = 1 + (lv >= 2 ? 1 : 0) + (lv >= 4 ? 1 : 0) + (lv >= 5 ? 1 : 0)
+      for (let i = 0; i < n; i++) {
+        const c = i === 0 ? crowd(16) : pick(near(16))
+        if (!c) break
+        strike('sun', c.x, c.z, 3.6 * A, 1.1, dmgOf(160, lv), lv >= 3 ? 3.5 : 2)
+      }
+    }
+    if ((lv = go('foxfire', 2.2))) {
+      const n = 3 + 2 * Math.floor(lv / 2) + (lv >= 5 ? 4 : 0)
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2
+        this.allies.push({ id: this.nextId++, x: this.x + Math.sin(a), z: this.z + Math.cos(a), vx: Math.sin(a) * 6, vz: Math.cos(a) * 6, life: 3.5, dmg: dmgOf(55, lv), k: 'fox', hit: [] })
+      }
+    }
+    if ((lv = go('phantom', 3.2))) {
+      const base = this.yaw
+      const lines = lv >= 5 ? 4 : 2
+      const L = 6 + (lv >= 2 ? 3 : 0)
+      for (let l = 0; l < lines; l++) {
+        const side = ((base + 90 + l * (360 / lines)) * Math.PI) / 180
+        const fwd = (base * Math.PI) / 180
+        for (let i = 0; i < L; i++) {
+          const off = (i - L / 2) * 1.8
+          strike('cannon', this.x + Math.sin(side) * 3.5 + Math.sin(fwd) * off, this.z + Math.cos(side) * 3.5 + Math.cos(fwd) * off, 1.5 * A, 0.3 + i * 0.08, dmgOf(65, lv))
+        }
+      }
+    }
+    if ((lv = go('raijin', 2.6))) {
+      const n = 8 + 2 * Math.floor(lv / 2)
+      const R = 5 * A
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2
+        strike('bolt', this.x + Math.sin(a) * R, this.z + Math.cos(a) * R, 1.6 * A, 0.25, dmgOf(60, lv))
+      }
+      let cur = nearest(10)
+      const pts: [number, number][] = [[this.x, this.z]]
+      const used = new Set<number>()
+      const jumps = 5 + (lv >= 4 ? 4 : 0) + (lv >= 5 ? 6 : 0)
+      while (cur && pts.length <= jumps) {
+        used.add(cur.id)
+        pts.push([cur.x, cur.z])
+        this.hitEnemy(cur, dmgOf(50, lv))
+        let nx: Enemy | null = null
+        let bd = 6
+        for (const e of foes) {
+          if (!e.alive || used.has(e.id)) continue
+          const d = Math.hypot(e.x - cur.x, e.z - cur.z)
+          if (d < bd) (bd = d), (nx = e)
+        }
+        cur = nx
+      }
+      if (pts.length > 1) this.events.push({ t: 'arc', pts: pts.slice(0, 12) })
+    }
+    if ((lv = go('eyes', 4.0))) spokes(3 + Math.floor(lv / 2) + (lv >= 5 ? 3 : 0), 12 * A, 1.5, lv >= 4 ? 130 : 95, 3.2, dmgOf(22, lv))
+    if ((lv = go('abyss', 3.0))) {
+      const n = 2 + (lv >= 2 ? 1 : 0) + (lv >= 5 ? 2 : 0)
+      for (let i = 0; i < n; i++) ring(i, dmgOf(70, lv))
+    }
+    if ((lv = go('sixarms', 2.0))) {
+      const k = lv >= 5 ? 12 : 6
+      const l = (4.2 + (lv >= 3 ? 1.2 : 0)) * A
+      for (let i = 0; i < k; i++) {
+        const yaw = this.yaw + (i * 360) / k
+        const a = (yaw * Math.PI) / 180
+        slashAt(this.x + Math.sin(a) * (l / 2 + 0.3), this.z + Math.cos(a) * (l / 2 + 0.3), yaw, 1.3 * A, l, dmgOf(75, lv))
+      }
+    }
+    if ((lv = go('timestop', 9.0))) {
+      const dur = 2 + 0.4 * lv + (lv >= 5 ? 1 : 0)
+      const R = (10 + (lv >= 3 ? 4 : 0)) * A
+      for (const e of near(R)) if (e.kind !== 'boss') e.frozen = Math.max(e.frozen ?? 0, dur)
+        else e.slow = Math.max(e.slow ?? 0, dur)
+      this.events.push({ t: 'mChrono', dur, own: true })
+    }
+    if ((lv = go('wrath', 4.0))) {
+      const c = crowd(16) ?? nearest(16)
+      if (c) {
+        const r = (4 + (lv >= 3 ? 1 : 0)) * A
+        strike('sun', c.x, c.z, r, 1.0, dmgOf(220, lv), 2)
+        for (let i = 0; i < 8 + (lv >= 5 ? 8 : 0); i++) {
+          const a = (i / 8) * Math.PI * 2
+          strike('fire', c.x + Math.sin(a) * (r + 1.5), c.z + Math.cos(a) * (r + 1.5), 1.5 * A, 1.2 + i * 0.03, dmgOf(80, lv))
+        }
+      }
+    }
+    if ((lv = go('genesis', 8.0))) {
+      const R = (14 + 2 * lv) * A
+      this.events.push({ t: 'nova', x: this.x, z: this.z, r: R })
+      this.events.push({ t: 'genesis', x: this.x, z: this.z, r: R })
+      for (const e of near(R)) this.hitEnemy(e, dmgOf(400, lv))
     }
   }
 
@@ -2116,6 +2510,11 @@ export function optionLabel(o: Option): { title: string; sub: string; desc: stri
   if (o.kind === 'boost') {
     const b = BOOSTS[o.id]
     return { title: b.name, sub: 'RIFT BOOST', desc: b.desc, color: b.color, isNew: false }
+  }
+  if (o.kind === 'art') {
+    const a = ARTS[o.id]
+    const tag = a.boss ? 'MYTHIC ART' : 'NEW ART'
+    return { title: (a.boss ? '✧ ' : '') + a.name, sub: o.to === 1 ? `${tag} UNLOCKED` : `ART LV ${o.to - 1} → ${o.to}`, desc: a.desc[o.to - 1], color: a.color, isNew: o.to === 1 }
   }
   return { title: `+${o.amount} HP`, sub: 'HEAL', desc: 'Restore health', color: '#3DFF8E', isNew: false }
 }

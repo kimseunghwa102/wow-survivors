@@ -256,4 +256,16 @@ flat(B, 1.0, 1.0, am, y=0.12)
 B.emit('fx')
 finish('fx_ascend_ring')
 
+# ── Blade Fan / Shadow Kunai: a thrown knife flying along +z ──
+M = scene()
+steel = M.add('steel', '#E8EEF8', 0.95, 0.15, '#9FB4D0', 0.8)
+edge = tmat(M, 'knife_glow', t_radial('fx_knifeglow.png', '#FF4A6A', (1, 0.85, 0.9), spikes=4, power=2.2), 4)
+B = Builder(M)
+B.faces(B.a(steel), [(0, 1.1, 0.55), (0.09, 1.1, 0.0), (0, 1.1, -0.15), (-0.09, 1.1, 0.0), (0, 1.13, 0.0), (0, 1.07, 0.0)],
+        [[0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4], [1, 0, 5], [2, 1, 5], [3, 2, 5], [0, 3, 5]])
+B.box(0, 1.1, -0.3, 0.05, 0.05, 0.3, steel)
+B.quad((-0.25, 1.1, -0.6), (0.25, 1.1, -0.6), (0.25, 1.1, 0.4), (-0.25, 1.1, 0.4), edge)
+B.emit('fx')
+finish('fx_knife')
+
 print('MYTHFX', json.dumps({k: v for k, v in REPORT.items()}))

@@ -340,13 +340,14 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
       let v = boltEnt.get(b.id)
       if (!v) {
         const feather = b.k === 'feather'
-        const t = feather ? 4 + (run.g('wings') >= 5 ? 1 : 0) : tierOf(run, 'bolt')
-        const e = feather ? featherPool[t - 4].take() : boltPool[t].take()
+        const knife = b.k === 'knife'
+        const t = knife ? 9 : feather ? 4 + (run.g('wings') >= 5 ? 1 : 0) : tierOf(run, 'bolt')
+        const e = knife ? MP.knife.take() : feather ? featherPool[t - 4].take() : boltPool[t].take()
         if (!e) continue
         v = { e, t }
-        if (feather) Transform.getMutable(e).rotation = yawQ((Math.atan2(b.vx, b.vz) * 180) / Math.PI)
+        if (feather || knife) Transform.getMutable(e).rotation = yawQ((Math.atan2(b.vx, b.vz) * 180) / Math.PI)
         boltEnt.set(b.id, v)
-        const sz = b.k === 'feather' ? 1.3 : lvlSize(run, 'bolt')
+        const sz = b.k === 'feather' ? 1.3 : knife ? 1 : lvlSize(run, 'bolt')
         Transform.getMutable(e).scale = V(sz, sz, sz)
         Tween.createOrReplace(e, {
           mode: Tween.Mode.Move({ start: V(b.x, 1.1, b.z), end: V(b.x + b.vx * b.life, 1.1, b.z + b.vz * b.life) }),
@@ -358,7 +359,8 @@ export function renderRun(run: Run | null, events: Ev[], dt: number) {
   for (const [id, v] of boltEnt)
     if (!seenB.has(id)) {
       Tween.deleteFrom(v.e)
-      if (v.t >= 4) featherPool[v.t - 4].give(v.e)
+      if (v.t === 9) MP.knife.give(v.e)
+      else if (v.t >= 4) featherPool[v.t - 4].give(v.e)
       else boltPool[v.t].give(v.e)
       boltEnt.delete(id)
     }
@@ -1166,6 +1168,7 @@ let featherPool: Pool[]
 const GP = {} as Record<'kame' | 'meteor' | 'hole' | 'lsword' | 'nuke' | 'bbeam' | 'borb', Pool[]>
 const gAnims: Anim[] = []
 const orbEnt = new Map<number, { e: Entity; pool: Pool }>()
+const allyEnt = new Map<number, { e: Entity; pool: Pool }>()
 function setupGods() {
   const mk = (src: string, n: number, max: number, spin = 0) =>
     new Pool(() => {
@@ -1198,13 +1201,16 @@ function setupGods() {
   MP.light = mk('models/fx_godlight.glb', 1, 1)
   MP.chrono = mk('models/fx_chrono.glb', 1, 1, 50)
   MP.ascend = mk('models/fx_ascend_ring.glb', 1, 4)
-  MP.apillar = mk('models/fx_mpillar.glb', 1, 2, 30)
+  MP.apillar = mk('models/fx_mpillar.glb', 1, 3, 30)
+  MP.knife = mk('models/fx_knife.glb', 4, 60)
+  MP.allyFox = mk('models/fx_fox.glb', 1, 24, 200)
+  MP.allyShade = mk('models/fx_shade.glb', 1, 6)
 }
 // mythic boss patterns (Lv 350-1111)
 const RAIN_KINDS = ['spear', 'cannon', 'kunai', 'fire', 'fist', 'bolt', 'star'] as const
 const MP = { rain: {} as Record<string, Pool> } as {
   ringWarn: Pool[]; ring: Pool[]; rain: Record<string, Pool>; pillar: Pool; sun: Pool; spoke: Pool; shade: Pool; fox: Pool
-  safe: Pool; light: Pool; chrono: Pool; ascend: Pool; apillar: Pool
+  safe: Pool; light: Pool; chrono: Pool; ascend: Pool; apillar: Pool; knife: Pool; allyFox: Pool; allyShade: Pool
 }
 const ringIdx = (r0: number) => Math.max(0, Math.min(5, Math.round((r0 - 2.2) / 4)))
 function warnAt(x: number, z: number, r: number, dur: number) {
@@ -1232,7 +1238,7 @@ function playMyth(ev: Ev, run: Run | null): boolean {
       return true
     }
     case 'mStrike': {
-      warnAt(ev.x, ev.z, ev.r, ev.delay)
+      if (!ev.own) warnAt(ev.x, ev.z, ev.r, ev.delay)
       const delay = ev.delay
       if (ev.k === 'pillar') {
         gAnim(MP.pillar, delay + 0.45, (k, tr) => {
@@ -1277,7 +1283,7 @@ function playMyth(ev: Ev, run: Run | null): boolean {
       for (let i = 0; i < ev.n; i++) {
         const yaw0 = ev.a0 + (i * 360) / ev.n
         const a = (yaw0 * Math.PI) / 180
-        const e = warnPool.take()
+        const e = ev.own ? undefined : warnPool.take()
         if (e) {
           const t = Transform.getMutable(e)
           t.position = V(ev.x + Math.sin(a) * ev.len * 0.5, 0.05, ev.z + Math.cos(a) * ev.len * 0.5)
@@ -1328,6 +1334,19 @@ function playMyth(ev: Ev, run: Run | null): boolean {
         const s = 8 * Math.min(1, k * 10) * (k > 0.88 ? (1 - k) / 0.12 : 1)
         tr.position = V(run ? run.x : x0, 0, run ? run.z : z0)
         tr.scale = V(s, 1, s)
+      })
+      return true
+    }
+    case 'genesis': {
+      gAnim(MP.apillar, 1.6, (k, tr) => {
+        const w = 6 * Math.sin(Math.min(1, k * 1.2) * Math.PI)
+        tr.position = V(ev.x, 0, ev.z)
+        tr.scale = V(w, 4 + k * 6, w)
+      })
+      gAnim(MP.ascend, 1.2, (k, tr) => {
+        const s2 = 2 + k * ev.r * 2
+        tr.position = V(ev.x, 0.12, ev.z)
+        tr.scale = V(s2, 1, s2)
       })
       return true
     }
@@ -1501,9 +1520,33 @@ function renderGods(run: Run | null, dt: number) {
       o.pool.give(o.e)
       orbEnt.delete(id)
     }
+  // friendly foxfire / shadow clones from the arts
+  const seenA = new Set<number>()
+  if (run)
+    for (const a of run.allies) {
+      seenA.add(a.id)
+      let o = allyEnt.get(a.id)
+      if (!o) {
+        const pool = a.k === 'fox' ? MP.allyFox : MP.allyShade
+        const e = pool.take()
+        if (!e) continue
+        o = { e, pool }
+        allyEnt.set(a.id, o)
+      }
+      const t = Transform.getMutable(o.e)
+      t.position = V(a.x, a.k === 'fox' ? 0.2 : 0, a.z)
+      if (a.k === 'shade') t.rotation = yawQ((Math.atan2(a.vx, a.vz) * 180) / Math.PI)
+    }
+  for (const [id, o] of allyEnt)
+    if (!seenA.has(id)) {
+      o.pool.give(o.e)
+      allyEnt.delete(id)
+    }
 }
 function clearGods() {
   for (const a of gAnims.splice(0)) a.pool.give(a.e)
   for (const [, o] of orbEnt) o.pool.give(o.e)
   orbEnt.clear()
+  for (const [, o] of allyEnt) o.pool.give(o.e)
+  allyEnt.clear()
 }

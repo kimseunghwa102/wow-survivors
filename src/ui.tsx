@@ -4,7 +4,7 @@ import { buyPotion, drinkPotion } from './game/game'
 import { Ui as CasinoUi, playerInCasino } from './casino/holdem/ui'
 import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard } from './game/game'
 import { optionLabel, Option, ARENA_EVENTS, VAULT_PRIZES, COMBO_TIERS, POTION_DEFS, PotionKind } from './game/core'
-import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable, GODS, MAX_GOD_LVL, GOD_UNLOCK } from './game/defs'
+import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable, GODS, MAX_GOD_LVL, GOD_UNLOCK, ARTS, ArtId, MAX_ART_LVL } from './game/defs'
 import { feed, topRuns } from './game/net'
 import { save } from './game/persist'
 import { play } from './game/sfx'
@@ -150,6 +150,14 @@ function GoldHud() {
   )
 }
 
+/** arts, two per line (there can be 27 of them) */
+function artRows(arts: Map<ArtId, number>) {
+  const items = [...arts.entries()].map(([id, lv]) => `${ARTS[id].name} ${lv >= MAX_ART_LVL ? '★' : lv}`)
+  const rows: string[] = []
+  for (let i = 0; i < items.length; i += 2) rows.push(items.slice(i, i + 2).join('  ·  '))
+  return rows
+}
+
 /** right-center column: gold first, then the run's skills and the kill feed */
 function RightMid() {
   const r = G.run
@@ -176,6 +184,10 @@ function RightMid() {
             {r.gods.size ? <Label value="<b>✦ GOD POWERS</b>" fontSize={11} color={GOLD} uiTransform={{ height: 15, margin: { top: 4 } }} textAlign="middle-left" /> : null}
             {[...r.gods.entries()].map(([id, lv]) => (
               <Label key={`g${id}`} value={`✦ ${GODS[id].name}  <b>${lv >= MAX_GOD_LVL ? 'MAX' : 'Lv' + lv}</b>`} fontSize={13} color={C(GODS[id].color)} uiTransform={{ height: 18 }} textAlign="middle-left" />
+            ))}
+            {r.arts.size ? <Label value={`<b>✧ ARTS</b>  ${r.arts.size}/${Object.keys(ARTS).length}`} fontSize={11} color={C('#E8D28A')} uiTransform={{ height: 15, margin: { top: 4 } }} textAlign="middle-left" /> : null}
+            {artRows(r.arts).map((row, i) => (
+              <Label key={`a${i}`} value={row} fontSize={11} color={C('#F2E6C8')} uiTransform={{ height: 15 }} textAlign="middle-left" />
             ))}
             {ps.length ? <UiEntity uiTransform={{ height: 4 }} /> : null}
             {ps.map(([id, lv]) => (
