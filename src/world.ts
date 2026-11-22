@@ -16,6 +16,13 @@ export function buildWorld() {
   const arena = engine.addEntity()
   Transform.create(arena)
   GltfContainer.create(arena, { src: 'models/arena.glb' })
+  // THE BLOOD RING: the PvP block at the north end (parcels -106..-105, 79..80)
+  const blood = engine.addEntity()
+  Transform.create(blood, { position: V(0, 0, 0) })
+  GltfContainer.create(blood, { src: 'models/pvp_zone.glb' })
+  text(V(24, 7.1, 47.55), '⚔ THE BLOOD RING ⚔', 4.2, '#FF3B4E', { rot: FACE.south, outline: '#200000' })
+  text(V(24, 6.35, 47.55), 'PvP ZONE · hunters can attack each other here', 2.0, '#FFD0D6', { rot: FACE.south, outline: '#200000' })
+  text(V(24, 7.1, 48.45), 'leave the ring to be safe from hunters', 2.0, '#FFD0D6', { rot: FACE.north, outline: '#200000' })
 
   // floating rift cores above each rune circle (Blender GLB, slow spin)
   for (const [x, y, z] of [[32, 7.5, 24], [16, 7.5, 64]]) {
@@ -157,7 +164,7 @@ export function buildWorld() {
   // gate signs
   const lg = LAYOUT.lobby
   const gz = (lg.gateZ0 + lg.gateZ1) / 2
-  text(V(15.84, 8.3, gz), 'THE RIFT · PvP', 3.4, '#FF5468', { rot: FACE.west, outline: '#200000' })
+  text(V(15.84, 8.3, gz), 'THE RIFT', 3.4, '#FF5468', { rot: FACE.west, outline: '#200000' })
   text(V(17.48, 8.3, gz), 'SANCTUARY · SAFE', 3.4, '#5EF2FF', { rot: FACE.east, outline: '#001A22' })
   const lgd = LAYOUT.legends
   const gz2 = (lgd.gateZ0 + lgd.gateZ1) / 2

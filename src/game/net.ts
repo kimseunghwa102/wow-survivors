@@ -10,7 +10,7 @@ import { ARMORY, PASSIVES, PassiveId, MAX_PASSIVE_LVL } from './defs'
 import { rankOf, rankColor } from './view'
 import { syncEntity } from '@dcl/sdk/network'
 import { getPlayer } from '@dcl/sdk/players'
-import { Remote } from './core'
+import { Remote, inPvpZone } from './core'
 
 const bus = new MessageBus()
 
@@ -180,11 +180,12 @@ export function nameOf(id: string) {
 }
 
 /** remote players that my weapons may hit right now */
-export function attackable(myRunActive: boolean, meInArena: boolean): Remote[] {
+/** hunters I can hurt: both of us must stand in THE BLOOD RING */
+export function attackable(myRunActive: boolean, meInZone: boolean): Remote[] {
   const out: Remote[] = []
   for (const r of remotes.values()) {
     const fresh = now - r.seen < 3
-    out.push({ id: r.id, x: r.x, z: r.z, attackable: myRunActive && meInArena && fresh && r.run && r.ar })
+    out.push({ id: r.id, x: r.x, z: r.z, attackable: myRunActive && meInZone && fresh && r.run && r.ar && inPvpZone(r.x, r.z) })
   }
   return out.filter((r) => r.attackable)
 }

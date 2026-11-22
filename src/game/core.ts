@@ -2530,6 +2530,12 @@ function pick<T>(list: [T, number][]): T {
   return list[list.length - 1][0]
 }
 
+/** THE BLOOD RING: the only place hunters can hurt each other (parcels -106..-105, 79..80); monsters spawn everywhere */
+export const PVP_ZONE = { x0: 0.6, x1: 31.4, z0: 48.4, z1: 78.3 }
+export function inPvpZone(x: number, z: number) {
+  return x >= PVP_ZONE.x0 && x <= PVP_ZONE.x1 && z >= PVP_ZONE.z0 && z <= PVP_ZONE.z1
+}
+
 export function inArena(x: number, z: number, m = 0) {
   return ARENA.some((r) => x >= r.x0 + m && x <= r.x1 - m && z >= r.z0 + m && z <= r.z1 - m)
 }

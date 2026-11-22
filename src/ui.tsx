@@ -555,7 +555,7 @@ function StartModal() {
     )
   }
   return (
-    <Modal title="CHOOSE YOUR FIRST SKILL" sub="Enemies arrive the moment you choose. Other hunters in the arena can attack you.">
+    <Modal title="CHOOSE YOUR FIRST SKILL" sub="Enemies arrive the moment you choose. Hunters can only attack each other inside ⚔ THE BLOOD RING (north end).">
       <UiEntity uiTransform={{ flexDirection: 'row' }}>
         {STARTERS.map((w) => (
           <Card key={w} o={{ kind: 'weapon', id: w, to: 1 }} onPick={() => startRun(w)} />
@@ -937,6 +937,19 @@ function SlayerReveal() {
   )
 }
 
+/** PvP status under the top bar */
+function PvpBadge() {
+  const r = G.run
+  if (!r || G.phase !== 'running' || !G.inArena) return null
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 88 }, width: '100%', justifyContent: 'center' }}>
+      <UiEntity uiTransform={{ padding: { left: 10, right: 10, top: 2, bottom: 2 } }} uiBackground={{ color: G.inPvp ? C('#7A0A16', 0.85) : C('#10141E', 0.55) }}>
+        <Label value={G.inPvp ? '<b>⚔ BLOOD RING · PvP ON</b>' : '🛡 safe from hunters · PvP only in the Blood Ring'} fontSize={G.inPvp ? 13 : 11} color={G.inPvp ? C('#FFD0D6') : DIM} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
 /** THE ALMIGHTY has fallen: the hunter becomes God */
 function AscendEnding() {
   const t = G.ascendT
@@ -992,6 +1005,7 @@ const Root = () => (
     {G.boardOpen && G.phase !== 'levelup' && G.phase !== 'chest' && !G.questOpen ? <BoardModal /> : null}
     <GoldShop />
     <SlayerReveal />
+    <PvpBadge />
     <AscendEnding />
     <Banner />
   </UiEntity>

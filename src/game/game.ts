@@ -3,7 +3,7 @@ import { engine, Transform, AvatarLocomotionSettings, inputSystem, InputAction, 
 import { Vector3 } from '@dcl/sdk/math'
 import { movePlayerTo } from '~system/RestrictedActions'
 import LAYOUT from '../../layout.json'
-import { Run, Option, Ev, inArena, optionLabel } from './core'
+import { Run, Option, Ev, inArena, optionLabel, inPvpZone } from './core'
 import type { Entity } from '@dcl/sdk/ecs'
 import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS, GODS, MAX_GOD_LVL, ARTS, MAX_ART_LVL } from './defs'
 import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm, queueRemoteFx, fxTiers, haloTiersOf, projKind, lookOf, ascendFx, skyText } from './view'
@@ -88,6 +88,8 @@ export const G = {
   isGod: false,
   /** the ending: seconds since ascension (0 = not playing) */
   ascendT: 0,
+  /** standing in THE BLOOD RING (PvP) */
+  inPvp: false,
   ascendName: '',
   // potion belt in the lobby (server-owned) + run feel
   profileBelt: { hp: 0, rage: 0, phoenix: 0 },
@@ -951,6 +953,7 @@ export function setupGame() {
     },
     onHit: (dmg, fromId, fromName) => {
       if (!G.run || G.phase === 'dead') return
+      if (!inPvpZone(G.run.x, G.run.z)) return // outside THE BLOOD RING nobody can hurt you
       G.lastAttackerId = fromId
       G.run.receivePvp(dmg, fromId)
       if (G.run.events.some((e) => e.t === 'hurt')) G.hurtFlash = 0.25
@@ -1065,7 +1068,15 @@ export function setupGame() {
       r.yaw = yaw
       const frozen = G.phase !== 'running' || !G.inArena
       if (frozen) r.invuln = Math.max(r.invuln, 0.3)
-      const targets = G.phase === 'running' ? attackable(true, G.inArena) : []
+      const pvpNow = G.phase === 'running' && G.inArena && inPvpZone(r.x, r.z)
+      if (pvpNow !== G.inPvp) {
+        G.inPvp = pvpNow
+        if (pvpNow) {
+          banner('⚔ THE BLOOD RING — other hunters can attack you here ⚔', 2.5)
+          play('roar', 1.4)
+        } else if (G.phase === 'running') banner('🛡 you left the Blood Ring — safe from hunters', 1.8)
+      }
+      const targets = G.phase === 'running' ? attackable(true, pvpNow) : []
       const evs = r.step(dt, frozen, targets)
       if (!frozen && r.alive) {
         // aim where the camera looks (third person) — fall back to the avatar's facing
