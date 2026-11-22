@@ -36,7 +36,7 @@ Deadline for the first V0 round: **2026-11-30** (reviewed weekly — earlier is 
 > `TBD: write from your own notes above — 3–5 sentences: what you understood fast, what other players changed, what you'd copy or avoid in Nightswarm.`
 
 **Deployed test scene link**
-> `TBD: https://decentraland.org/play/?realm=YOURNAME.dcl.eth`
+> https://decentraland.org/play/?position=-106,76 (Genesis City estate — no NAME yet, so not a World)
 
 **GitHub repository**
 > https://github.com/kimseunghwa102/wow-survivors (GDD at /design/gdd.md)

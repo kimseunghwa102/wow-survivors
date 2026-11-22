@@ -8,7 +8,7 @@
 | | |
 |---|---|
 | Public experience title | WOW Nightswarm — IP & [Content Policy](https://decentraland.org/content/) status: owner declaration: original game; models are built by Blender scripts in this repo, sound effects are synthesized by script, music is a synthesized arrangement of the public-domain Jingle Bells (1857); genre mechanics only `[OPEN: owner confirms]`; the Lv 350+ bosses use broad anime-style archetypes (pirate captain, ninja, angel, demon) with original names and models — check none copies a known character `[OPEN: owner checks]`; name screening: not searched; unresolved: the Genesis City estate also hosts a hold'em room played for in-game gold that can be bought with ETH/MANA — the test World ships without it, and v1 keeps it out `[agent-decided]` |
-| Deployment target | World `TBD: owner's NAME (…dcl.eth), deployed with deploy_world.bat` · live prototype: Genesis City -106,76 (12 parcels) |
+| Deployment target | Genesis City -106,76 (12 parcels, our LAND estate) — we do not own a NAME yet, so the test scene is the live estate; a World follows if V0 is funded |
 | Studio / team name | WOW Automation — 1 developer, building with Claude Code `[agent-decided]` |
 | Date | 2026-11-22 |
 | Contact (Discord + email) | X: @bitcoinisnotall · Discord: `TBD:` · email: `TBD:` |
@@ -21,7 +21,7 @@
 |---|---|
 | **Player promise** | You are a lone hunter in a cursed fortress. You survive endless swarms to climb 48 bosses, while other hunters can turn on you. |
 | **Primary player** | For players who already enjoy survivors-like games (Vampire Survivors, Brotato), arriving alone from Discover or a shared clip, looking for a five-minute run that keeps counting toward something big. |
-| **Current status** | Playable core loop live in Genesis City at -106,76 (since 2026-11-17); test World `TBD: link after deploy_world.bat` |
+| **Current status** | Playable core loop live in Genesis City: [decentraland.org/play/?position=-106,76](https://decentraland.org/play/?position=-106,76) (since 2026-11-17) |
 | **Requested round** | V0 |
 | **Live at end of the round** | A player can drop into a run alone or form a 2–4 hunter Hunt Party at the gate, revive a fallen partner, and split boss vaults — on phone or desktop. `[agent-decided]` |
 
@@ -201,7 +201,7 @@ Players who want a slow story or building — this is fast arcade combat.
 | 1 — Prototype definition | Hunt Party: 2–4 hunters link at the gate and see a party HUD (name, HP, level) |
 | 2 — Core interaction + first-group test | Revive a fallen partner within 10 seconds; shared boss vault; playtest with 4 real hunters |
 | 3 — Core systems refinement | Mobile pass: HUD and modals for a phone screen; first-minute tutorial without reading |
-| 4 — Playable release, including testing and deployment | Party board on the Hall of Legends; mobile playtest at 20 hunters; release in the World |
+| 4 — Playable release, including testing and deployment | Party board on the Hall of Legends; mobile playtest at 20 hunters; release in our scene |
 
 **What keeps the experience changing after launch**
 

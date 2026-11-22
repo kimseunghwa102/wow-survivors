@@ -6,11 +6,10 @@ This repository is the working game project for the **Decentraland Creator Succe
 
 ## Play
 
-- **Test World (Creator Success build):** `TBD: https://decentraland.org/play/?realm=YOURNAME.dcl.eth` (core game only: no casino, no paid gold, no raid gate)
-- **Live prototype in Genesis City:** [-106,76](https://decentraland.org/play/?position=-106,76) (12 parcels, live since 2026-11-17)
+- **Test scene (Genesis City):** [decentraland.org/play/?position=-106,76](https://decentraland.org/play/?position=-106,76) — 12 parcels, live since 2026-11-17. We don't own a NAME yet, so the test scene runs on our LAND estate; `deploy_world.bat` publishes the same game to a World once we have one.
 - **Game Design Document:** [design/gdd.md](design/gdd.md)
 
-The test World is a test build. Mobile performance, the Hunt Party co-op mode and balancing are the work proposed for V0, as documented in the GDD.
+The scene is a test build. Mobile performance, the Hunt Party co-op mode and balancing are the work proposed for V0, as documented in the GDD.
 
 ## What is playable now
 
