@@ -1,5 +1,5 @@
 import ReactEcs, { ReactEcsRenderer, UiEntity, Label, Button } from '@dcl/sdk/react-ecs'
-import { WORLD_EDITION } from './edition'
+import { CORE_ONLY } from './edition'
 import { Color4 } from '@dcl/sdk/math'
 import { buyPotion, drinkPotion } from './game/game'
 import { Ui as CasinoUi, playerInCasino } from './casino/holdem/ui'
@@ -256,7 +256,7 @@ function Dock() {
   const on = G.autoAttack
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: 24, right: 16 }, flexDirection: 'column', alignItems: 'flex-end' }}>
-      {WORLD_EDITION ? null : (
+      {CORE_ONLY ? null : (
       <Button
         value={G.firstPurchase ? '💎 TREASURY [4] · +50%' : '💎 TREASURY [4]'}
         fontSize={15}

@@ -9,7 +9,7 @@ Origin at the feet (flyers: the lowest point; view.ts lifts them), facing +z, lo
   600 boss_zerath     ZERATH — star-devouring cosmic tyrant with a black hole for a heart
   650 boss_yorumi     YORUMI — white fox empress with nine foxfire tails
   700 boss_armada     THE DROWNED ARMADA — flying ghost galleon
-  750 boss_raikou     RAIKOU — oni thunder shogun with a ring of storm drums
+  750 boss_raikou     IKAZUCHI — oni thunder shogun with a ring of storm drums
   800 boss_ophanos    OPHANOS — wheels within wheels, full of eyes and fire
   850 boss_nyxara     NYXARA — queen of the abyss on great bat wings
   900 boss_asurakh    ASURAKH — six-armed, three-faced wrath with a ring of fire
@@ -814,7 +814,7 @@ def armada():
     finish(name)
 
 
-# ════════════════════════════ 750 RAIKOU ════════════════════════════
+# ════════════════════════════ 750 IKAZUCHI ════════════════════════════
 def raikou():
     name = 'boss_raikou'
     M = new_scene()

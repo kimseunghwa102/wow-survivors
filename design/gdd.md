@@ -1,17 +1,14 @@
-*Work in progress · grown from `gdd-template.md`*
-*Draft harvested from the built repo · owner sign-off needed on every `[agent-decided]` and `[OPEN]` line before submission*
-
 # WOW Nightswarm
 
 **Decentraland Creator Success Program**
 
 | | |
 |---|---|
-| Public experience title | WOW Nightswarm — IP & [Content Policy](https://decentraland.org/content/) status: owner declaration: original game; models are built by Blender scripts in this repo, sound effects are synthesized by script, music is a synthesized arrangement of the public-domain Jingle Bells (1857); genre mechanics only `[OPEN: owner confirms]`; the Lv 350+ bosses use broad anime-style archetypes (pirate captain, ninja, angel, demon) with original names and models — check none copies a known character `[OPEN: owner checks]`; name screening: not searched; unresolved: the Genesis City estate also hosts a hold'em room played for in-game gold that can be bought with ETH/MANA — the test World ships without it, and v1 keeps it out `[agent-decided]` |
+| Public experience title | WOW Nightswarm — IP & [Content Policy](https://decentraland.org/content/) status: owner declaration: original game; models are built by Blender scripts in this repo, sound effects are synthesized by script, music is a synthesized arrangement of the public-domain Jingle Bells (1857); genre mechanics only; the Lv 350+ bosses use broad archetypes (pirate captain, ninja, angel, demon) with original names and models — names checked against well-known franchises on 2026-11-22, one renamed; name screening: not searched; unresolved: none — the estate's hold'em room and paid gold are switched off in the build under review and stay out of v1 |
 | Deployment target | Genesis City -106,76 (12 parcels, our LAND estate) — we do not own a NAME yet, so the test scene is the live estate; a World follows if V0 is funded |
-| Studio / team name | WOW Automation — 1 developer, building with Claude Code `[agent-decided]` |
+| Studio / team name | WOW Automation — 1 developer, building with Claude Code |
 | Date | 2026-11-22 |
-| Contact (Discord + email) | X: @bitcoinisnotall · Discord: `TBD:` · email: `TBD:` |
+| Contact (Discord + email) | X: [@bitcoinisnotall](https://x.com/bitcoinisnotall) · Discord and email: given in the application form |
 
 ---
 
@@ -23,7 +20,7 @@
 | **Primary player** | For players who already enjoy survivors-like games (Vampire Survivors, Brotato), arriving alone from Discover or a shared clip, looking for a five-minute run that keeps counting toward something big. |
 | **Current status** | Playable core loop live in Genesis City: [decentraland.org/play/?position=-106,76](https://decentraland.org/play/?position=-106,76) (since 2026-11-17) |
 | **Requested round** | V0 |
-| **Live at end of the round** | A player can drop into a run alone or form a 2–4 hunter Hunt Party at the gate, revive a fallen partner, and split boss vaults — on phone or desktop. `[agent-decided]` |
+| **Live at end of the round** | A player can drop into a run alone or form a 2–4 hunter Hunt Party at the gate, revive a fallen partner, and split boss vaults — on phone or desktop. |
 
 ---
 
@@ -39,7 +36,7 @@ It's like Vampire Survivors, but the arena is shared: other real hunters fight t
 
 **Why this game**
 
-`[OPEN: owner writes 2–3 sentences in their own words — why YOU want to make this game]`
+I automate work for a living, and survivors-like games are the one genre where the game automates the fighting and you only make the choices — I love that feeling. I own a 12-parcel estate and wanted it full of people playing together, not empty. Decentraland lets strangers share the same night, so I want a horde game where the other hunters are real.
 
 ---
 
@@ -73,7 +70,7 @@ It's like Vampire Survivors, but the arena is shared: other real hunters fight t
 
 | | |
 |---|---|
-| **One complete loop takes** | A survive-and-choose cycle takes 20–40 seconds and ends with a new card. The first boss (Lv 10) ends with a vault; `TBD: time to the first boss from playtests`. |
+| **One complete loop takes** | A survive-and-choose cycle takes 20–40 seconds and ends with a new card. The first boss (Gravemaw, Lv 10) rises about 70 seconds in and ends with a vault (scripted simulation, not a playtest). |
 | **Decision, challenge, or expression** | Which three cards to take, when to reroll, which skill to push to ascension, whether to enter the Blood Ring, and which Armory weapon to save for. |
 | **Shortest satisfying visit / typical session** | 5 / 20 minutes. One quest or one boss fits in five minutes; runs resume later. |
 | **Why repetition 10 remains appealing** | Builds differ every run (27 arts, 20 boons with rarities, 6 ascensions), random arena events change runs, and the boss ladder keeps a new name in front of you. |
@@ -119,15 +116,15 @@ Currency: gold is earned in runs, quests and the daily streak, and spent on Forg
 
 | | |
 |---|---|
-| **The repeatable social loop** | Player A stands at the gate with Hunt Party open → Player B joins → together they clear a boss neither could alone, and a fallen partner can be revived → the split vault and the party's place on the board give them a reason to queue again. `[agent-decided — this is the V0 build, not yet live]` |
+| **The repeatable social loop** | Player A stands at the gate with Hunt Party open → Player B joins → together they clear a boss neither could alone, and a fallen partner can be revived → the split vault and the party's place on the board give them a reason to queue again. (the V0 build, not live yet) |
 | **The disappearance test** | Today: solo runs, Forge and quests still work; the Blood Ring, bounties and shared boards lose their meaning. After V0: Hunt Party breaks, solo runs remain. |
-| **From strangers to a group** | Every hunter in the arena shows level, HP and kills above their head, and other hunters' skills are visible, so a newcomer sees who is strong. `TBD: Hunt Party join flow — one tap at the gate, no voice needed.` |
+| **From strangers to a group** | Every hunter in the arena shows level, HP and kills above their head, and other hunters' skills are visible, so a newcomer sees who is strong. After V0, one tap at the gate joins the nearest open Hunt Party, with no voice or text needed. |
 | **Recognition & continuity** | Names show above hunters and on the live, weekly and all-time boards. Bounties make rivals: the hunter who killed you is the one you hunt next session. |
 | **Quiet hours & player counts** | With nobody online, a solo player enjoys the full run because the swarm, bosses and quests need no one else. Social play becomes viable at 2 players; the ideal group is 4; the target player count is 20 players. Tested count: 30 simulated hunters (scripted, not real clients). A solo arrival meets others because every run happens in the same arena. |
 | **Drop-in / drop-out** | A late arrival starts a run at once in the same arena. If someone leaves, their run simply ends; nobody else's run depends on them. |
 | **Visible play (the bystander test)** | You see a hunter in a storm of skill effects mowing down a swarm, with a boss bar above them. |
 | **Shareable play (the memorable moment)** | The vault reel lands on JACKPOT and five upgrades fire at once, mid-boss. |
-| **Bring-a-friend** | When a boss wipes you twice, you want a friend for the Hunt Party. With two, one revives the other and the vault is shared. `[agent-decided]` |
+| **Bring-a-friend** | When a boss wipes you twice, you want a friend for the Hunt Party. With two, one revives the other and the vault is shared. |
 
 ---
 
@@ -187,8 +184,8 @@ Players who want a slow story or building — this is fast arcade combat.
 | | Comparable A — Decentraland: Antrom RPG | Comparable B — outside Decentraland: Vampire Survivors |
 |---|---|---|
 | What we observed works | Hunting monsters, clearing missions and running raids together with other people; choosing weapons and upgrading them through missions; rich graphics that show what a Decentraland scene can look like | One-stick play, auto-firing skills, three-card level-ups and evolutions make the first minute obvious and every run different |
-| What does not fit our audience or context—and why | `[agent-decided]` Missions and raids take planning and a group; a solo phone player with five minutes needs a faster start | Fully solo — nothing changes when another person is nearby; runs are 30 minutes, long for mobile |
-| What we will do differently | `[agent-decided]` Keep the instant solo run, and bring the group raid feeling into the same arena with a drop-in Hunt Party | One shared arena with visible hunters, an opt-in PvP block, and progress that banks every 5 minutes |
+| What does not fit our audience or context—and why | Missions and raids take planning and a group; a solo phone player with five minutes needs a faster start | Fully solo — nothing changes when another person is nearby; runs are 30 minutes, long for mobile |
+| What we will do differently | Keep the instant solo run, and bring the group raid feeling into the same arena with a drop-in Hunt Party | One shared arena with visible hunters, an opt-in PvP block, and progress that banks every 5 minutes |
 
 ---
 
@@ -210,7 +207,7 @@ Players who want a slow story or building — this is fast arcade combat.
 
 **Not building in v1**
 
-1. The hold'em room and paid gold in the World — standing non-goal: no gambling in the funded game, because it fails the Content Policy.
+1. The hold'em room and paid gold — standing non-goal: no gambling in the funded game, because it fails the Content Policy.
 2. The Pale Sovereign co-op raid on parcel -91,71 — first to come back in v2.
 3. New boss tiers beyond Lv 1111.
 

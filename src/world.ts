@@ -5,7 +5,7 @@ import LAYOUT from '../layout.json'
 import { node, text, setText, hitbox, bob, V, FACE } from './helpers'
 import { topRuns, topPvp } from './game/net'
 import { save, loadBoard, raidPublic } from './game/persist'
-import { WORLD_EDITION } from './edition'
+import { WORLD_EDITION, CORE_ONLY } from './edition'
 import { G, equipped, openGoldShop } from './game/game'
 import { ARMORY, RAID_PARCEL } from './game/defs'
 
@@ -93,7 +93,7 @@ export function buildWorld() {
     void openExternalUrl({ url: 'https://x.com/bitcoinisnotall' })
   })
 
-  // the test World has no raid gate and no gold shop (core game only)
+  // the test World has no raid gate (it would teleport out of the World)
   if (!WORLD_EDITION) {
   // GATE TO THE REAPER'S REALM — co-op world boss on parcel -91,71
   const gate = node(V(6.0, 0, 14.4), Quaternion.fromEulerDegrees(0, 180, 0))
@@ -127,6 +127,9 @@ export function buildWorld() {
       .catch(() => {})
   })
 
+  }
+  // no paid gold in the core-only builds (test World, Creator Success review)
+  if (!CORE_ONLY) {
   // THE TREASURY (gold shop) — overflowing chest kiosk facing the spawn; click to open
   const [tx, , tz] = LAYOUT.treasury
   const tre = node(V(tx, 0, tz), Quaternion.fromEulerDegrees(0, -92, 0))

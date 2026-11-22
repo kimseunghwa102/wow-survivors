@@ -4,12 +4,12 @@ import { buildWorld } from './world'
 import { setupGame, G } from './game/game'
 import { setupUi } from './ui'
 import { buildCasino } from './casino/build'
-import { WORLD_EDITION } from './edition'
+import { CORE_ONLY } from './edition'
 
 export function main() {
   buildWorld()
   // GOLD HOLD'EM casino at -103,78 (the GYBM casino, playing for WOW gold)
-  if (!WORLD_EDITION) buildCasino()
+  if (!CORE_ONLY) buildCasino()
   setupGame()
   setupUi()
   // chest reel animation timer
