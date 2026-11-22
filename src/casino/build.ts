@@ -156,7 +156,7 @@ function build() {
   Transform.create(bubble, { position: V(PX, PY, PZ), rotation: turn, scale: V(0.7, 0.7, 0.7) })
   GltfContainer.create(bubble, { src: 'models/casino/portal_gybm_bub.glb', ...NOCOL })
   VisibilityComponent.create(bubble, { visible: false })
-  text(V(PX, 4.6, PZ), 'WORMHOLE\nGYBM CASINO', 3.0, hex4('#FFD700FF'), 0, true, hex3('#3A0A00'))
+  text(V(PX, 4.6, PZ), 'WORMHOLE\nWOW CASINO -76,-48', 3.0, hex4('#FFD700FF'), 0, true, hex3('#3A0A00'))
   text(V(PX, 3.95, PZ), 'walk in → -76,-48 · same table, same gold', 1.3, hex4('#7DF9FFFF'), 0, true)
   const glow = engine.addEntity()
   Transform.create(glow, { position: V(PX, 2.0, PZ) })

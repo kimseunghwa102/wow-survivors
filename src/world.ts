@@ -45,7 +45,7 @@ export function buildWorld() {
   LightSource.create(node(V(32, 14, 24)), { type: LightSource.Type.Point({}), color: fire, intensity: 6000, range: 24 })
   LightSource.create(node(V(16, 13, 64)), { type: LightSource.Type.Point({}), color: fire, intensity: 5000, range: 20 })
   LightSource.create(node(V(8, 4, 8)), { type: LightSource.Type.Point({}), color: Color3.create(1, 0.8, 0.45), intensity: 2500, range: 14 })
-  // (the -103,78 cell is the GYBM casino now; it brings its own lights)
+  // (the -103,78 cell is the WOW casino; it brings its own lights)
 
   // ── Sanctuary ──
   const title = node(V(8, 4.2, 8))
@@ -168,7 +168,7 @@ export function buildWorld() {
   text(V(17.48, 8.3, gz), 'SANCTUARY · SAFE', 3.4, '#5EF2FF', { rot: FACE.east, outline: '#001A22' })
   const lgd = LAYOUT.legends
   const gz2 = (lgd.gateZ0 + lgd.gateZ1) / 2
-  text(V(46.44, 8.3, gz2), 'GYBM CASINO · GOLD HOLD\'EM', 3.0, '#FFD86A', { rot: FACE.west, outline: '#2A1A00' })
+  text(V(46.44, 8.3, gz2), 'WOW CASINO · GOLD HOLD\'EM', 3.0, '#FFD86A', { rot: FACE.west, outline: '#2A1A00' })
   text(V(16, 10.4, 78.22), 'THE HOLLOW KING AWAITS', 4, '#C79BFF', { outline: '#10001A' })
 
   // ── Hall of Legends leaderboard ──

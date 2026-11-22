@@ -126,9 +126,9 @@ function LoginModal() {
       uiTransform={{ positionType: 'absolute', position: { top: '22%', left: '50%' }, margin: { left: -210 }, width: 420, flexDirection: 'column', padding: 18, alignItems: 'center' }}
       uiBackground={{ color: C.panel }}
     >
-      <Label value="Join GYBM Hold'em" fontSize={22} color={C.gold} uiTransform={{ height: 32 }} />
+      <Label value="Join WOW Hold'em" fontSize={22} color={C.gold} uiTransform={{ height: 32 }} />
       <Label
-        value={'Same accounts and chips as the GYBM web table.\nNew nickname = new account with free chips.'}
+        value={'Same accounts and chips as the WOW Hold\'em web table.\nNew nickname = new account with free chips.'}
         fontSize={13}
         color={C.dim}
         uiTransform={{ height: 40, margin: { bottom: 8 } }}
