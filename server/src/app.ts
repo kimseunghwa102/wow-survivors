@@ -231,7 +231,7 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
       const b = req.body || {}
       const runId = String(b.runId || '')
       if (b.snap) await saveCheckpoint(db, runId, a.address, b.snap)
-      const r = await recordFusion(db, a.address, runId, String(b.core || ''), Array.isArray(b.essences) ? b.essences.map(String) : [])
+      const r = await recordFusion(db, a.address, runId, String(b.core || ''), Array.isArray(b.essences) ? b.essences.map(String) : [], b.jackpot ? String(b.jackpot) : undefined)
       const p = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
       res.status(r.ok ? 200 : 400).json({ ...r, profile: p ? toProfile(p) : null })
     })

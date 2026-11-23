@@ -95,6 +95,7 @@ type Handlers = {
   onBounty: (victimName: string, victimLvl: number) => void
   onFx: (fromId: string, tiers: number[], evs: number[][]) => void
   onAscend: (name: string, x: number, z: number, id: string) => void
+  onJackpot: (name: string, kind: 'divine' | 'dung', x: number, z: number) => void
 }
 let H: Handlers
 
@@ -124,6 +125,11 @@ export function setupNet(h: Handlers) {
   bus.on('god', (m: { id: string; n: string; x: number; z: number }) => {
     if (!m || m.id === me().id) return
     H.onAscend(String(m.n || 'A hunter').slice(0, 24), Number(m.x) || 32, Number(m.z) || 24, m.id)
+  })
+  // someone hit a fusion jackpot (divine or disaster): everyone hears about it
+  bus.on('jp', (m: { id: string; n: string; k: string; x: number; z: number }) => {
+    if (!m || m.id === me().id || (m.k !== 'divine' && m.k !== 'dung')) return
+    H.onJackpot(String(m.n || 'A hunter').slice(0, 24), m.k, Number(m.x) || 32, Number(m.z) || 24)
   })
   bus.on('fx', (m: { id: string; a: number[]; e: number[][] }) => {
     if (!m || m.id === me().id || !Array.isArray(m.e)) return
@@ -164,6 +170,10 @@ export function sendStatus(s: Omit<Status, 'id' | 'n'>) {
 export function sendAscend(x: number, z: number) {
   const m = me()
   bus.emit('god', { id: m.id, n: m.name, x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10 })
+}
+export function sendJackpot(kind: 'divine' | 'dung', x: number, z: number) {
+  const m = me()
+  bus.emit('jp', { id: m.id, n: m.name, k: kind, x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10 })
 }
 export function sendHit(to: string, dmg: number) {
   const m = me()

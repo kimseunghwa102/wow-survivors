@@ -189,10 +189,10 @@ export async function serverClaimQuest(i: number) {
 }
 
 /** save a fused art to the recipe book (first time each recipe pays gold); checkpoints the run first */
-export async function serverFusion(core: string, essences: string[], snap: RunSnap) {
+export async function serverFusion(core: string, essences: string[], snap: RunSnap, jackpot?: 'divine' | 'dung') {
   if (!save.online || !save.runId) return null
   try {
-    const r = await call('POST', '/api/fusion', { runId: save.runId, core, essences, snap })
+    const r = await call('POST', '/api/fusion', { runId: save.runId, core, essences, snap, jackpot })
     if (r.profile) save.profile = r.profile
     return r as { ok: boolean; isNew: boolean; reward: number; key: string; codex: string[]; profile: ServerProfile | null }
   } catch (e) {

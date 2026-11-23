@@ -2,7 +2,7 @@
 import { Ev } from './core'
 
 /** my run events → [code, ...numbers] packets (null = not shared) */
-const RAIN = ['spear', 'cannon', 'kunai', 'fire', 'fist', 'bolt', 'star', 'pillar', 'sun']
+const RAIN = ['spear', 'cannon', 'kunai', 'fire', 'fist', 'bolt', 'star', 'pillar', 'sun', 'poop', 'pee']
 
 export function encodeFx(e: Ev, x: number, z: number): [number, number[]] | null {
   switch (e.t) {

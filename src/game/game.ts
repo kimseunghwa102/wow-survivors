@@ -6,7 +6,7 @@ import { movePlayerTo } from '~system/RestrictedActions'
 import LAYOUT from '../../layout.json'
 import { Run, Option, Ev, inArena, optionLabel, inPvpZone } from './core'
 import type { Entity } from '@dcl/sdk/ecs'
-import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS, GODS, MAX_GOD_LVL, ARTS, MAX_ART_LVL, ArtId, FUSION_LVL, ART_SLOTS, recipeKey, RECIPE_REWARD_PER_STAR } from './defs'
+import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS, GODS, MAX_GOD_LVL, ARTS, MAX_ART_LVL, ArtId, FUSION_LVL, ART_SLOTS, recipeKey, RECIPE_REWARD_PER_STAR, JACKPOT_KEY } from './defs'
 import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm, queueRemoteFx, fxTiers, haloTiersOf, projKind, lookOf, ascendFx, skyText } from './view'
 import { encodeFx, decodeFx } from './fxnet'
 import { playerInCasino } from '../casino/holdem/ui'
@@ -16,7 +16,7 @@ let lastCasinoView = 0
 import { ARENA_EVENTS, VaultPrize, VAULT_PRIZES, POTION_DEFS, PotionKind } from './core'
 import { attachCosmetic, anchorOf, detach } from './cosmetics'
 import { play, setupSfx, musicLevel } from './sfx'
-import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf, sendFx, pushFeed, sendAscend } from './net'
+import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf, sendFx, pushFeed, sendAscend, sendJackpot } from './net'
 import { serverQuests, serverClaimQuest, QuestState, serverBuyPotion, serverFusion } from './persist'
 import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile, serverArmoryBuy, serverClaimDaily, shopConfig, shopQuote, shopConfirm, serverSaveRun, serverAbandon, pingServer } from './persist'
 import { getUserAccount, sendAsync, requirePayment } from '~system/EthereumController'
@@ -595,6 +595,27 @@ function nextModal() {
   G.phase = 'running'
 }
 
+/** the 1-in-1000 divine fusion and the 1-in-500 disaster: big, loud and seen by everyone in the scene */
+export function jackpotFx(name: string, kind: 'divine' | 'dung', x: number, z: number, mine: boolean) {
+  if (kind === 'divine') {
+    G.flash = 1
+    play('choir')
+    play('evolve', 0.8)
+    play('jackpot', 0.9)
+    skyText(`✦ ${name.toUpperCase()} ✦`, 'DIVINE FUSION · CROWN OF CREATION', 20, x, z)
+    ascendFx(x, z)
+    pushFeed(`✦ ${name} made the DIVINE FUSION: CROWN OF CREATION ✦`, '#FFD86A')
+    banner(mine ? '✦ 1 IN 1000 ✦  DIVINE FUSION — CROWN OF CREATION IS YOURS' : `✦ ${name.toUpperCase()} MADE THE DIVINE FUSION ✦`, 7)
+    if (mine && G.run) upgradeFx(G.run, 'evolve', 'crown', '✦ CROWN OF CREATION ✦', '#FFD86A')
+  } else {
+    play('bonk', 0.6)
+    play('slam', 0.7)
+    pushFeed(`💩 ${name} fused a ROYAL FLUSH`, '#C08A50')
+    banner(mine ? '💩 1 IN 500 … DISASTER FUSION — ROYAL FLUSH. It stinks. It still hurts.' : `💩 ${name.toUpperCase()} GOT THE ROYAL FLUSH`, 6)
+    if (mine && G.run) upgradeFx(G.run, 'passive', 'flush', '💩 ROYAL FLUSH', '#9A6A3A')
+  }
+}
+
 // ── Fusion Forge ──
 export function openForge(intro = false) {
   const r = G.run
@@ -857,6 +878,19 @@ function handle(evs: Ev[]) {
         banner('rage wears off…', 1.2)
         break
       case 'fuse': {
+        if (e.jackpot) {
+          jackpotFx(me().name, e.jackpot, r.x, r.z, true)
+          sendJackpot(e.jackpot, r.x, r.z)
+          G.codex.add(JACKPOT_KEY[e.jackpot])
+          G.forgePairsSeen = r.fusablePairs()
+          serverFusion(e.core, [], r.snapshot(), e.jackpot).then((res) => {
+            if (!res) return
+            if (res.profile) applyProfile(res.profile)
+            for (const k of res.codex ?? []) G.codex.add(k)
+            if (res.isNew && res.reward) banner(`📖 ${e.jackpot === 'divine' ? 'DIVINE' : 'DISASTER'} recipe saved to your book · +${res.reward} gold`, 4)
+          })
+          break
+        }
         const name = r.artName(e.core)
         G.flash = 0.5
         play('evolve')
@@ -1079,6 +1113,7 @@ export function setupGame() {
       if (G.run.events.some((e) => e.t === 'hurt')) G.hurtFlash = 0.25
       if (!G.run.alive) endRun(fromName || nameOf(fromId))
     },
+    onJackpot: (name, kind, x, z) => jackpotFx(name, kind, x, z, false),
     onAscend: (name, x, z) => {
       pushFeed(`✦ ${name} HAS BECOME GOD ✦`, '#FFD86A')
       banner(`✦ ${name.toUpperCase()} DEFEATED THE ALMIGHTY AND BECAME GOD ✦`, 8)

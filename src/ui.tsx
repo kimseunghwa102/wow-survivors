@@ -601,7 +601,8 @@ function ForgeModal() {
   return (
     <Modal title="⚗ FUSION FORGE" sub={`${r.legacyArts ? 'Optional for this run (it started before fusion, so it keeps every art). ' : f.intro ? `Lv ${FUSION_LVL}: art slots are now ${ART_SLOTS}. ` : ''}Two MAX arts become one stronger art — one effect on screen instead of two. Up to ${'★'.repeat(MAX_ESSENCE)}.`} color={C('#FF6FB0')}>
       <Label value={`<b>${step}</b>`} fontSize={15} color={WHITE} uiTransform={{ height: 22 }} />
-      <Label value={`📖 recipe book: ${G.codex.size} discovered — same core + new element mix = new recipe`} fontSize={11} color={C('#E8D28A')} uiTransform={{ height: 16, margin: { bottom: 6 } }} />
+      <Label value={`📖 recipe book: ${G.codex.size} discovered — same core + new element mix = new recipe`} fontSize={11} color={C('#E8D28A')} uiTransform={{ height: 16 }} />
+      <Label value="legend says 1 fusion in 1000 touches the divine… and 1 in 500 goes down the drain" fontSize={10} color={DIM} uiTransform={{ height: 15, margin: { bottom: 6 } }} />
       <UiEntity uiTransform={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', width: 900 }}>
         {ids.map((id) => {
           const lv = r.arts.get(id) ?? 0

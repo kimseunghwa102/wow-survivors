@@ -560,6 +560,17 @@ function tintPool(col: string) {
   }
   return p
 }
+// 💩 ROYAL FLUSH props: plain shapes, no models needed
+let poopPool: Pool | undefined
+let peePool: Pool | undefined
+function blobPool(col: string, glow: number) {
+  return new Pool(() => {
+    const e = ent()
+    MeshRenderer.setSphere(e)
+    Material.setPbrMaterial(e, { albedoColor: Color4.fromHexString(col + 'FF'), emissiveColor: Color3.fromHexString(col), emissiveIntensity: glow, roughness: 0.35, castShadows: false })
+    return e
+  }, 4, 60)
+}
 /** a disc of radius r that flashes open at the impact (after delay) and sinks away */
 function tintGlow(x: number, z: number, r: number, delay: number, col: string) {
   const life = delay + 0.42
@@ -575,7 +586,7 @@ function tintGlow(x: number, z: number, r: number, delay: number, col: string) {
 
 function playEvents(events: Ev[], run: Run | null, tiers?: number[]) {
   for (const ev of events) {
-    if ((ev.t === 'mStrike' || ev.t === 'slash') && ev.tint) tintGlow(ev.x, ev.z, ev.t === 'slash' ? Math.max(ev.w, ev.l) * 0.5 : ev.r, ev.t === 'mStrike' ? ev.delay : 0, ev.tint)
+    if ((ev.t === 'mStrike' || ev.t === 'slash') && ev.tint && !(ev.t === 'mStrike' && (ev.k === 'poop' || ev.k === 'pee'))) tintGlow(ev.x, ev.z, ev.t === 'slash' ? Math.max(ev.w, ev.l) * 0.5 : ev.r, ev.t === 'mStrike' ? ev.delay : 0, ev.tint)
     else if (ev.t === 'mRing' && ev.tint) tintGlow(ev.x, ev.z, ev.r1, 0, ev.tint)
     if (ev.t === 'slash') {
       const asc = tiers ? tiers[0] : run ? tierOf(run, 'lash') : 0
@@ -1294,6 +1305,35 @@ function playMyth(ev: Ev, run: Run | null): boolean {
           tr.position = V(ev.x, 0.6 + 15 * Math.pow(1 - f, 1.6), ev.z)
           tr.scale = V(s, s, s)
         })
+      } else if (ev.k === 'poop') {
+        // a lobbed swirl that lands with a squish
+        poopPool ??= blobPool('#6B3F1A', 0.15)
+        const s = ev.r * 0.9
+        gAnim(poopPool, delay + 0.5, (k, tr) => {
+          const el = k * (delay + 0.5)
+          const f = Math.min(1, el / delay)
+          if (el <= delay) {
+            tr.position = V(ev.x - 4 * (1 - f), 0.4 + 9 * Math.sin(f * Math.PI) * (1 - f * 0.6), ev.z - 2 * (1 - f))
+            tr.scale = V(s * 0.8, s * 0.95, s * 0.8)
+          } else {
+            const a = (el - delay) / 0.5
+            tr.position = V(ev.x, 0.15, ev.z)
+            tr.scale = V(s * (1.1 + a * 0.4), s * 0.35 * (1 - a), s * (1.1 + a * 0.4))
+          }
+        })
+        tintGlow(ev.x, ev.z, ev.r, delay, '#7A4A1E')
+      } else if (ev.k === 'pee') {
+        // a golden arc, drop by drop, ending in a puddle
+        peePool ??= blobPool('#FFE14A', 1.6)
+        gAnim(peePool, delay + 0.3, (k, tr) => {
+          const el = k * (delay + 0.3)
+          if (el < delay * 0.4) return void (tr.position = HIDE)
+          const f = Math.min(1, el / Math.max(0.05, delay))
+          tr.position = V(ev.x, 0.2 + 1.6 * Math.sin((1 - f) * Math.PI * 0.5), ev.z)
+          const d = 0.28 * (1 - Math.max(0, el - delay) / 0.3)
+          tr.scale = V(d, d * 1.6, d)
+        })
+        tintGlow(ev.x, ev.z, ev.r, delay, '#FFE14A')
       } else if (ev.k === 'bolt') {
         gAnim(MP.rain.bolt, delay + 0.25, (k, tr) => {
           const el = k * (delay + 0.25)

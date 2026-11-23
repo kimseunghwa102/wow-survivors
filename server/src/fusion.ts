@@ -15,6 +15,9 @@ export const ART_ELEMENT: Record<string, string> = {
 export const FUSION_LVL = 250
 export const MAX_ESSENCE = 3
 export const REWARD_PER_STAR = 100
+/** fusion jackpots: rolled on the hunter's side (1 in 1000 divine, 1 in 500 disaster), saved once per account */
+export const JACKPOT_REWARD: Record<string, number> = { divine: 3000, dung: 500 }
+export const JACKPOT_KEY: Record<string, string> = { divine: 'DIVINE', dung: 'DUNG' }
 /** the book never grows past this (27 cores × element mixes is far below it in practice) */
 export const CODEX_MAX = 600
 
@@ -39,8 +42,9 @@ export function codexOf(row: any): string[] {
  * Record a fusion. The run must be open and its latest checkpoint at Lv 250+ (the checkpoint's level is
  * already clamped by the anti-cheat rules), so the book can only grow from real play.
  */
-export async function recordFusion(db: Sql, address: string, runId: string, core: string, essences: string[]) {
-  const key = recipeKey(core, essences)
+export async function recordFusion(db: Sql, address: string, runId: string, core: string, essences: string[], jackpot?: string) {
+  const jp = jackpot && JACKPOT_KEY[jackpot] ? jackpot : null
+  const key = jp ? JACKPOT_KEY[jp] : recipeKey(core, essences)
   if (!key) return { ok: false as const, error: 'bad recipe' }
   const run = (await db.query('SELECT level FROM runs WHERE id = $1 AND address = $2 AND ended_at IS NULL', [runId, address])).rows[0]
   if (!run) return { ok: false as const, error: 'run not found or already finished' }
@@ -50,7 +54,7 @@ export async function recordFusion(db: Sql, address: string, runId: string, core
   const book = codexOf(p)
   if (book.includes(key)) return { ok: true as const, isNew: false, reward: 0, key, codex: book }
   if (book.length >= CODEX_MAX) return { ok: true as const, isNew: false, reward: 0, key, codex: book }
-  const reward = REWARD_PER_STAR * essences.length
+  const reward = jp ? JACKPOT_REWARD[jp] : REWARD_PER_STAR * essences.length
   // append only if still missing (two quick calls can't both pay)
   const upd = await db.query(
     "UPDATE players SET codex = CASE WHEN codex = '' THEN $1 ELSE codex || ',' || $1 END, bank = bank + $2 WHERE address = $3 AND NOT ((',' || codex || ',') LIKE $4) RETURNING codex",

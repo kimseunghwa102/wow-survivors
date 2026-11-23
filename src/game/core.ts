@@ -4,7 +4,8 @@ import {
   WeaponId, PassiveId, EnemyKind, WEAPONS, PASSIVES, ENEMIES, MAX_WEAPON_LVL, MAX_PASSIVE_LVL,
   MAX_WEAPONS, MAX_PASSIVES, waveMix, xpNeed, ARMORY, NUKE, NUKE_TIER, GOD_TIER, isHoldable, manualLevelScale, bossFor, BossDef,
   BOOSTS, BoostId, RARITY, GodId, GODS, GOD_UNLOCK, MAX_GODS, MAX_GOD_LVL, ARTS, ArtId, MAX_ART_LVL, BOSSES,
-  FUSION_LVL, ART_SLOTS, MAX_ESSENCE, FusionStats, fusionStats, fusionName, ELEMENTS, ART_ELEMENT
+  FUSION_LVL, ART_SLOTS, MAX_ESSENCE, FusionStats, fusionStats, fusionName, ELEMENTS, ART_ELEMENT, FURY_PER_STAR, FURY_MAX, DREAD_HEAL, DREAD_LVL, DREAD_DMG,
+  DIVINE_CHANCE, DUNG_CHANCE, Jackpot, JACKPOT_ART, isJackpotArt
 } from './defs'
 
 export type Rect = { x0: number; z0: number; x1: number; z1: number }
@@ -131,7 +132,7 @@ export type Ev =
   | { t: 'genesis'; x: number; z: number; r: number }
   | { t: 'secondWind' }
   | { t: 'autoPick'; label: string; color: string }
-  | { t: 'fuse'; core: ArtId; ess: ArtId; n: number }
+  | { t: 'fuse'; core: ArtId; ess: ArtId; n: number; jackpot?: Jackpot }
   | { t: 'mPhase'; boss: number; phase: number }
   | { t: 'ascend' }
 
@@ -285,6 +286,8 @@ export class Run {
   fusions = new Map<ArtId, ArtId[]>()
   /** arts melted into another art: never offered again this run */
   consumed = new Set<ArtId>()
+  /** tests only: force the next fusion's luck roll (0 = divine, 0.002 = dung, 1 = normal) */
+  fusionLuck: number | undefined = undefined
   /** a run saved past Lv 250 before fusion existed: keeps learning arts without a slot limit (fusing stays optional) */
   legacyArts = false
   /** recent damage per second (rolling ~30 s), so bosses can be sized to the hunter */
@@ -464,7 +467,7 @@ export class Run {
     if (frozen) return this.events
     this.time += dt
     if (this.hurtCd > 0) this.hurtCd -= dt
-    this.hp = Math.min(this.maxHp, this.hp + this.regen * dt)
+    this.hp = Math.min(this.maxHp, this.hp + this.regen * dt * this.healMul())
     this.spawn(dt)
     this.moveEnemies(dt)
     this.fire(dt, remotes)
@@ -677,7 +680,7 @@ export class Run {
     e.kz += kz
     this.events.push({ t: 'hit', id: e.id, x: e.x, z: e.z, dmg: d, crit })
     if (this.evo('lash') && this.lashHealBudget > 0) {
-      this.hp = Math.min(this.maxHp, this.hp + 1)
+      this.hp = Math.min(this.maxHp, this.hp + this.healMul())
       this.lashHealBudget -= 1
     }
     if (e.hp <= 0) this.killEnemy(e)
@@ -687,10 +690,10 @@ export class Run {
   private killEnemy(e: Enemy) {
     e.alive = false
     this.kills++
-    if (this.boons.vamp) this.hp = Math.min(this.maxHp, this.hp + this.boons.vamp)
+    if (this.boons.vamp) this.hp = Math.min(this.maxHp, this.hp + this.boons.vamp * this.healMul())
     this.combo++
     this.comboT = 3
-    if (this.rageT > 0) this.hp = Math.min(this.maxHp, this.hp + 0.35)
+    if (this.rageT > 0) this.hp = Math.min(this.maxHp, this.hp + 0.35 * this.healMul())
     if (this.combo > this.bestCombo) this.bestCombo = this.combo
     const tier = COMBO_TIERS.filter(([n]) => this.combo >= n).length
     if (tier > this.comboTier) {
@@ -1299,6 +1302,7 @@ export class Run {
   /** can ESS melt into CORE? both mastered, and the result holds at most MAX_ESSENCE essences */
   canFuse(core: ArtId, ess: ArtId) {
     if (!this.fusionOpen() || core === ess) return false
+    if (isJackpotArt(core) || isJackpotArt(ess)) return false
     if ((this.arts.get(core) ?? 0) < MAX_ART_LVL || (this.arts.get(ess) ?? 0) < MAX_ART_LVL) return false
     return (this.fusions.get(core)?.length ?? 0) + 1 + (this.fusions.get(ess)?.length ?? 0) <= MAX_ESSENCE
   }
@@ -1315,6 +1319,23 @@ export class Run {
   }
   fuse(core: ArtId, ess: ArtId) {
     if (!this.canFuse(core, ess)) return false
+    // every fusion rolls the jackpot: 1 in 1000 divine, 1 in 500 a disaster
+    const roll = this.fusionLuck ?? rand()
+    this.fusionLuck = undefined
+    const jackpot: Jackpot | null = roll < DIVINE_CHANCE ? 'divine' : roll < DIVINE_CHANCE + DUNG_CHANCE ? 'dung' : null
+    if (jackpot) {
+      const gone = [core, ess, ...(this.fusions.get(core) ?? []), ...(this.fusions.get(ess) ?? [])]
+      for (const id of [core, ess]) {
+        this.arts.delete(id)
+        this.fusions.delete(id)
+      }
+      for (const id of gone) this.consumed.add(id)
+      const art = JACKPOT_ART[jackpot]
+      this.arts.set(art, MAX_ART_LVL)
+      this.artSeen.add(art)
+      this.events.push({ t: 'fuse', core: art, ess, n: 3, jackpot })
+      return true
+    }
     const { essences } = this.fusePreview(core, ess)
     this.fusions.set(core, essences)
     this.fusions.delete(ess)
@@ -1322,6 +1343,32 @@ export class Run {
     for (const e of essences) this.consumed.add(e)
     this.events.push({ t: 'fuse', core, ess, n: essences.length })
     return true
+  }
+  /** fused stars held (★ per essence) */
+  fusionStars() {
+    let n = 0
+    for (const e of this.fusions.values()) n += e.length
+    if (this.arts.has('crown')) n += 4
+    if (this.arts.has('flush')) n += 2
+    return n
+  }
+  /** BOSS DREAD: a Lv 250+ boss on the field smothers passive healing */
+  dreadOn() {
+    if (!this.bossIds.length) return false
+    for (const id of this.bossIds) {
+      const b = this.enemies.find((e) => e.id === id)
+      if (b && b.alive && bossFor(b.boss ?? 0).lvl >= DREAD_LVL) return true
+    }
+    return false
+  }
+  private dreadCache = { t: -1, on: false }
+  healMul() {
+    if (this.dreadCache.t !== this.time) this.dreadCache = { t: this.time, on: this.dreadOn() }
+    return this.dreadCache.on ? DREAD_HEAL : 1
+  }
+  /** BOSS FURY: bosses answer your fusions — harder hits, faster attacks */
+  bossFury() {
+    return Math.min(FURY_MAX, 1 + FURY_PER_STAR * this.fusionStars()) * (this.healMul() < 1 ? DREAD_DMG : 1)
   }
   artName(id: ArtId) {
     return fusionName(id, this.fusions.get(id) ?? [])
@@ -1819,8 +1866,52 @@ export class Run {
       this.events.push({ t: 'genesis', x: this.x, z: this.z, r: R })
       for (const e of near(R)) this.hitEnemy(e, dmgOf(400, lv))
     }
+    // ── fusion jackpots ──
+    if ((lv = go('crown', 5.0))) {
+      // ✦ CROWN OF CREATION ✦ — four rings of heaven-pillars open outward, a wheel of light turns, and every third cast the dawn of creation
+      fz = { dmg: 3.4, area: 1.25, cd: 1, slow: 0.3 }
+      A = this.area * fz.area
+      tintCol = '#FFD86A'
+      const rings: [number, number, number][] = [[5, 8, 0.2], [9, 12, 0.45], [13, 16, 0.7], [17, 20, 0.95]]
+      const turn = rand() * 360
+      rings.forEach(([R, n, delay], w) => {
+        for (let i = 0; i < n; i++) {
+          const a = ((turn + (w % 2 ? 180 / n : 0) + (i * 360) / n) * Math.PI) / 180
+          strike('pillar', this.x + Math.sin(a) * R * A, this.z + Math.cos(a) * R * A, 1.5 * A, delay, dmgOf(110, lv))
+        }
+      })
+      spokes(8, 17 * A, 1.3, 75, 2.2, dmgOf(45, lv), turn)
+      ring(1, dmgOf(90, lv))
+      this.crownCasts = (this.crownCasts + 1) % 3
+      if (this.crownCasts === 0) {
+        const R = 20 * A
+        this.events.push({ t: 'genesis', x: this.x, z: this.z, r: R })
+        for (const e of near(R)) this.hitEnemy(e, dmgOf(260, lv))
+      }
+    }
+    if ((lv = go('flush', 2.2))) {
+      // 💩 ROYAL FLUSH — lobbed poop on the crowd, then a stream of pee at the nearest foe. It stinks (slows).
+      fz = { dmg: 1.3, area: 1.1, cd: 1, slow: 0.5 }
+      A = this.area * fz.area
+      tintCol = '#7A4A1E'
+      const pool = near(13)
+      for (let i = 0; i < 7 && pool.length; i++) {
+        const e = pick(pool)
+        strike('poop', e.x + (rand() - 0.5) * 1.2, e.z + (rand() - 0.5) * 1.2, 1.5 * A, 0.5 + rand() * 0.35, dmgOf(42, lv))
+      }
+      const t = nearest(14)
+      if (t) {
+        const dx = t.x - this.x
+        const dz = t.z - this.z
+        for (let i = 1; i <= 6; i++) {
+          const f = i / 6
+          strike('pee', this.x + dx * f, this.z + dz * f, 0.8 * A, 0.06 * i, dmgOf(14, lv))
+        }
+      }
+    }
     flushTint()
   }
+  private crownCasts = 0
 
   // ───────── GOD POWERS ─────────
   private densest(foes: Enemy[], max = 14) {
@@ -2010,7 +2101,7 @@ export class Run {
   }
   private hurtPlayer(dmg: number) {
     if (this.invuln > 0) return
-    const v = dmg * Math.max(0.3, 1 - this.armor * 0.08) * (this.god ? 0.5 : 1)
+    const v = dmg * Math.max(0.3, 1 - this.armor * 0.08) * (this.god ? 0.5 : 1) * (this.bossIds.length ? this.bossFury() : 1)
     this.hp -= v
     this.lastAttacker = ''
     this.events.push({ t: 'hurt', dmg: v })
@@ -2396,7 +2487,7 @@ export class Run {
         b.windR = undefined
         this.events.push({ t: 'slam', x: b.x, z: b.z, r })
         if (Math.hypot(this.x - b.x, this.z - b.z) < r && this.invuln <= 0) {
-          const dmg = (d.pct ? this.maxHp * d.pct * 1.3 * this.esc(d) : d.dmg * 1.6) * Math.max(0.3, 1 - this.armor * 0.08) * (this.god ? (d.pct ? 0.75 : 0.5) : 1)
+          const dmg = (d.pct ? this.maxHp * d.pct * 1.3 * this.esc(d) : d.dmg * 1.6) * Math.max(0.3, 1 - this.armor * 0.08) * (this.god ? (d.pct ? 0.75 : 0.5) : 1) * this.bossFury()
           this.hp -= dmg
           this.lastAttacker = ''
           this.events.push({ t: 'hurt', dmg })
@@ -2449,7 +2540,7 @@ export class Run {
       b.atkCd = (b.atkCd ?? 2.4) - dt
       if (b.atkCd <= 0) {
         const ph = b.phase ?? 0
-        b.atkCd = (d.cd ?? 3) * Math.pow(0.85, ph)
+        b.atkCd = ((d.cd ?? 3) * Math.pow(0.85, ph)) / this.bossFury()
         const n = (d.combo ?? 1) + (ph >= 2 ? 1 : 0)
         for (let k = 0; k < n; k++) {
           const mv = d.moves[(b.atkI ?? 0) % d.moves.length]
@@ -2460,7 +2551,7 @@ export class Run {
     } else if (d.attacks?.length) {
       b.atkCd = (b.atkCd ?? 3) - dt
       if (b.atkCd <= 0) {
-        b.atkCd = 3.4 - Math.min(1.2, (b.boss ?? 0) * 0.02)
+        b.atkCd = (3.4 - Math.min(1.2, (b.boss ?? 0) * 0.02)) / this.bossFury()
         b.atkI = (b.atkI ?? 0) + 1
         this.skyAttack(b, d, d.attacks[b.atkI % d.attacks.length])
       }

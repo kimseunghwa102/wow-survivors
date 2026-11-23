@@ -203,6 +203,12 @@ async function main() {
     assert(bad.status === 400, 'an art cannot melt into itself')
     const bad2 = await signed(fay, 'POST', '/api/fusion', { runId: fr.json.runId, core: 'godmode', essences: ['ember'] })
     assert(bad2.status === 400, 'unknown art rejected')
+    const dv = await signed(fay, 'POST', '/api/fusion', { runId: fr.json.runId, core: 'crown', essences: [], jackpot: 'divine' })
+    assert(dv.json.isNew && dv.json.reward === 3000 && dv.json.codex.includes('DIVINE'), 'DIVINE FUSION saved (+3000, once)')
+    const dv2 = await signed(fay, 'POST', '/api/fusion', { runId: fr.json.runId, core: 'crown', essences: [], jackpot: 'divine' })
+    assert(!dv2.json.isNew && dv2.json.reward === 0, 'the divine reward is paid only once per account')
+    const dg = await signed(fay, 'POST', '/api/fusion', { runId: fr.json.runId, core: 'flush', essences: [], jackpot: 'dung' })
+    assert(dg.json.isNew && dg.json.reward === 500 && dg.json.codex.includes('DUNG'), 'ROYAL FLUSH saved (+500 consolation)')
   }
 
   console.log('shop')

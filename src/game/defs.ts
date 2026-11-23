@@ -231,9 +231,9 @@ export const BOSSES: BossDef[] = [
   // ── the SKY GODS (Lv 220-300): they fly, fire energy beams, orb barrages and meteor rain ──
   { lvl: 220, name: 'Seraph of Ruin', title: 'The Light That Burns', model: 'models/boss_seraph.glb', scale: 1.0, hp: 6000000, dmg: 240, speed: 3.0, r: 2.4, slam: 9, adds: 'wraith', color: '#FFF2B0', fly: 3.5, attacks: ['beam', 'orbs'] },
   { lvl: 240, name: 'Stormheart', title: 'Wings of the Last Storm', model: 'models/boss_stormbird.glb', scale: 1.1, hp: 9000000, dmg: 260, speed: 3.6, r: 2.6, slam: 9, adds: 'bat', color: '#7DF9FF', fly: 5, charge: true, attacks: ['orbs', 'meteors'] },
-  { lvl: 260, name: 'Oculus Prime', title: 'The Eye Above All', model: 'models/boss_oculus.glb', scale: 1.1, hp: 13500000, dmg: 280, speed: 2.2, r: 3.0, slam: 10, adds: 'wraith', color: '#FF2A6A', fly: 4, attacks: ['beam', 'orbs'] },
-  { lvl: 280, name: 'Azure Leviathan', title: 'Serpent of the Upper Sky', model: 'models/boss_skywyrm.glb', scale: 1.3, hp: 20000000, dmg: 300, speed: 3.2, r: 3.0, slam: 10, adds: 'skeleton', color: '#3FE6FF', fly: 4.5, charge: true, attacks: ['beam', 'meteors'] },
-  { lvl: 300, name: 'AETHERION', title: 'The God-Eater', model: 'models/boss_aetherion.glb', scale: 1.2, hp: 33000000, dmg: 340, speed: 2.4, r: 3.8, slam: 12, adds: 'wraith', color: '#B05BFF', fly: 2.5, attacks: ['beam', 'orbs', 'meteors'] },
+  { lvl: 260, name: 'Oculus Prime', title: 'The Eye Above All', model: 'models/boss_oculus.glb', scale: 1.1, hp: 13500000, dmg: 280, pct: 0.13, speed: 2.2, r: 3.0, slam: 10, adds: 'wraith', color: '#FF2A6A', fly: 4, attacks: ['beam', 'orbs'] },
+  { lvl: 280, name: 'Azure Leviathan', title: 'Serpent of the Upper Sky', model: 'models/boss_skywyrm.glb', scale: 1.3, hp: 20000000, dmg: 300, pct: 0.15, speed: 3.2, r: 3.0, slam: 10, adds: 'skeleton', color: '#3FE6FF', fly: 4.5, charge: true, attacks: ['beam', 'meteors'] },
+  { lvl: 300, name: 'AETHERION', title: 'The God-Eater', model: 'models/boss_aetherion.glb', scale: 1.2, hp: 33000000, dmg: 340, pct: 0.17, speed: 2.4, r: 3.8, slam: 12, adds: 'wraith', color: '#B05BFF', fly: 2.5, attacks: ['beam', 'orbs', 'meteors'] },
   // ── the MYTHIC ASCENT (Lv 350-1000, every 50): warriors, pirates, ninja, angels and demons — original designs ──
   // their hits take a share of YOUR max HP, so the fight stays deadly however strong you get
   { lvl: 350, name: 'VARKOS', title: 'The Unbound Ki Berserker', model: 'models/boss_varkos.glb', scale: 1.0, hp: 45000000, dmg: 360, speed: 3.0, r: 2.4, slam: 9, adds: 'skeleton', color: '#FF3B4E', fly: 1.5, moves: ['wave', 'rain', 'rings', 'blink'], rain: 'fist', pct: 0.18, combo: 1, cd: 3.2, divine: true },
@@ -282,6 +282,8 @@ export const GODS: Record<GodId, { name: string; color: string; desc: string[] }
 export type ArtId =
   | 'ember' | 'fan' | 'tide' | 'lances' | 'kunai' | 'drums' | 'fist' | 'stars' | 'broadside' | 'pillars' | 'blacksun' | 'wheel'
   | 'kiburst' | 'cannonade' | 'cuts' | 'judgment' | 'hellrain' | 'horizon' | 'foxfire' | 'phantom' | 'raijin' | 'eyes' | 'abyss' | 'sixarms' | 'timestop' | 'wrath' | 'genesis'
+  // fusion jackpots (never offered: only a lucky — or very unlucky — fusion makes them)
+  | 'crown' | 'flush'
 export const MAX_ART_LVL = 8
 export type ArtDef = { name: string; color: string; lvl?: number; boss?: string; desc: string[] }
 const up = (first: string, a: string, b: string, c: string, max: string) => [first, a, b, '+damage', c, '+damage, faster', '+damage', 'MAX: ' + max]
@@ -313,7 +315,9 @@ export const ARTS: Record<ArtId, ArtDef> = {
   sixarms: { name: 'Six-Armed Fury', color: '#FF6A3D', boss: 'ASURAKH', desc: up("ASURAKH's arms: six blades strike at once", '+damage', 'longer reach', 'faster', 'twelve blades') },
   timestop: { name: 'Time Stop', color: '#E8D28A', boss: 'KHRONOS', desc: up("KHRONOS's clock: every foe near you freezes", 'longer', 'wider', 'faster', 'time itself obeys') },
   wrath: { name: "Demon King's Wrath", color: '#FF2A3D', boss: 'MORTHAEL', desc: up("MORTHAEL's wrath: a hell-sun and fire around it", '+damage', '+size', 'faster', 'the last king rises in you') },
-  genesis: { name: 'Genesis Light', color: '#FFF6D8', boss: 'THE ALMIGHTY', desc: up('The light of creation smites everything around you', '+radius', '+damage', 'faster', 'let there be light') }
+  genesis: { name: 'Genesis Light', color: '#FFF6D8', boss: 'THE ALMIGHTY', desc: up('The light of creation smites everything around you', '+radius', '+damage', 'faster', 'let there be light') },
+  crown: { name: '✦ CROWN OF CREATION ✦', color: '#FFD86A', desc: ['DIVINE FUSION (1 in 1000): four rings of heaven-pillars, a turning wheel of light and the dawn of creation', '', '', '', '', '', '', 'MAX'] },
+  flush: { name: '💩 ROYAL FLUSH', color: '#9A6A3A', desc: ['DISASTER FUSION (1 in 500): you throw poop and spray pee. It stinks (slows) and it still hurts', '', '', '', '', '', '', 'MAX'] }
 }
 
 // ───────────── FUSION: from Lv 250, two mastered arts melt into one stronger art ─────────────
@@ -340,12 +344,12 @@ export const ART_ELEMENT: Record<ArtId, ElementId> = {
   ember: 'fire', fan: 'blade', tide: 'tide', lances: 'light', kunai: 'shadow', drums: 'thunder', fist: 'ki', stars: 'light',
   broadside: 'shadow', pillars: 'light', blacksun: 'fire', wheel: 'light', kiburst: 'ki', cannonade: 'shadow', cuts: 'blade',
   judgment: 'light', hellrain: 'fire', horizon: 'shadow', foxfire: 'fire', phantom: 'shadow', raijin: 'thunder', eyes: 'light',
-  abyss: 'tide', sixarms: 'blade', timestop: 'time', wrath: 'ki', genesis: 'light'
+  abyss: 'tide', sixarms: 'blade', timestop: 'time', wrath: 'ki', genesis: 'light', crown: 'light', flush: 'tide'
 }
 /** each essence also hands over most of its own power, so fusing never makes you weaker */
-export const ESSENCE_ABSORB = 0.75
+export const ESSENCE_ABSORB = 0.65
 /** extra bonus by stars: ★ / ★★ / ★★★ */
-export const FUSION_TIER_BONUS = [1, 1.05, 1.1, 1.2]
+export const FUSION_TIER_BONUS = [1, 1, 1.04, 1.08]
 export type FusionStats = { dmg: number; area: number; cd: number; slow: number }
 export function fusionStats(essences: ArtId[]): FusionStats {
   // element bonuses add up (three fire essences = +90% damage, not ×2.2)
@@ -367,6 +371,21 @@ export function recipeKey(core: ArtId, essences: ArtId[]) {
   return `${core}|${essences.map((e) => ART_ELEMENT[e]).sort().join('+')}`
 }
 export const RECIPE_REWARD_PER_STAR = 100
+/** FUSION JACKPOTS: rolled on every fusion. The two arts become this instead of the recipe. */
+export const DIVINE_CHANCE = 0.001
+export const DUNG_CHANCE = 0.002
+export type Jackpot = 'divine' | 'dung'
+export const JACKPOT_ART: Record<Jackpot, ArtId> = { divine: 'crown', dung: 'flush' }
+export const JACKPOT_KEY: Record<Jackpot, string> = { divine: 'DIVINE', dung: 'DUNG' }
+export const isJackpotArt = (id: ArtId) => id === 'crown' || id === 'flush'
+/** BOSS FURY: every fused star makes bosses hit harder and attack more often (fusing trades screen clutter for danger) */
+export const FURY_PER_STAR = 0.07
+export const FURY_MAX = 1.6
+/** BOSS DREAD: while a Lv 250+ boss lives, regen / life-steal / kill-heals only work at this share (potions still heal in full) */
+export const DREAD_HEAL = 0.12
+export const DREAD_LVL = 250
+/** Lv 250+ bosses also hit this much harder than before (before any fusion fury) */
+export const DREAD_DMG = 1.3
 export function fusionName(core: ArtId, essences: ArtId[]): string {
   if (!essences.length) return ARTS[core].name
   const adjs: string[] = []
