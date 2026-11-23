@@ -3,6 +3,7 @@ import { createApp, dclAuth, devAuth } from './app'
 import { migrate } from './db'
 import { rpcClient } from './payments'
 import { startCasino } from './casino/casino'
+import { startArena } from './arena'
 
 async function main() {
   const url = process.env.DATABASE_URL
@@ -22,6 +23,7 @@ async function main() {
   console.log(wallet ? `payments → ${wallet}` : 'payments disabled (set PAYMENT_WALLET)')
   const port = Number(process.env.PORT || 8080)
   const server = app.listen(port, () => console.log(`wow-survivors api on :${port} (auth: ${dev ? 'DEV' : 'decentraland signedFetch'})`))
+  startArena(server)
   await startCasino(server, pool)
 }
 

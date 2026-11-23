@@ -500,6 +500,7 @@ export async function startCasino(server: HttpServer, sql: Sql) {
     } catch {
       return socket.destroy()
     }
+    if (url.pathname === '/arena') return // the arena relay handles its own upgrades
     if (url.pathname !== '/casino') return socket.destroy()
     const t = url.searchParams.get('t')
     const x = t ? tickets.get(t) : undefined

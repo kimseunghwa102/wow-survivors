@@ -211,6 +211,30 @@ async function main() {
     assert(dg.json.isNew && dg.json.reward === 500 && dg.json.codex.includes('DUNG'), 'ROYAL FLUSH saved (+500 consolation)')
   }
 
+  console.log('arena relay')
+  {
+    const { relay, _testClient, _testDrop } = await import('../src/arena')
+    const tk = await signed(alice, 'POST', '/api/arena/ticket', {})
+    assert(tk.json.ok && typeof tk.json.ticket === 'string', 'signed hunters get a relay ticket')
+    const outA: string[] = []
+    const outB: string[] = []
+    const A = _testClient('0xAAA', outA)
+    const B = _testClient('0xBBB', outB)
+    relay(A, JSON.stringify({ k: 'fx', d: { id: '0xEVIL', a: [1, 2, 3], e: [[29, 1, 2, 3, 0.5, 7]] } }))
+    assert(outB.length === 1 && JSON.parse(outB[0]).d.id === '0xaaa' && outA.length === 0, 'effects reach the others, stamped with the real sender (spoofed id replaced)')
+    relay(A, JSON.stringify({ k: 'hit', d: { to: '0xccc', from: '0xEVIL', dmg: 50 } }))
+    assert(outB.length === 1, 'a PvP hit goes only to its target')
+    relay(A, JSON.stringify({ k: 'hit', d: { to: '0xBBB', from: '0xEVIL', dmg: 50 } }))
+    assert(outB.length === 2 && JSON.parse(outB[1]).d.from === '0xaaa', 'the hit arrives from the real attacker')
+    relay(A, JSON.stringify({ k: 'drop-table', d: {} }))
+    assert(outB.length === 2, 'unknown kinds are dropped')
+    let sent = 0
+    for (let i = 0; i < 100; i++) sent += relay(A, JSON.stringify({ k: 'st', d: { l: i } }))
+    assert(sent < 40, 'flooding is rate-limited')
+    _testDrop(A)
+    _testDrop(B)
+  }
+
   console.log('shop')
   const bank0 = (await signed(alice, 'POST', '/api/profile', {})).json.profile.bank
   const b1 = await signed(alice, 'POST', '/api/shop/buy', { key: 'might' })

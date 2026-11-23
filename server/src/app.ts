@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express'
 import { verify } from '@dcl/platform-crypto-middleware'
 import { GOLD_PACK, GOLD_PACKS, FIRST_BUY_BONUS, hasBought, createQuote, confirmPurchase, settlePending, Rpc, PriceFeed, coingecko, Currency } from './payments'
 import { recordFusion } from './fusion'
+import { arenaTicket, arenaStats } from './arena'
 import { Sql, getOrCreate, toProfile, startRun, getOpenRun, finishRun, buy, leaderboard, rankOf, buyArmory, claimDaily, getResume, saveCheckpoint, bankAbandoned } from './db'
 import { raidRoutes, inventory } from './raid'
 import { casinoRoutes } from './casino/casino'
@@ -224,6 +225,15 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
   )
 
   // daily quests (reset at midnight KST)
+  // arena relay: a one-time ticket for the WebSocket that carries status, effects and PvP hits between hunters
+  app.post(
+    '/api/arena/ticket',
+    authed(async (_req, res, a) => {
+      res.json({ ok: true, ticket: arenaTicket(a.address) })
+    })
+  )
+  app.get('/api/arena/health', (_req, res) => res.json({ ok: true, ...arenaStats() }))
+
   // fusion recipe book: save a fused art (and pay the first-time reward); the snapshot checkpoints the run first
   app.post(
     '/api/fusion',

@@ -5,6 +5,9 @@ import {
 } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { MessageBus } from '@dcl/sdk/message-bus'
+import { executeTask } from '@dcl/sdk/ecs'
+import { signedFetch } from '~system/SignedFetch'
+import { API_URL } from '../config'
 import { attachCosmetic, titleOf, anchorOf, detach } from './cosmetics'
 import { ARMORY, PASSIVES, PassiveId, MAX_PASSIVE_LVL } from './defs'
 import { rankOf, rankColor } from './view'
@@ -13,6 +16,98 @@ import { getPlayer } from '@dcl/sdk/players'
 import { Remote, inPvpZone } from './core'
 
 const bus = new MessageBus()
+
+// ───────────── transport: our own relay (reliable) + Decentraland's MessageBus (backup) ─────────────
+// Every message goes out on both; a per-sender sequence number drops the second copy on arrival.
+type Handler = (d: any) => void
+const handlers = new Map<string, Handler>()
+let seq = 1
+const seen = new Map<string, number[]>()
+/** wallet addresses compare in lower case (the relay, the explorer and getPlayer may differ in case) */
+const low = (s: unknown) => String(s ?? '').toLowerCase()
+function senderOf(k: string, d: any) {
+  return low(k === 'hit' ? d.from : k === 'ko' ? d.victim : d.id)
+}
+function deliver(k: string, d: any) {
+  if (!d || typeof d !== 'object') return
+  const from = senderOf(k, d)
+  if (d.q != null) {
+    const key = k + ':' + from
+    const list = seen.get(key) ?? []
+    if (list.includes(d.q)) return
+    list.push(d.q)
+    if (list.length > 40) list.shift()
+    seen.set(key, list)
+  }
+  handlers.get(k)?.(d)
+}
+function on(k: string, fn: Handler) {
+  handlers.set(k, fn)
+  bus.on(k, (d: any) => deliver(k, d))
+}
+function emit(k: string, d: Record<string, unknown>) {
+  const msg = { ...d, q: seq++ }
+  if (relayUp && relay) {
+    try {
+      relay.send(JSON.stringify({ k, d: msg }))
+    } catch {
+      relayUp = false
+    }
+  }
+  bus.emit(k, msg)
+}
+let relay: WebSocket | null = null
+let relayUp = false
+let relayTry = 0
+/** connected to the arena relay right now (shown in the debug line) */
+export function relayOnline() {
+  return relayUp
+}
+function connectRelay() {
+  executeTask(async () => {
+    try {
+      const res = await signedFetch({ url: API_URL + '/api/arena/ticket', init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' } })
+      const j = JSON.parse(res.body || '{}')
+      if (!j.ticket) throw new Error('no ticket')
+      const ws = new WebSocket(API_URL.replace(/^http/, 'ws') + '/arena?t=' + j.ticket)
+      relay = ws
+      ws.onopen = () => {
+        relayUp = true
+        relayTry = 0
+      }
+      ws.onmessage = (ev) => {
+        try {
+          const m = JSON.parse(String(ev.data))
+          if (m && typeof m.k === 'string') deliver(m.k, m.d)
+        } catch {}
+      }
+      ws.onclose = () => {
+        if (relay !== ws) return
+        relayUp = false
+        relay = null
+        retryRelay()
+      }
+      ws.onerror = () => {}
+    } catch (e) {
+      retryRelay()
+    }
+  })
+}
+function retryRelay() {
+  relayTry++
+  const wait = Math.min(30, 3 * relayTry)
+  let t = 0
+  const sys = (dt: number) => {
+    t += dt
+    if (t < wait) return
+    engine.removeSystem(sys)
+    connectRelay()
+  }
+  engine.addSystem(sys)
+}
+/** the explorer's own spelling of each address (avatar attachments need it exactly) */
+const realId = new Map<string, string>()
+const avatarOf = (id: string) => realId.get(id) ?? id
 
 export type Status = {
   id: string
@@ -46,7 +141,7 @@ let now = 0
 
 export function me() {
   const p = getPlayer()
-  return { id: p?.userId ?? 'local', name: p?.name || `Hunter${(p?.userId ?? '0000').slice(-4)}` }
+  return { id: low(p?.userId ?? 'local'), name: p?.name || `Hunter${(p?.userId ?? '0000').slice(-4)}` }
 }
 
 export function pushFeed(text: string, color = '#FFFFFF') {
@@ -105,45 +200,50 @@ export function setupNet(h: Handlers) {
   Board.create(boardEntity, { runs: '[]', pvp: '{}' })
   syncEntity(boardEntity, [Board.componentId], 9101)
 
-  bus.on('st', (s: Status) => {
-    if (!s || s.id === me().id) return
+  on('st', (s: Status) => {
+    if (!s) return
+    s.id = low(s.id)
+    if (s.id === me().id) return
     const r = remotes.get(s.id)
     remotes.set(s.id, { ...(r ?? { x: 0, z: 0 }), ...s, seen: now })
   })
-  bus.on('hit', (m: { to: string; from: string; fn: string; dmg: number }) => {
-    if (m && m.to === me().id) H.onHit(m.dmg, m.from, m.fn)
+  on('hit', (m: { to: string; from: string; fn: string; dmg: number }) => {
+    if (m && low(m.to) === me().id) H.onHit(Number(m.dmg) || 0, low(m.from), m.fn)
   })
-  bus.on('ko', (m: { victim: string; vn: string; killer: string; kn: string; lvl: number }) => {
-    if (!m) return
+  on('ko', (m: { victim: string; vn: string; killer: string; kn: string; lvl: number }) => {
+    if (!m || low(m.victim) === me().id) return
     pushFeed(`${m.kn} slew ${m.vn} (Lv ${m.lvl})`, '#FF5468')
-    if (m.killer === me().id) {
+    if (low(m.killer) === me().id) {
       H.onBounty(m.vn, m.lvl)
       addPvpKill(m.kn)
     }
   })
   // someone beat THE ALMIGHTY: everyone in the scene sees the ascension
-  bus.on('god', (m: { id: string; n: string; x: number; z: number }) => {
-    if (!m || m.id === me().id) return
+  on('god', (m: { id: string; n: string; x: number; z: number }) => {
+    if (!m || low(m.id) === me().id) return
     H.onAscend(String(m.n || 'A hunter').slice(0, 24), Number(m.x) || 32, Number(m.z) || 24, m.id)
   })
   // someone hit a fusion jackpot (divine or disaster): everyone hears about it
-  bus.on('jp', (m: { id: string; n: string; k: string; x: number; z: number }) => {
-    if (!m || m.id === me().id || (m.k !== 'divine' && m.k !== 'dung')) return
+  on('jp', (m: { id: string; n: string; k: string; x: number; z: number }) => {
+    if (!m || low(m.id) === me().id || (m.k !== 'divine' && m.k !== 'dung')) return
     H.onJackpot(String(m.n || 'A hunter').slice(0, 24), m.k, Number(m.x) || 32, Number(m.z) || 24)
   })
-  bus.on('fx', (m: { id: string; a: number[]; e: number[][] }) => {
-    if (!m || m.id === me().id || !Array.isArray(m.e)) return
+  on('fx', (m: { id: string; a: number[]; e: number[][] }) => {
+    if (!m || !Array.isArray(m.e)) return
+    m.id = low(m.id)
+    if (m.id === me().id) return
     if (m.e.some((p) => Array.isArray(p) && (p[0] === 3 || p[0] === 5))) noteRemoteSwing(m.id)
     H.onFx(m.id, m.a || [0, 0, 0], m.e.slice(0, 24))
   })
   setupRemoteVisuals()
+  connectRelay()
   // flush my skill effects to everyone ~5x a second
   let acc = 0
   engine.addSystem((dt) => {
     acc += dt
     if (acc < 0.2 || !fxOut.length) return
     acc = 0
-    bus.emit('fx', { id: me().id, a: fxTiers, e: fxOut.splice(0, 24) })
+    emit('fx', { id: me().id, a: fxTiers, e: fxOut.splice(0, 24) })
     fxOut.length = 0
     fxCount.clear()
   })
@@ -165,24 +265,24 @@ export function sendFx(code: number, nums: number[], tiers: number[]) {
 
 export function sendStatus(s: Omit<Status, 'id' | 'n'>) {
   const m = me()
-  bus.emit('st', { ...s, id: m.id, n: m.name })
+  emit('st', { ...s, id: m.id, n: m.name })
 }
 export function sendAscend(x: number, z: number) {
   const m = me()
-  bus.emit('god', { id: m.id, n: m.name, x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10 })
+  emit('god', { id: m.id, n: m.name, x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10 })
 }
 export function sendJackpot(kind: 'divine' | 'dung', x: number, z: number) {
   const m = me()
-  bus.emit('jp', { id: m.id, n: m.name, k: kind, x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10 })
+  emit('jp', { id: m.id, n: m.name, k: kind, x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10 })
 }
 export function sendHit(to: string, dmg: number) {
   const m = me()
-  bus.emit('hit', { to, from: m.id, fn: m.name, dmg })
+  emit('hit', { to: low(to), from: m.id, fn: m.name, dmg })
 }
 export function sendKo(killerId: string, killerName: string, lvl: number) {
   const m = me()
   const msg = { victim: m.id, vn: m.name, killer: killerId, kn: killerName, lvl }
-  bus.emit('ko', msg)
+  emit('ko', msg)
   pushFeed(`${killerName} slew ${m.name} (Lv ${lvl})`, '#FF5468')
 }
 export function nameOf(id: string) {
@@ -305,13 +405,15 @@ function setupRemoteVisuals() {
     const yawOf = new Map<string, number>()
     for (const [entity, ident, t] of engine.getEntitiesWith(PlayerIdentityData, Transform)) {
       if (entity === engine.PlayerEntity) continue
-      const r = remotes.get(ident.address)
+      const id = low(ident.address)
+      realId.set(id, ident.address)
+      const r = remotes.get(id)
       if (r) {
         r.x = t.position.x
         r.z = t.position.z
         r.entity = entity
         const f = Vector3.rotate(Vector3.Forward(), t.rotation)
-        yawOf.set(ident.address, (Math.atan2(f.x, f.z) * 180) / Math.PI)
+        yawOf.set(id, (Math.atan2(f.x, f.z) * 180) / Math.PI)
       }
     }
     for (const [id, r] of remotes) {
@@ -333,14 +435,14 @@ function setupRemoteVisuals() {
       const wear = seraph && anchorOf(r.cs) === 'back' ? null : r.cs ?? null // Seraph Wings cover a back relic
       if (wear !== (v.cosId ?? null)) {
         v.cosId = wear
-        v.cos = attachCosmetic(id, wear, v.cos)
+        v.cos = attachCosmetic(avatarOf(id), wear, v.cos)
       }
-      if (seraph && !v.wings) v.wings = attachCosmetic(id, 'seraph_wings')
+      if (seraph && !v.wings) v.wings = attachCosmetic(avatarOf(id), 'seraph_wings')
       else if (!seraph && v.wings) v.wings = detach(v.wings)
       if (r.gd && !v.god) {
         v.god = engine.addEntity()
         GltfContainer.create(v.god, { src: 'models/god_aura.glb' })
-        AvatarAttach.create(v.god, { avatarId: id, anchorPointId: AvatarAnchorPointType.AAPT_POSITION })
+        AvatarAttach.create(v.god, { avatarId: avatarOf(id), anchorPointId: AvatarAnchorPointType.AAPT_POSITION })
       } else if (!r.gd && v.god) v.god = detach(v.god)
       const title = titleOf(r.ti)
       const ts = TextShape.getMutable(v.tag)
