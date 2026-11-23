@@ -27,7 +27,7 @@ export type BoardRow = { n: string; t: number; l: number; k: number; live?: bool
 export type GlobalBoard = {
   runs: BoardRow[]; pvp: [string, number][]; players: number
   // live boards (players mid-run are merged in, flagged live)
-  allTime?: BoardRow[]; weekly?: BoardRow[]; slayers?: string[]; gods?: string[]; live?: number; week?: string; weekEndsAt?: number; prizes?: number[]
+  allTime?: BoardRow[]; weekly?: BoardRow[]; slayers?: string[]; gods?: string[]; firstGod?: { name: string; address: string; at: string } | null; live?: number; week?: string; weekEndsAt?: number; prizes?: number[]
 }
 export type Quest = { kind: string; tier: number; target: number; reward: number; text: string; progress: number; done: boolean; claimed: boolean }
 export type QuestState = { day: string; resetsAt: number; quests: Quest[] }

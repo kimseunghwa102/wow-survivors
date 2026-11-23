@@ -366,15 +366,23 @@ def dead_tree(x, z, s=1.0):
         B.box(x + ox * 0.9, y + ln * 0.25, z + oz * 0.9, 0.11 * s, 0.11 * s, ln, WOOD, yaw=a, pitch=-32)
 
 
+# WHO IS GOD? — the first God's throne (models/god_throne.glb) stands at x 41-47.3, z 4.4-11.6: keep it clear
+def by_throne(x, z):
+    return 40.6 <= x <= 47.6 and 3.9 <= z <= 12.2
+
+
 for z in [6, 14, 22, 30, 40]:
     grave(19.6, z + random.uniform(-1, 1), 90 + random.uniform(-8, 8))
-    grave(44.3, z + 2, -90 + random.uniform(-8, 8))
+    gz = z + 2
+    rz = random.uniform(-8, 8)  # drawn either way so the rest of the yard keeps its old random layout
+    if not by_throne(44.3, gz):
+        grave(44.3, gz, -90 + rz)
 for x in [22, 29, 36, 42]:
     grave(x, 3.4, random.uniform(-8, 8))
 for z in [54, 60, 68, 72]:
     grave(3.6, z, 90 + random.uniform(-8, 8))
     grave(28.4, z + 1.5, -90 + random.uniform(-8, 8))
-for (x, z, s) in [(20.5, 44.5, 1.2), (44.2, 6.5, 1.1), (4.0, 52.5, 1.2), (26.0, 52.0, 0.9)]:
+for (x, z, s) in [(20.5, 44.5, 1.2), (4.0, 52.5, 1.2), (26.0, 52.0, 0.9)]:  # (44.2, 6.5) made room for the throne
     dead_tree(x, z, s)
 
 

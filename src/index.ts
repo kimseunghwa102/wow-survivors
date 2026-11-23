@@ -5,10 +5,13 @@ import { setupGame, G } from './game/game'
 import { setupUi } from './ui'
 import { buildCasino } from './casino/build'
 import { CORE_ONLY } from './edition'
+import { buildThrone } from './throne'
 
 export function main() {
   buildWorld()
-  // GOLD HOLD'EM casino at -103,78 (the GYBM casino, playing for WOW gold)
+  // WHO IS GOD? — the first God's throne at the east end of the arena
+  buildThrone()
+  // GOLD HOLD'EM casino at -103,78 (the WOW casino, playing for WOW gold)
   if (!CORE_ONLY) buildCasino()
   setupGame()
   setupUi()

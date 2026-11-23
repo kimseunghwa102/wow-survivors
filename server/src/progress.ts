@@ -197,8 +197,12 @@ export async function boards(db: Sql, now = Date.now()) {
   }
   const weekly = [...wk.values()].sort((a, b) => b.t - a.t || b.k - a.k).slice(0, 10)
   const slayers = (await db.query('SELECT name, slayer_at FROM players WHERE slayer_at IS NOT NULL ORDER BY slayer_at ASC LIMIT 20')).rows.map((r: any) => r.name)
-  const gods = (await db.query('SELECT name, god_at FROM players WHERE god_at IS NOT NULL ORDER BY god_at ASC LIMIT 20')).rows.map((r: any) => r.name)
-  return { allTime, weekly, slayers, gods, live: liveBy.size, week: weekKey(now), weekEndsAt: ws + 7 * 86400e3, prizes: WEEKLY_PRIZE }
+  const godRows = (await db.query('SELECT address, name, god_at FROM players WHERE god_at IS NOT NULL ORDER BY god_at ASC LIMIT 20')).rows
+  const gods = godRows.map((r: any) => r.name)
+  // WHO IS GOD? — the first hunter ever to defeat THE ALMIGHTY sits on the throne forever
+  const g0 = godRows[0]
+  const firstGod = g0 ? { name: g0.name, address: g0.address, at: new Date(g0.god_at).toISOString() } : null
+  return { allTime, weekly, slayers, gods, firstGod, live: liveBy.size, week: weekKey(now), weekEndsAt: ws + 7 * 86400e3, prizes: WEEKLY_PRIZE }
 }
 
 /** pay last week's top 10 once, the first time anything reads the boards in a new week */

@@ -1099,7 +1099,7 @@ const Root = () => (
     <TopHud />
     <ArenaHud />
     <ComboHud />
-    {G.phase === 'running' || G.phase === 'levelup' || G.phase === 'chest' ? <PotionBelt /> : null}
+    {(G.phase === 'running' || G.phase === 'levelup' || G.phase === 'chest') && !playerInCasino() ? <PotionBelt /> : null}
     <BossBar />
     {playerInCasino() ? null : <Dock />}
     <InfoPanel />

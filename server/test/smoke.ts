@@ -177,6 +177,7 @@ async function main() {
     assert(g2.json.god === false, 'godhood is granted once')
     const board = await (await fetch(base + '/api/leaderboard')).json()
     assert(Array.isArray(board.gods) && board.gods.length === 1, 'Hall of Gods lists the new God')
+    assert(board.firstGod && board.firstGod.name === 'Gabriel' && /^0x/.test(board.firstGod.address), 'WHO IS GOD?: the first God is named for the throne')
     const end = await signed(gabe, 'POST', '/api/run/end', { runId: gr.json.runId, time: 66200, level: 1113, kills: 993000, gold: 794000, bossesSlain: 43 })
     assert(end.json.ok && end.json.god === false && end.json.profile.god === true && end.json.profile.best.time === 66200, 'an 18 h run ends cleanly (no longer cut at 3 h)')
   }
