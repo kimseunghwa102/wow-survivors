@@ -3,6 +3,7 @@ import { PAY_SCHEMA } from './payments'
 import { RAID_SCHEMA } from './raid'
 import { PROGRESS_SCHEMA, trackRun } from './progress'
 import { CASINO_SCHEMA } from './casino/casino'
+import { FUSION_SCHEMA, codexOf } from './fusion'
 import { META_KEYS, MetaKey, ARMORY_COST, DAILY_REWARD, dayKey, clampRun } from './rules'
 
 /** minimal pg-compatible client (pg.Pool in production, pg-mem in tests) */
@@ -56,7 +57,7 @@ ALTER TABLE runs ADD COLUMN IF NOT EXISTS checkpoint_at TIMESTAMPTZ;
 `
 
 export async function migrate(db: Sql) {
-  for (const stmt of (SCHEMA + ';' + PAY_SCHEMA + ';' + RAID_SCHEMA + ';' + PROGRESS_SCHEMA + ';' + CASINO_SCHEMA).split(';').map((s) => s.trim()).filter(Boolean)) await db.query(stmt)
+  for (const stmt of (SCHEMA + ';' + PAY_SCHEMA + ';' + RAID_SCHEMA + ';' + PROGRESS_SCHEMA + ';' + CASINO_SCHEMA + ';' + FUSION_SCHEMA).split(';').map((s) => s.trim()).filter(Boolean)) await db.query(stmt)
 }
 
 export type Profile = {
@@ -73,6 +74,7 @@ export type Profile = {
   daily: { streak: number; claimable: boolean; next: number; doubleReady: boolean }
   belt: { hp: number; rage: number; phoenix: number }
   god: boolean
+  codex: string[]
 }
 
 export function toProfile(r: any): Profile {
@@ -89,7 +91,8 @@ export function toProfile(r: any): Profile {
     armory: r.armory ?? 0,
     daily: dailyInfo(r),
     belt: { hp: r.pot_hp ?? 0, rage: r.pot_rage ?? 0, phoenix: r.pot_phoenix ?? 0 },
-    god: !!r.god_at
+    god: !!r.god_at,
+    codex: codexOf(r)
   }
 }
 

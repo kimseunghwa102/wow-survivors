@@ -20,6 +20,8 @@ export type ServerProfile = {
   belt?: { hp: number; rage: number; phoenix: number }
   /** beat THE ALMIGHTY: every run starts as God */
   god?: boolean
+  /** fusion recipes this hunter has made (core|elements) */
+  codex?: string[]
 }
 export type BoardRow = { n: string; t: number; l: number; k: number; live?: boolean }
 export type GlobalBoard = {
@@ -184,6 +186,19 @@ export async function serverClaimQuest(i: number) {
   const r = await call('POST', '/api/quests/claim', { i })
   if (r.profile) save.profile = r.profile
   return r as QuestState & { reward: number; profile: ServerProfile | null }
+}
+
+/** save a fused art to the recipe book (first time each recipe pays gold); checkpoints the run first */
+export async function serverFusion(core: string, essences: string[], snap: RunSnap) {
+  if (!save.online || !save.runId) return null
+  try {
+    const r = await call('POST', '/api/fusion', { runId: save.runId, core, essences, snap })
+    if (r.profile) save.profile = r.profile
+    return r as { ok: boolean; isNew: boolean; reward: number; key: string; codex: string[]; profile: ServerProfile | null }
+  } catch (e) {
+    console.log('fusion save failed', e)
+    return null
+  }
 }
 
 /** bank a saved run instead of resuming it */

@@ -539,8 +539,44 @@ export function fxTiers(run: Run) {
   return [tierOf(run, 'lash'), tierOf(run, 'nova'), tierOf(run, 'thunder'), ...SK2.map((id) => tierOf(run, id))]
 }
 
+// ── fused arts: a glowing disc in the essence's colour under each impact ──
+const tintPools = new Map<string, Pool>()
+function tintPool(col: string) {
+  let p = tintPools.get(col)
+  if (!p) {
+    p = new Pool(() => {
+      const e = ent()
+      MeshRenderer.setCylinder(e, 1, 1)
+      Material.setPbrMaterial(e, {
+        albedoColor: Color4.fromHexString(col + '88'),
+        emissiveColor: Color3.fromHexString(col),
+        emissiveIntensity: 3,
+        transparencyMode: MaterialTransparencyMode.MTM_ALPHA_BLEND,
+        castShadows: false
+      })
+      return e
+    }, 2, 48)
+    tintPools.set(col, p)
+  }
+  return p
+}
+/** a disc of radius r that flashes open at the impact (after delay) and sinks away */
+function tintGlow(x: number, z: number, r: number, delay: number, col: string) {
+  const life = delay + 0.42
+  gAnim(tintPool(col), life, (k, tr) => {
+    const el = k * life
+    if (el < delay) return void (tr.position = HIDE)
+    const a = (el - delay) / 0.42
+    const d = r * 2 * (0.55 + 0.75 * Math.sqrt(a))
+    tr.position = V(x, 0.06, z)
+    tr.scale = V(d, 0.05 * (1 - a) + 0.005, d)
+  })
+}
+
 function playEvents(events: Ev[], run: Run | null, tiers?: number[]) {
   for (const ev of events) {
+    if ((ev.t === 'mStrike' || ev.t === 'slash') && ev.tint) tintGlow(ev.x, ev.z, ev.t === 'slash' ? Math.max(ev.w, ev.l) * 0.5 : ev.r, ev.t === 'mStrike' ? ev.delay : 0, ev.tint)
+    else if (ev.t === 'mRing' && ev.tint) tintGlow(ev.x, ev.z, ev.r1, 0, ev.tint)
     if (ev.t === 'slash') {
       const asc = tiers ? tiers[0] : run ? tierOf(run, 'lash') : 0
       const e = slashPool[asc].take()

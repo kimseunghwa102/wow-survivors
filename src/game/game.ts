@@ -6,7 +6,7 @@ import { movePlayerTo } from '~system/RestrictedActions'
 import LAYOUT from '../../layout.json'
 import { Run, Option, Ev, inArena, optionLabel, inPvpZone } from './core'
 import type { Entity } from '@dcl/sdk/ecs'
-import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS, GODS, MAX_GOD_LVL, ARTS, MAX_ART_LVL, ArtId, FUSION_LVL, ART_SLOTS } from './defs'
+import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS, GODS, MAX_GOD_LVL, ARTS, MAX_ART_LVL, ArtId, FUSION_LVL, ART_SLOTS, recipeKey, RECIPE_REWARD_PER_STAR } from './defs'
 import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm, queueRemoteFx, fxTiers, haloTiersOf, projKind, lookOf, ascendFx, skyText } from './view'
 import { encodeFx, decodeFx } from './fxnet'
 import { playerInCasino } from '../casino/holdem/ui'
@@ -17,7 +17,7 @@ import { ARENA_EVENTS, VaultPrize, VAULT_PRIZES, POTION_DEFS, PotionKind } from 
 import { attachCosmetic, anchorOf, detach } from './cosmetics'
 import { play, setupSfx, musicLevel } from './sfx'
 import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf, sendFx, pushFeed, sendAscend } from './net'
-import { serverQuests, serverClaimQuest, QuestState, serverBuyPotion } from './persist'
+import { serverQuests, serverClaimQuest, QuestState, serverBuyPotion, serverFusion } from './persist'
 import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile, serverArmoryBuy, serverClaimDaily, shopConfig, shopQuote, shopConfirm, serverSaveRun, serverAbandon, pingServer } from './persist'
 import { getUserAccount, sendAsync, requirePayment } from '~system/EthereumController'
 import { getPlayer } from '@dcl/sdk/players'
@@ -101,6 +101,8 @@ export const G = {
   forgeIntroDone: false,
   /** how many fusable pairs the HUD last announced */
   forgePairsSeen: 0,
+  /** fusion recipe book (saved on the server; core|elements) */
+  codex: new Set<string>(),
   ascendName: '',
   // potion belt in the lobby (server-owned) + run feel
   profileBelt: { hp: 0, rage: 0, phoenix: 0 },
@@ -128,6 +130,7 @@ export function applyProfile(p: ServerProfile | null) {
   if (p.firstPurchase !== undefined) G.firstPurchase = p.firstPurchase
   if (p.belt) G.profileBelt = { ...p.belt }
   if (p.god) G.isGod = true
+  if (p.codex) for (const k of p.codex) G.codex.add(k)
   wearMine()
 }
 
@@ -854,8 +857,19 @@ function handle(evs: Ev[]) {
         play('evolve')
         play('jackpot', 1.2)
         upgradeFx(r, 'evolve', e.core, `⚗ ${name.toUpperCase()}`, ARTS[e.core].color)
-        banner(`⚗ FUSED — ${name}`, 3.5)
+        const essences = r.fusions.get(e.core) ?? []
+        const key = recipeKey(e.core, essences)
+        const fresh = !G.codex.has(key)
+        G.codex.add(key)
+        banner(fresh ? `⚗ NEW RECIPE — ${name}  (book: ${G.codex.size})` : `⚗ FUSED — ${name}`, 4)
+        if (fresh) play('coin', 1.1)
         G.forgePairsSeen = r.fusablePairs()
+        serverFusion(e.core, essences, r.snapshot()).then((res) => {
+          if (!res) return
+          if (res.profile) applyProfile(res.profile)
+          for (const k of res.codex ?? []) G.codex.add(k)
+          if (res.isNew && res.reward) banner(`📖 recipe saved to your book · +${res.reward} gold`, 3)
+        })
         break
       }
       case 'secondWind':

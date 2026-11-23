@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express'
 import { verify } from '@dcl/platform-crypto-middleware'
 import { GOLD_PACK, GOLD_PACKS, FIRST_BUY_BONUS, hasBought, createQuote, confirmPurchase, settlePending, Rpc, PriceFeed, coingecko, Currency } from './payments'
+import { recordFusion } from './fusion'
 import { Sql, getOrCreate, toProfile, startRun, getOpenRun, finishRun, buy, leaderboard, rankOf, buyArmory, claimDaily, getResume, saveCheckpoint, bankAbandoned } from './db'
 import { raidRoutes, inventory } from './raid'
 import { casinoRoutes } from './casino/casino'
@@ -223,6 +224,19 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
   )
 
   // daily quests (reset at midnight KST)
+  // fusion recipe book: save a fused art (and pay the first-time reward); the snapshot checkpoints the run first
+  app.post(
+    '/api/fusion',
+    authed(async (req, res, a) => {
+      const b = req.body || {}
+      const runId = String(b.runId || '')
+      if (b.snap) await saveCheckpoint(db, runId, a.address, b.snap)
+      const r = await recordFusion(db, a.address, runId, String(b.core || ''), Array.isArray(b.essences) ? b.essences.map(String) : [])
+      const p = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
+      res.status(r.ok ? 200 : 400).json({ ...r, profile: p ? toProfile(p) : null })
+    })
+  )
+
   app.post(
     '/api/quests',
     authed(async (_req, res, a) => {

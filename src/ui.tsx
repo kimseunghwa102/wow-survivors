@@ -5,7 +5,7 @@ import { buyPotion, drinkPotion } from './game/game'
 import { Ui as CasinoUi, playerInCasino } from './casino/holdem/ui'
 import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard, openForge, closeForge, forgePick, forgeSwap, forgeConfirm } from './game/game'
 import { optionLabel, Option, ARENA_EVENTS, VAULT_PRIZES, COMBO_TIERS, POTION_DEFS, PotionKind } from './game/core'
-import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable, GODS, MAX_GOD_LVL, GOD_UNLOCK, ARTS, ArtId, MAX_ART_LVL, ART_SLOTS, FUSION_LVL, ELEMENTS, ART_ELEMENT, MAX_ESSENCE } from './game/defs'
+import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable, GODS, MAX_GOD_LVL, GOD_UNLOCK, ARTS, ArtId, MAX_ART_LVL, ART_SLOTS, FUSION_LVL, ELEMENTS, ART_ELEMENT, MAX_ESSENCE, recipeKey, RECIPE_REWARD_PER_STAR } from './game/defs'
 import { feed, topRuns } from './game/net'
 import { save } from './game/persist'
 import { play } from './game/sfx'
@@ -600,7 +600,8 @@ function ForgeModal() {
   const step = !f.core ? '1 · tap the CORE art — its attack pattern stays' : !f.ess ? '2 · tap an ESSENCE art — it melts in and adds its element' : '3 · check the result, then FUSE'
   return (
     <Modal title="⚗ FUSION FORGE" sub={`${f.intro ? `Lv ${FUSION_LVL}: art slots are now ${ART_SLOTS}. ` : ''}Two MAX arts become one stronger art — one effect on screen instead of two. Up to ${'★'.repeat(MAX_ESSENCE)}.`} color={C('#FF6FB0')}>
-      <Label value={`<b>${step}</b>`} fontSize={15} color={WHITE} uiTransform={{ height: 22, margin: { bottom: 6 } }} />
+      <Label value={`<b>${step}</b>`} fontSize={15} color={WHITE} uiTransform={{ height: 22 }} />
+      <Label value={`📖 recipe book: ${G.codex.size} discovered — same core + new element mix = new recipe`} fontSize={11} color={C('#E8D28A')} uiTransform={{ height: 16, margin: { bottom: 6 } }} />
       <UiEntity uiTransform={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', width: 900 }}>
         {ids.map((id) => {
           const lv = r.arts.get(id) ?? 0
@@ -628,6 +629,11 @@ function ForgeModal() {
             uiTransform={{ height: 20 }}
           />
           <Label value={pv.essences.map((e) => ELEMENTS[ART_ELEMENT[e]].trait).join('  ·  ')} fontSize={11} color={DIM} uiTransform={{ height: 16 }} />
+          {G.codex.has(recipeKey(f.core, pv.essences)) ? (
+            <Label value="📖 in your recipe book" fontSize={12} color={DIM} uiTransform={{ height: 18 }} />
+          ) : (
+            <Label value={`<b>✦ NEW RECIPE</b> — first time pays +${RECIPE_REWARD_PER_STAR * pv.essences.length} gold`} fontSize={13} color={C('#3DFF8E')} uiTransform={{ height: 18 }} />
+          )}
           <UiEntity uiTransform={{ flexDirection: 'row', margin: { top: 8 } }}>
             <Button value="⚗ FUSE" fontSize={18} color={WHITE} uiTransform={{ width: 200, height: 42, margin: 6 }} uiBackground={BTN(C('#B0306A'))} onMouseDown={tap(forgeConfirm)} />
             {r.canFuse(f.ess, f.core) ? (

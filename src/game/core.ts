@@ -4,7 +4,7 @@ import {
   WeaponId, PassiveId, EnemyKind, WEAPONS, PASSIVES, ENEMIES, MAX_WEAPON_LVL, MAX_PASSIVE_LVL,
   MAX_WEAPONS, MAX_PASSIVES, waveMix, xpNeed, ARMORY, NUKE, NUKE_TIER, GOD_TIER, isHoldable, manualLevelScale, bossFor, BossDef,
   BOOSTS, BoostId, RARITY, GodId, GODS, GOD_UNLOCK, MAX_GODS, MAX_GOD_LVL, ARTS, ArtId, MAX_ART_LVL, BOSSES,
-  FUSION_LVL, ART_SLOTS, MAX_ESSENCE, FusionStats, fusionStats, fusionName
+  FUSION_LVL, ART_SLOTS, MAX_ESSENCE, FusionStats, fusionStats, fusionName, ELEMENTS, ART_ELEMENT
 } from './defs'
 
 export type Rect = { x0: number; z0: number; x1: number; z1: number }
@@ -78,7 +78,7 @@ export type Ev =
   | { t: 'elite' }
   | { t: 'ring' }
   | { t: 'pvpHit'; to: string; dmg: number }
-  | { t: 'slash'; x: number; z: number; yaw: number; w: number; l: number }
+  | { t: 'slash'; x: number; z: number; yaw: number; w: number; l: number; tint?: string }
   | { t: 'nova'; x: number; z: number; r: number }
   | { t: 'strike'; x: number; z: number; r: number }
   | { t: 'shoot' }
@@ -120,8 +120,8 @@ export type Ev =
   | { t: 'proj'; x: number; z: number; vx: number; vz: number; life: number; k: number } // k 0-3 shard tier · 4 feather · 5 gold feather (network only)
   // mythic boss patterns (Lv 350+)
   | { t: 'mRingWarn'; x: number; z: number; r0: number; r1: number; dur: number }
-  | { t: 'mRing'; x: number; z: number; r0: number; r1: number; own?: boolean }
-  | { t: 'mStrike'; x: number; z: number; r: number; delay: number; k: string; own?: boolean }
+  | { t: 'mRing'; x: number; z: number; r0: number; r1: number; own?: boolean; tint?: string }
+  | { t: 'mStrike'; x: number; z: number; r: number; delay: number; k: string; own?: boolean; tint?: string }
   | { t: 'mSpokes'; x: number; z: number; n: number; len: number; w: number; a0: number; omega: number; warm: number; dur: number; own?: boolean }
   | { t: 'mBlink'; x0: number; z0: number; x1: number; z1: number }
   | { t: 'mLight'; safe: [number, number, number][]; dur: number }
@@ -1509,6 +1509,16 @@ export class Run {
     // the art being cast right now: its fusion bonuses (none for an unfused art)
     const NOFUSE: FusionStats = { dmg: 1, area: 1, cd: 1, slow: 0 }
     let fz = NOFUSE
+    // a fused art's effects carry its newest essence's colour (the view adds a glow of that colour)
+    let tintFrom = this.events.length
+    let tintCol: string | undefined
+    const flushTint = () => {
+      if (tintCol) for (let i = tintFrom; i < this.events.length; i++) {
+        const ev = this.events[i]
+        if (ev.t === 'mStrike' || ev.t === 'mRing' || ev.t === 'slash') ev.tint = tintCol
+      }
+      tintFrom = this.events.length
+    }
     const dmgOf = (base: number, _tier: number) => base * sc * fz.dmg * (1 + 0.22 * (lvRaw - 1)) * (lvRaw >= MAX_ART_LVL ? 1.35 : 1)
     const near = (R: number) => foes.filter((e) => e.alive && Math.hypot(e.x - this.x, e.z - this.z) < R)
     const pick = <T>(a: T[]) => a[Math.floor(rand() * a.length)]
@@ -1566,6 +1576,8 @@ export class Run {
       lvRaw = lv
       const tier = TIER[lv] ?? 0
       const ess = this.fusions.get(id)
+      flushTint()
+      tintCol = ess ? ELEMENTS[ART_ELEMENT[ess[ess.length - 1]]].color : undefined
       fz = ess ? fusionStats(ess) : NOFUSE
       A = this.area * fz.area
       return lv > 0 && this.ready('art_' + id, cd * fz.cd * (tier >= 4 ? 0.85 : 1) * (lv >= 6 ? 0.92 : 1), dt) ? tier : 0
@@ -1803,6 +1815,7 @@ export class Run {
       this.events.push({ t: 'genesis', x: this.x, z: this.z, r: R })
       for (const e of near(R)) this.hitEnemy(e, dmgOf(400, lv))
     }
+    flushTint()
   }
 
   // ───────── GOD POWERS ─────────

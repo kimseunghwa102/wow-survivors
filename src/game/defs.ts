@@ -362,6 +362,11 @@ export function fusionStats(essences: ArtId[]): FusionStats {
   f.cd = Math.max(f.cd, 0.5)
   return f
 }
+/** a recipe = the core plus the elements melted into it (server/src/fusion.ts builds the same key) */
+export function recipeKey(core: ArtId, essences: ArtId[]) {
+  return `${core}|${essences.map((e) => ART_ELEMENT[e]).sort().join('+')}`
+}
+export const RECIPE_REWARD_PER_STAR = 100
 export function fusionName(core: ArtId, essences: ArtId[]): string {
   if (!essences.length) return ARTS[core].name
   const adjs: string[] = []

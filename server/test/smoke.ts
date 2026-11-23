@@ -181,6 +181,30 @@ async function main() {
     assert(end.json.ok && end.json.god === false && end.json.profile.god === true && end.json.profile.best.time === 66200, 'an 18 h run ends cleanly (no longer cut at 3 h)')
   }
 
+  console.log('fusion recipe book')
+  {
+    const fay = await identity()
+    await signed(fay, 'POST', '/api/profile', { name: 'Fay' })
+    const fr = await signed(fay, 'POST', '/api/run/start', { weapon: 'lash' })
+    const snapAt = (time: number, level: number) => ({ v: 1, time, level, kills: Math.floor(time * 15), gold: Math.floor(time * 12), bossesSlain: 10, weapons: [['lash', 8]], passives: [], evolved: [] })
+    const early = await signed(fay, 'POST', '/api/fusion', { runId: fr.json.runId, core: 'tide', essences: ['ember'], snap: snapAt(30, 260) })
+    assert(early.status === 400, 'Lv 260 after 30 s is not believed → no fusion reward')
+    await db.query(`UPDATE runs SET started_at = NOW() - INTERVAL '3000 seconds' WHERE id = $1`, [fr.json.runId])
+    const cp = await signed(fay, 'POST', '/api/run/save', { runId: fr.json.runId, snap: snapAt(2900, 260) })
+    const bank0 = cp.json.profile.bank
+    const f1 = await signed(fay, 'POST', '/api/fusion', { runId: fr.json.runId, core: 'tide', essences: ['ember'] })
+    assert(f1.json.ok && f1.json.isNew && f1.json.reward === 100 && f1.json.key === 'tide|fire', 'new recipe saved: Infernal Tidal Rings ★ (+100)')
+    assert(f1.json.profile.bank === bank0 + 100 && f1.json.profile.codex.includes('tide|fire'), 'gold banked, recipe in the profile book')
+    const f2 = await signed(fay, 'POST', '/api/fusion', { runId: fr.json.runId, core: 'tide', essences: ['hellrain'] })
+    assert(f2.json.ok && !f2.json.isNew && f2.json.reward === 0, 'same core + same element = same recipe, no second reward')
+    const f3 = await signed(fay, 'POST', '/api/fusion', { runId: fr.json.runId, core: 'tide', essences: ['ember', 'drums'] })
+    assert(f3.json.isNew && f3.json.reward === 200 && f3.json.codex.length === 2, 'a ★★ mix is a new recipe (+200)')
+    const bad = await signed(fay, 'POST', '/api/fusion', { runId: fr.json.runId, core: 'tide', essences: ['tide'] })
+    assert(bad.status === 400, 'an art cannot melt into itself')
+    const bad2 = await signed(fay, 'POST', '/api/fusion', { runId: fr.json.runId, core: 'godmode', essences: ['ember'] })
+    assert(bad2.status === 400, 'unknown art rejected')
+  }
+
   console.log('shop')
   const bank0 = (await signed(alice, 'POST', '/api/profile', {})).json.profile.bank
   const b1 = await signed(alice, 'POST', '/api/shop/buy', { key: 'might' })
