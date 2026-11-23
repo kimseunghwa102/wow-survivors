@@ -43,7 +43,10 @@ function deliver(k: string, d: any) {
 }
 function on(k: string, fn: Handler) {
   handlers.set(k, fn)
-  bus.on(k, (d: any) => deliver(k, d))
+  bus.on(k, (d: any) => {
+    heardCount.p2p++
+    deliver(k, d)
+  })
 }
 function emit(k: string, d: Record<string, unknown>) {
   const msg = { ...d, q: seq++ }
@@ -63,20 +66,33 @@ let relayTry = 0
 export function relayOnline() {
   return relayUp
 }
+/** what the link is doing, for the HUD: 'live', 'connecting', or the last error */
+export let relayState = 'connecting'
+/** messages heard from other hunters in the last few seconds, per link */
+export const heardCount = { relay: 0, p2p: 0 }
 function connectRelay() {
   executeTask(async () => {
     try {
+      relayState = 'connecting'
       const res = await signedFetch({ url: API_URL + '/api/arena/ticket', init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' } })
-      const j = JSON.parse(res.body || '{}')
-      if (!j.ticket) throw new Error('no ticket')
+      let j: any = {}
+      try {
+        j = JSON.parse(res.body || '{}')
+      } catch {}
+      if (!j.ticket) {
+        relayState = `ticket refused (${res.status}${j.error ? ' ' + String(j.error).slice(0, 40) : ''})`
+        throw new Error(relayState)
+      }
       const ws = new WebSocket(API_URL.replace(/^http/, 'ws') + '/arena?t=' + j.ticket)
       relay = ws
       ws.onopen = () => {
         relayUp = true
         relayTry = 0
+        relayState = 'live'
       }
       ws.onmessage = (ev) => {
         try {
+          heardCount.relay++
           const m = JSON.parse(String(ev.data))
           if (m && typeof m.k === 'string') deliver(m.k, m.d)
         } catch {}
@@ -84,11 +100,13 @@ function connectRelay() {
       ws.onclose = () => {
         if (relay !== ws) return
         relayUp = false
+        relayState = 'link dropped, retrying'
         relay = null
         retryRelay()
       }
       ws.onerror = () => {}
     } catch (e) {
+      if (relayState === 'connecting') relayState = 'server unreachable, retrying'
       retryRelay()
     }
   })

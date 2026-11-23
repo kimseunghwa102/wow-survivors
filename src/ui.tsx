@@ -6,7 +6,7 @@ import { Ui as CasinoUi, playerInCasino } from './casino/holdem/ui'
 import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard, openForge, closeForge, forgePick, forgeSwap, forgeConfirm } from './game/game'
 import { optionLabel, Option, ARENA_EVENTS, VAULT_PRIZES, COMBO_TIERS, POTION_DEFS, PotionKind } from './game/core'
 import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable, GODS, MAX_GOD_LVL, GOD_UNLOCK, ARTS, ArtId, MAX_ART_LVL, ART_SLOTS, FUSION_LVL, ELEMENTS, ART_ELEMENT, MAX_ESSENCE, recipeKey, RECIPE_REWARD_PER_STAR } from './game/defs'
-import { feed, topRuns, remotes, relayOnline } from './game/net'
+import { feed, topRuns, remotes, relayOnline, relayState, heardCount } from './game/net'
 import { save } from './game/persist'
 import { play } from './game/sfx'
 
@@ -447,7 +447,8 @@ function Feed() {
   const heard = [...remotes.values()].length
   return (
     <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', padding: 8, margin: { top: 6 } }} uiBackground={FRAME}>
-      <Label value={`👥 ${heard} other hunter${heard === 1 ? '' : 's'} · ${relayOnline() ? 'live link ✓' : 'P2P only'}`} fontSize={10} color={relayOnline() ? C('#3DFF8E') : DIM} uiTransform={{ height: 14 }} textAlign="middle-left" />
+      <Label value={`👥 ${heard} other hunter${heard === 1 ? '' : 's'} · ${relayOnline() ? 'live link ✓' : 'link: ' + relayState}`} fontSize={10} color={relayOnline() ? C('#3DFF8E') : C('#FFB03A')} uiTransform={{ height: 14 }} textAlign="middle-left" />
+      <Label value={`heard: relay ${heardCount.relay} · p2p ${heardCount.p2p}`} fontSize={9} color={DIM} uiTransform={{ height: 12 }} textAlign="middle-left" />
       {feed.length ? <Label value="<b>RIFT FEED</b>" fontSize={11} color={C('#FF5468')} uiTransform={{ height: 15 }} textAlign="middle-left" /> : null}
       {feed.map((f, i) => (
         <Label key={`${f.t}-${i}`} value={f.text} fontSize={11} color={C(f.color)} uiTransform={{ height: 16 }} textAlign="middle-left" />

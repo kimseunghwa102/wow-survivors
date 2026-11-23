@@ -74,10 +74,15 @@ export function startArena(server: HttpServer) {
     const t = url.searchParams.get('t')
     const x = t ? tickets.get(t) : undefined
     if (t) tickets.delete(t)
-    if (!x || x.exp < Date.now()) return socket.destroy()
+    if (!x || x.exp < Date.now()) {
+      console.log('[arena] refused: bad or expired ticket')
+      return socket.destroy()
+    }
     wss.handleUpgrade(req, socket, head, (ws) => {
       const c: Client = { ws, addr: x.addr, alive: true, budget: RATE, t: Date.now() }
       clients.add(c)
+      console.log(`[arena] + ${x.addr.slice(0, 8)}… (${clients.size} online)`)
+      ws.on('close', () => console.log(`[arena] - ${x.addr.slice(0, 8)}… (${clients.size} online)`))
       ws.on('pong', () => (c.alive = true))
       ws.on('message', (data) => relay(c, String(data)))
       ws.on('close', () => clients.delete(c))

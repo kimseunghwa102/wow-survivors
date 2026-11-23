@@ -62,6 +62,7 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
       try {
         a = await auth(req)
       } catch (e: any) {
+        if (req.path === '/api/arena/ticket') console.log(`[arena] ticket refused: ${String(e?.message ?? e).slice(0, 120)}`)
         return res.status(e.statusCode ?? 401).json({ ok: false, error: e.message ?? 'unauthorized' })
       }
       try {
@@ -229,6 +230,7 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
   app.post(
     '/api/arena/ticket',
     authed(async (_req, res, a) => {
+      console.log(`[arena] ticket for ${a.address.slice(0, 8)}…${a.guest ? ' (guest)' : ''}`)
       res.json({ ok: true, ticket: arenaTicket(a.address) })
     })
   )
