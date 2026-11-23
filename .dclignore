@@ -17,3 +17,5 @@ raid
 *.tgz
 design
 docs
+casino-scene
+*.command

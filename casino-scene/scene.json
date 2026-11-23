@@ -1,0 +1,57 @@
+{
+  "ecs7": true,
+  "runtimeVersion": "7",
+  "display": {
+    "title": "WOW Casino",
+    "description": "WOW Casino — Gold Hold'em with your WOW NIGHTSWARM gold (Decentraland wallets only). Same table as the WOW casino in the NIGHTSWARM estate at -103,78: take gold from each other. Champagne bar, slots, WOW crypto lounge & lounge jazz.",
+    "navmapThumbnail": "images/thumbnail.jpg",
+    "favicon": "favicon_asset"
+  },
+  "owner": "0xfefb65dfd2bcb24269b944e34388f6748e38a6a8",
+  "contact": {
+    "name": "WOW",
+    "email": ""
+  },
+  "main": "bin/index.js",
+  "tags": [
+    "casino",
+    "poker",
+    "holdem",
+    "game",
+    "music",
+    "art"
+  ],
+  "scene": {
+    "parcels": [
+      "-76,-48"
+    ],
+    "base": "-76,-48"
+  },
+  "spawnPoints": [
+    {
+      "name": "entrance",
+      "default": true,
+      "position": {
+        "x": [
+          7.4,
+          8.6
+        ],
+        "y": [
+          0,
+          0
+        ],
+        "z": [
+          0.3,
+          0.8
+        ]
+      },
+      "cameraTarget": {
+        "x": 8,
+        "y": 2.5,
+        "z": 10
+      }
+    }
+  ],
+  "requiredPermissions": [],
+  "featureToggles": {}
+}

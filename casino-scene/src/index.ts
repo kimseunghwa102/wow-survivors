@@ -1,0 +1,245 @@
+import {
+  engine,
+  Entity,
+  Transform,
+  GltfContainer,
+  ColliderLayer,
+  MeshCollider,
+  VisibilityComponent,
+  TextShape,
+  Billboard,
+  BillboardMode,
+  pointerEventsSystem,
+  InputAction,
+  LightSource,
+  AudioSource,
+  Tween,
+  TweenSequence,
+  TweenLoop,
+  EasingFunction,
+  MeshRenderer,
+  Material
+} from '@dcl/sdk/ecs'
+import { Vector3, Quaternion, Color4, Color3 } from '@dcl/sdk/math'
+import { openExternalUrl, teleportTo } from '~system/RestrictedActions'
+import { ReactEcsRenderer } from '@dcl/sdk/react-ecs'
+import { Ui } from './holdem/ui'
+import { buildTable, renderTable } from './holdem/table'
+import { startUi } from './holdem/ui'
+import { startNet, standIfSeated } from './holdem/net'
+
+// ═════════════════ 설정 ═════════════════
+const HOLDEM_URL = 'https://gybmholdemdm.onrender.com'
+const MUSIC = 'sounds/lounge.mp3'
+const CHIME = 'sounds/chime.mp3'
+const H = 6 // 천장 높이
+const V = Vector3.create
+const hex4 = Color4.fromHexString
+const hex3 = Color3.fromHexString
+
+// 텍스트 방향: rotY=0 → +z를 바라보는 사람이 읽음 / 90 → +x / -90 → -x
+
+// ═════════════════ 헬퍼 ═════════════════
+// Blender→DCL 변환 시 모델이 Y축 기준 180° 돌아가므로 되돌려서 배치
+const FLIP = Quaternion.fromEulerDegrees(0, 180, 0)
+// 파셀 경계(0~16m)에 딱 붙은 벽이 경계 밖으로 판정되지 않도록 0.2% 안쪽으로
+const IN_S = 0.998
+const IN_SCALE = V(IN_S, 1, IN_S)
+const IN_POS = V(8 * (1 - IN_S), 0, 8 * (1 - IN_S))
+function model(src: string, pos: Vector3, physics = false, scale = Vector3.One()) {
+  const e = engine.addEntity()
+  Transform.create(e, { position: pos, rotation: FLIP, scale })
+  GltfContainer.create(e, {
+    src,
+    visibleMeshesCollisionMask: physics ? ColliderLayer.CL_PHYSICS : ColliderLayer.CL_NONE,
+    invisibleMeshesCollisionMask: ColliderLayer.CL_NONE
+  })
+  return e
+}
+
+/** 클릭 영역 (보이지 않는 박스 콜라이더) */
+function hotspot(pos: Vector3, scale: Vector3, hover: string, onClick: () => void, maxDistance = 8) {
+  const e = engine.addEntity()
+  Transform.create(e, { position: pos, scale })
+  MeshCollider.setBox(e, ColliderLayer.CL_POINTER)
+  pointerEventsSystem.onPointerDown({ entity: e, opts: { button: InputAction.IA_POINTER, hoverText: hover, maxDistance } }, onClick)
+  return e
+}
+
+function text(pos: Vector3, value: string, size: number, color: Color4, rotY = 0, billboard = false, outline = Color3.Black()) {
+  const e = engine.addEntity()
+  Transform.create(e, { position: pos, rotation: Quaternion.fromEulerDegrees(0, rotY, 0) })
+  TextShape.create(e, { text: value, fontSize: size, textColor: color, outlineWidth: 0.15, outlineColor: outline })
+  if (billboard) Billboard.create(e, { billboardMode: BillboardMode.BM_Y })
+  return e
+}
+
+const spinners: { e: Entity; axis: Vector3; speed: number }[] = []
+const spin = (e: Entity, axis: Vector3, speed: number) => spinners.push({ e, axis, speed })
+
+let chimeEntity: Entity
+function playChime(at: Vector3) {
+  Transform.createOrReplace(chimeEntity, { position: at })
+  AudioSource.createOrReplace(chimeEntity, { audioClipUrl: CHIME, playing: true, loop: false, volume: 0.9 })
+}
+function goHoldem(at: Vector3) {
+  playChime(at)
+  openExternalUrl({ url: HOLDEM_URL })
+}
+
+// ═════════════════ 씬 ═════════════════
+export function main() {
+  chimeEntity = engine.addEntity()
+
+  // ── 3D 모델 (Blender 제작) ──
+  model('models/casino_static.glb', IN_POS, true, IN_SCALE)
+
+  const chandelier = model('models/chandelier.glb', V(8, H - 0.05, 10))
+  spin(chandelier, V(0, 1, 0), 8)
+
+  const roulette = model('models/roulette.glb', V(8, 2.85, 15.68))
+  spin(roulette, V(0, 0, 1), 26)
+
+  // 마키 전구: 두 세트를 번갈아 켜서 체이싱 효과
+  const bulbsA = model('models/bulbs_a.glb', IN_POS, false, IN_SCALE)
+  const bulbsB = model('models/bulbs_b.glb', IN_POS, false, IN_SCALE)
+  VisibilityComponent.create(bulbsA, { visible: true })
+  VisibilityComponent.create(bulbsB, { visible: false })
+  let blinkT = 0
+  let flip = false
+  engine.addSystem((dt) => {
+    blinkT += dt
+    if (blinkT < 0.35) return
+    blinkT = 0
+    flip = !flip
+    VisibilityComponent.getMutable(bulbsA).visible = !flip
+    VisibilityComponent.getMutable(bulbsB).visible = flip
+  })
+
+  // ── 실시간 GYBM 홀덤 (웹과 같은 서버·계정·칩·랭킹) ──
+  // GOLD HOLD'EM: the same table as the WOW NIGHTSWARM casino (-103,78), played with WOW gold
+  buildTable()
+  startUi()
+  ReactEcsRenderer.setUiRenderer(Ui)
+  startNet()
+  engine.addSystem(() => renderTable())
+
+  // ── WORMHOLE to WOW NIGHTSWARM (-103,78): a window into the other land — walk in, no click ──
+  // inside the door on the right, turned to face the door (you see it from the spawn under the canopy).
+  // The window is the NIGHTSWARM spawn panorama, re-projected into a bowl so it keeps depth as you move;
+  // stepping in wraps the camera in the full 360° view of where you land while the teleport asks.
+  const PX = 11.0, PY = 1.75, PZ = 5.0
+  const turn = Quaternion.fromEulerDegrees(0, 34, 0)
+  const NOCOL = { visibleMeshesCollisionMask: ColliderLayer.CL_NONE, invisibleMeshesCollisionMask: ColliderLayer.CL_NONE }
+  const win = engine.addEntity()
+  Transform.create(win, { position: V(PX, PY, PZ), rotation: turn })
+  GltfContainer.create(win, { src: 'models/portal_ns_win.glb', ...NOCOL })
+  const rim = engine.addEntity()
+  Transform.create(rim, { position: V(PX, PY, PZ), rotation: turn })
+  GltfContainer.create(rim, { src: 'models/portal_ns_rim.glb', ...NOCOL })
+  spin(rim, V(0, 0, 1), 55)
+  const bubble = engine.addEntity()
+  Transform.create(bubble, { position: V(PX, PY, PZ), rotation: turn, scale: V(0.7, 0.7, 0.7) })
+  GltfContainer.create(bubble, { src: 'models/portal_ns_bub.glb', ...NOCOL })
+  VisibilityComponent.create(bubble, { visible: false })
+  text(V(PX, 4.6, PZ), 'WORMHOLE\nWOW NIGHTSWARM', 3.0, hex4('#FFD700FF'), 0, true, hex3('#3A0A00'))
+  text(V(PX, 3.95, PZ), 'walk in → -103,78 · hunt for gold', 1.3, hex4('#7DF9FFFF'), 0, true)
+  const glow = engine.addEntity()
+  Transform.create(glow, { position: V(PX, 2.0, PZ) })
+  LightSource.create(glow, { type: LightSource.Type.Point({}), color: hex3('#9A4BFF'), intensity: 14000, range: 8 })
+  let armed = false
+  let cool = 0
+  let wrapped = 0
+  let wasInside = false
+  engine.addSystem((dt) => {
+    cool -= dt
+    const t = Transform.getOrNull(engine.PlayerEntity)
+    if (!t) return
+    const d = Math.hypot(t.position.x - PX, t.position.z - PZ)
+    // stepped off the casino land still seated: stand up so the table gold goes straight home
+    const inside = t.position.x >= 0 && t.position.x <= 16 && t.position.z >= 0 && t.position.z <= 16
+    if (wasInside && !inside) void standIfSeated()
+    wasInside = inside
+    if (d > 2.2) armed = true // you have to walk in, not spawn inside it
+    if (armed && cool <= 0 && d < 0.9) {
+      armed = false
+      cool = 6
+      wrapped = 7
+      VisibilityComponent.getMutable(bubble).visible = true
+      playChime(V(PX, 1, PZ))
+      void standIfSeated() // table gold goes home before you leave
+      void teleportTo({ worldCoordinates: { x: -103, y: 78 } })
+    }
+    if (wrapped > 0) {
+      wrapped -= dt
+      // keep the bubble on the camera so the other land fills the view
+      const cam = Transform.getOrNull(engine.CameraEntity)
+      if (cam) Transform.getMutable(bubble).position = V(cam.position.x, cam.position.y, cam.position.z)
+      if (wrapped <= 0 || d > 1.6) {
+        wrapped = 0
+        VisibilityComponent.getMutable(bubble).visible = false
+      }
+    }
+  })
+
+  // ── 슬롯머신 (무료 재미용) ──
+  const symbols = ['7', 'BAR', '$', 'K', 'A', '*']
+  for (const z of [6.4, 9.4, 12.4]) {
+    const result = text(V(14.62, 1.95, z), 'SPIN ME', 0.7, Color4.White(), 90)
+    hotspot(V(15.2, 1.0, z), V(1.0, 2.0, 1.2), 'Spin (just for fun)', () => {
+      const pick = () => symbols[Math.floor(Math.random() * symbols.length)]
+      let a = pick(),
+        b = pick(),
+        c = pick()
+      if (Math.random() < 0.18) b = c = a
+      const win = a === b && b === c
+      const t = TextShape.getMutable(result)
+      t.text = win ? `JACKPOT!  ${a} ${b} ${c}` : `${a}  ${b}  ${c}`
+      t.textColor = win ? hex4('#FF4FA3FF') : hex4('#FFE082FF')
+      if (win) playChime(V(15, 1.5, z))
+    }, 6)
+  }
+
+  // ── 조명 ──
+  const point = (pos: Vector3, color: string, intensity: number, range: number) => {
+    const e = engine.addEntity()
+    Transform.create(e, { position: pos })
+    LightSource.create(e, { type: LightSource.Type.Point({}), color: hex3(color), intensity, range })
+  }
+  point(V(8, 3.6, 10), '#FFD9A6', 30000, 11)
+  point(V(8, 4.0, 1.4), '#FFC870', 16000, 8)
+  point(V(1.8, 4.0, 10), '#FF5FA8', 9000, 7)
+  point(V(14.2, 4.0, 9.4), '#7C9BFF', 9000, 7)
+
+  const spots: { e: Entity; base: number }[] = []
+  for (const [x, col, base] of [
+    [4, '#FF3EA5', 0],
+    [12, '#3EE7FF', 180]
+  ] as [number, string, number][]) {
+    const e = engine.addEntity()
+    Transform.create(e, { position: V(x, H - 0.3, 12), rotation: Quaternion.fromEulerDegrees(70, base, 0) })
+    LightSource.create(e, { type: LightSource.Type.Spot({ innerAngle: 15, outerAngle: 28 }), color: hex3(col), intensity: 25000, range: 14 })
+    spots.push({ e, base })
+  }
+  let t = 0
+  engine.addSystem((dt) => {
+    t += dt
+    spots.forEach((s, i) => {
+      Transform.getMutable(s.e).rotation = Quaternion.fromEulerDegrees(65 + Math.sin(t * 0.9 + i * 2) * 15, s.base + Math.sin(t * 0.6 + i) * 70, 0)
+    })
+    for (const s of spinners) {
+      const tr = Transform.getMutable(s.e)
+      tr.rotation = Quaternion.multiply(tr.rotation, Quaternion.fromEulerDegrees(s.axis.x * s.speed * dt, s.axis.y * s.speed * dt, s.axis.z * s.speed * dt))
+    }
+  })
+
+  // ── 배경음악 (오리지널 라운지 재즈 루프) ──
+  const music = engine.addEntity()
+  Transform.create(music, { position: V(8, 2, 9) })
+  AudioSource.create(music, { audioClipUrl: MUSIC, playing: true, loop: true, volume: 0.45, global: true })
+  ;(globalThis as any).__gybmCount = () => {
+    let n = 0
+    for (const _ of engine.getEntitiesWith(Transform)) n++
+    return n
+  }
+}

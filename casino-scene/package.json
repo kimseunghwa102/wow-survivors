@@ -1,0 +1,17 @@
+{
+  "name": "my-dcl-parcel",
+  "version": "1.0.0",
+  "description": "1-parcel Decentraland scene",
+  "scripts": {
+    "start": "sdk-commands start",
+    "build": "sdk-commands build",
+    "deploy": "sdk-commands deploy",
+    "upgrade-sdk": "npm install --save-dev @dcl/sdk@latest"
+  },
+  "devDependencies": {
+    "@dcl/js-runtime": "7.33.0",
+    "@dcl/sdk": "7.33.0"
+  },
+  "engines": { "node": ">=16.0.0", "npm": ">=6.0.0" },
+  "prettier": { "semi": false, "singleQuote": true, "printWidth": 120, "trailingComma": "none" }
+}

@@ -1,0 +1,5 @@
+{
+  "compilerOptions": {},
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "extends": "./node_modules/@dcl/sdk/types/tsconfig.ecs7.json"
+}
