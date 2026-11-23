@@ -316,6 +316,64 @@ export const ARTS: Record<ArtId, ArtDef> = {
   genesis: { name: 'Genesis Light', color: '#FFF6D8', boss: 'THE ALMIGHTY', desc: up('The light of creation smites everything around you', '+radius', '+damage', 'faster', 'let there be light') }
 }
 
+// ───────────── FUSION: from Lv 250, two mastered arts melt into one stronger art ─────────────
+// The CORE keeps its pattern (one visual instead of two); each ESSENCE melts in and adds its element.
+// Order matters: Ember→Tide (fire tide rings) is a different skill from Tide→Ember (rain that slows).
+export const FUSION_LVL = 250
+/** art slots once fusion opens: a full bar means fuse to make room for a new art */
+export const ART_SLOTS = 6
+/** a fused art holds its core plus up to 3 essences (★ → ★★ → ★★★) */
+export const MAX_ESSENCE = 3
+export type ElementId = 'fire' | 'thunder' | 'blade' | 'tide' | 'light' | 'shadow' | 'ki' | 'time'
+export type ElementDef = { name: string; adj: string; color: string; dmg: number; area: number; cd: number; slow: number; trait: string }
+export const ELEMENTS: Record<ElementId, ElementDef> = {
+  fire: { name: 'Fire', adj: 'Infernal', color: '#FF7A2A', dmg: 1.3, area: 1, cd: 1, slow: 0, trait: 'Burning: +30% damage' },
+  thunder: { name: 'Thunder', adj: 'Storm', color: '#FFE45A', dmg: 1, area: 1, cd: 0.78, slow: 0, trait: 'Storm: casts 28% faster' },
+  blade: { name: 'Blade', adj: 'Razor', color: '#D8E0F0', dmg: 1.15, area: 1, cd: 0.88, slow: 0, trait: 'Keen: +15% damage, 12% faster' },
+  tide: { name: 'Tide', adj: 'Abyssal', color: '#3FA8FF', dmg: 1.05, area: 1.25, cd: 1, slow: 0.45, trait: 'Undertow: +25% area, slows foes' },
+  light: { name: 'Light', adj: 'Holy', color: '#FFF2B0', dmg: 1.12, area: 1.2, cd: 1, slow: 0, trait: 'Radiance: +20% area, +12% damage' },
+  shadow: { name: 'Shadow', adj: 'Phantom', color: '#9B6BFF', dmg: 1.22, area: 1.08, cd: 1, slow: 0, trait: 'Dread: +22% damage, +8% area' },
+  ki: { name: 'Ki', adj: 'Titan', color: '#FFB03A', dmg: 1.28, area: 1.05, cd: 1, slow: 0, trait: 'Overdrive: +28% damage' },
+  time: { name: 'Time', adj: 'Eternal', color: '#9FE8FF', dmg: 1, area: 1, cd: 0.7, slow: 0.25, trait: 'Haste: casts 30% faster, slows foes' }
+}
+export const ART_ELEMENT: Record<ArtId, ElementId> = {
+  ember: 'fire', fan: 'blade', tide: 'tide', lances: 'light', kunai: 'shadow', drums: 'thunder', fist: 'ki', stars: 'light',
+  broadside: 'shadow', pillars: 'light', blacksun: 'fire', wheel: 'light', kiburst: 'ki', cannonade: 'shadow', cuts: 'blade',
+  judgment: 'light', hellrain: 'fire', horizon: 'shadow', foxfire: 'fire', phantom: 'shadow', raijin: 'thunder', eyes: 'light',
+  abyss: 'tide', sixarms: 'blade', timestop: 'time', wrath: 'ki', genesis: 'light'
+}
+/** each essence also hands over most of its own power, so fusing never makes you weaker */
+export const ESSENCE_ABSORB = 0.75
+/** extra bonus by stars: ★ / ★★ / ★★★ */
+export const FUSION_TIER_BONUS = [1, 1.05, 1.1, 1.2]
+export type FusionStats = { dmg: number; area: number; cd: number; slow: number }
+export function fusionStats(essences: ArtId[]): FusionStats {
+  // element bonuses add up (three fire essences = +90% damage, not ×2.2)
+  const f: FusionStats = { dmg: 1, area: 1, cd: 1, slow: 0 }
+  for (const e of essences) {
+    const el = ELEMENTS[ART_ELEMENT[e]]
+    f.dmg += el.dmg - 1
+    f.area += el.area - 1
+    f.cd -= 1 - el.cd
+    f.slow = Math.max(f.slow, el.slow)
+  }
+  f.dmg *= (1 + ESSENCE_ABSORB * essences.length) * FUSION_TIER_BONUS[Math.min(essences.length, MAX_ESSENCE)]
+  f.area = Math.min(f.area, 1.6)
+  f.cd = Math.max(f.cd, 0.5)
+  return f
+}
+export function fusionName(core: ArtId, essences: ArtId[]): string {
+  if (!essences.length) return ARTS[core].name
+  const adjs: string[] = []
+  for (const e of essences) {
+    const a = ELEMENTS[ART_ELEMENT[e]].adj
+    if (!adjs.includes(a)) adjs.push(a)
+  }
+  // three different elements read as one word, so names stay short
+  const prefix = adjs.length >= 3 ? 'Prismatic' : adjs.join(' ')
+  return `${prefix} ${ARTS[core].name} ${'★'.repeat(Math.min(essences.length, MAX_ESSENCE))}`
+}
+
 // ───────────── endless level-ups once every skill is maxed ─────────────
 // 20 boons; each offer rolls a rarity that multiplies the effect (×1 common · ×2 rare · ×3 epic · ×5 legendary)
 export type BoostId =

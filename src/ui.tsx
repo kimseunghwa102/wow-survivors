@@ -3,9 +3,9 @@ import { CORE_ONLY } from './edition'
 import { Color4 } from '@dcl/sdk/math'
 import { buyPotion, drinkPotion } from './game/game'
 import { Ui as CasinoUi, playerInCasino } from './casino/holdem/ui'
-import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard } from './game/game'
+import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard, openForge, closeForge, forgePick, forgeSwap, forgeConfirm } from './game/game'
 import { optionLabel, Option, ARENA_EVENTS, VAULT_PRIZES, COMBO_TIERS, POTION_DEFS, PotionKind } from './game/core'
-import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable, GODS, MAX_GOD_LVL, GOD_UNLOCK, ARTS, ArtId, MAX_ART_LVL } from './game/defs'
+import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable, GODS, MAX_GOD_LVL, GOD_UNLOCK, ARTS, ArtId, MAX_ART_LVL, ART_SLOTS, FUSION_LVL, ELEMENTS, ART_ELEMENT, MAX_ESSENCE } from './game/defs'
 import { feed, topRuns } from './game/net'
 import { save } from './game/persist'
 import { play } from './game/sfx'
@@ -151,9 +151,10 @@ function GoldHud() {
   )
 }
 
-/** arts, two per line (there can be 27 of them) */
+/** arts, two per line; a fused art shows its fused name */
 function artRows(arts: Map<ArtId, number>) {
-  const items = [...arts.entries()].map(([id, lv]) => `${ARTS[id].name} ${lv >= MAX_ART_LVL ? '★' : lv}`)
+  const r = G.run
+  const items = [...arts.entries()].map(([id, lv]) => (r && r.fusions.has(id) ? `⚗ ${r.artName(id)}` : `${ARTS[id].name} ${lv >= MAX_ART_LVL ? 'MAX' : lv}`))
   const rows: string[] = []
   for (let i = 0; i < items.length; i += 2) rows.push(items.slice(i, i + 2).join('  ·  '))
   return rows
@@ -186,10 +187,11 @@ function RightMid() {
             {[...r.gods.entries()].map(([id, lv]) => (
               <Label key={`g${id}`} value={`✦ ${GODS[id].name}  <b>${lv >= MAX_GOD_LVL ? 'MAX' : 'Lv' + lv}</b>`} fontSize={13} color={C(GODS[id].color)} uiTransform={{ height: 18 }} textAlign="middle-left" />
             ))}
-            {r.arts.size ? <Label value={`<b>✧ ARTS</b>  ${r.arts.size}/${Object.keys(ARTS).length}`} fontSize={11} color={C('#E8D28A')} uiTransform={{ height: 15, margin: { top: 4 } }} textAlign="middle-left" /> : null}
+            {r.arts.size ? <Label value={r.fusionOpen() ? `<b>✧ ARTS</b>  slots ${r.arts.size}/${ART_SLOTS}` : `<b>✧ ARTS</b>  ${r.arts.size}`} fontSize={11} color={C('#E8D28A')} uiTransform={{ height: 15, margin: { top: 4 } }} textAlign="middle-left" /> : null}
             {artRows(r.arts).map((row, i) => (
               <Label key={`a${i}`} value={row} fontSize={11} color={C('#F2E6C8')} uiTransform={{ height: 15 }} textAlign="middle-left" />
             ))}
+            {r.fusionOpen() ? <ForgeButton /> : null}
             {ps.length ? <UiEntity uiTransform={{ height: 4 }} /> : null}
             {ps.map(([id, lv]) => (
               <Label key={id} value={`${PASSIVES[id].name}  ${lv >= MAX_PASSIVE_LVL ? 'MAX' : 'Lv' + lv}`} fontSize={12} color={DIM} uiTransform={{ height: 16 }} textAlign="middle-left" />
@@ -568,6 +570,80 @@ function StartModal() {
   )
 }
 
+/** HUD: opens the forge; glows when two mastered arts can fuse */
+function ForgeButton() {
+  const r = G.run!
+  const ready = r.fusablePairs() > 0
+  const glow = ready ? 0.55 + 0.45 * Math.abs(Math.sin(Date.now() / 300)) : 1
+  return (
+    <Button
+      value={ready ? '⚗ FUSION READY' : '⚗ FUSION FORGE'}
+      fontSize={12}
+      color={WHITE}
+      uiTransform={{ width: '100%', height: 26, margin: { top: 4 } }}
+      uiBackground={BTN(ready ? C('#B0306A', glow) : C('#3A2440'))}
+      onMouseDown={tap(() => openForge())}
+    />
+  )
+}
+
+function pct(m: number) {
+  return `${m >= 1 ? '+' : ''}${Math.round((m - 1) * 100)}%`
+}
+
+/** the Fusion Forge: tap a CORE (keeps its pattern), then an ESSENCE (melts in, adds its element) */
+function ForgeModal() {
+  const r = G.run!
+  const f = G.forge
+  const ids = [...r.arts.keys()]
+  const pv = f.core && f.ess ? r.fusePreview(f.core, f.ess) : null
+  const step = !f.core ? '1 · tap the CORE art — its attack pattern stays' : !f.ess ? '2 · tap an ESSENCE art — it melts in and adds its element' : '3 · check the result, then FUSE'
+  return (
+    <Modal title="⚗ FUSION FORGE" sub={`${f.intro ? `Lv ${FUSION_LVL}: art slots are now ${ART_SLOTS}. ` : ''}Two MAX arts become one stronger art — one effect on screen instead of two. Up to ${'★'.repeat(MAX_ESSENCE)}.`} color={C('#FF6FB0')}>
+      <Label value={`<b>${step}</b>`} fontSize={15} color={WHITE} uiTransform={{ height: 22, margin: { bottom: 6 } }} />
+      <UiEntity uiTransform={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', width: 900 }}>
+        {ids.map((id) => {
+          const lv = r.arts.get(id) ?? 0
+          const el = ELEMENTS[ART_ELEMENT[id]]
+          const picked = f.core === id ? 'CORE' : f.ess === id ? 'ESSENCE' : ''
+          const usable = lv >= MAX_ART_LVL && (!f.core || f.core === id || f.ess === id || r.canFuse(f.core, id))
+          const bg = picked === 'CORE' ? C('#7B3BFF') : picked === 'ESSENCE' ? C('#B0306A') : usable ? C('#2A2238') : C('#161616')
+          return (
+            <UiEntity key={id} uiTransform={{ width: 210, height: 74, margin: 5, flexDirection: 'column', padding: 6 }} uiBackground={{ color: bg }} onMouseDown={tap(() => (usable ? forgePick(id) : undefined))}>
+              <Label value={`<b>${r.artName(id)}</b>`} fontSize={13} color={usable || picked ? C(ARTS[id].color) : DIM} uiTransform={{ height: 20, width: '100%' }} />
+              <Label value={`${el.name.toUpperCase()} · ${lv >= MAX_ART_LVL ? 'MAX' : `Lv ${lv}/${MAX_ART_LVL} — not ready`}`} fontSize={11} color={C(el.color)} uiTransform={{ height: 16 }} />
+              <Label value={picked ? `◆ ${picked}` : usable ? el.trait : ''} fontSize={10} color={picked ? WHITE : DIM} uiTransform={{ height: 16, width: '100%' }} />
+            </UiEntity>
+          )
+        })}
+      </UiEntity>
+      {pv && f.core && f.ess ? (
+        <UiEntity uiTransform={{ flexDirection: 'column', alignItems: 'center', width: 760, padding: 10, margin: { top: 8 } }} uiBackground={FRAME}>
+          <Label value={`${ARTS[f.core].name}  +  ${ARTS[f.ess].name}  →`} fontSize={13} color={DIM} uiTransform={{ height: 18 }} />
+          <Label value={`<b>${pv.name}</b>`} fontSize={24} color={C(ARTS[f.core].color)} uiTransform={{ height: 34 }} />
+          <Label
+            value={`damage ${pct(pv.stats.dmg)}  ·  area ${pct(pv.stats.area)}  ·  cooldown ${pct(pv.stats.cd)}${pv.stats.slow ? `  ·  slows ${Math.round(pv.stats.slow * 100)}%` : ''}`}
+            fontSize={14}
+            color={WHITE}
+            uiTransform={{ height: 20 }}
+          />
+          <Label value={pv.essences.map((e) => ELEMENTS[ART_ELEMENT[e]].trait).join('  ·  ')} fontSize={11} color={DIM} uiTransform={{ height: 16 }} />
+          <UiEntity uiTransform={{ flexDirection: 'row', margin: { top: 8 } }}>
+            <Button value="⚗ FUSE" fontSize={18} color={WHITE} uiTransform={{ width: 200, height: 42, margin: 6 }} uiBackground={BTN(C('#B0306A'))} onMouseDown={tap(forgeConfirm)} />
+            {r.canFuse(f.ess, f.core) ? (
+              <Button value="⇄ SWAP CORE / ESSENCE" fontSize={13} color={WHITE} uiTransform={{ width: 210, height: 42, margin: 6 }} uiBackground={BTN(C('#3A2A5A'))} onMouseDown={tap(forgeSwap)} />
+            ) : null}
+          </UiEntity>
+        </UiEntity>
+      ) : null}
+      {!r.fusablePairs() ? (
+        <Label value={`no pair is ready yet — level two arts to MAX${r.artSlotsFull() ? `; new arts wait until a slot frees up (${r.arts.size}/${ART_SLOTS})` : ''}`} fontSize={12} color={DIM} uiTransform={{ height: 18, margin: { top: 6 } }} />
+      ) : null}
+      <Button value="CLOSE" fontSize={14} color={WHITE} uiTransform={{ width: 150, height: 34, margin: { top: 10 } }} uiBackground={BTN(C('#2A2A2A'))} onMouseDown={tap(closeForge)} />
+    </Modal>
+  )
+}
+
 function LevelModal() {
   const r = G.run!
   return (
@@ -580,6 +656,9 @@ function LevelModal() {
       <UiEntity uiTransform={{ flexDirection: 'row', margin: { top: 8 } }}>
         <Button value={`REROLL (${r.rerolls})`} fontSize={14} color={WHITE} uiTransform={{ width: 150, height: 34, margin: 6 }} uiBackground={BTN(r.rerolls > 0 ? C('#3A2A5A') : C('#222222'))} onMouseDown={tap(reroll)} />
         <Button value="SKIP (+10 gold)" fontSize={14} color={WHITE} uiTransform={{ width: 150, height: 34, margin: 6 }} uiBackground={BTN(C('#2A2A2A'))} onMouseDown={tap(skipLevel)} />
+        {r.fusionOpen() && r.fusablePairs() ? (
+          <Button value="⚗ FUSION FORGE" fontSize={14} color={WHITE} uiTransform={{ width: 170, height: 34, margin: 6 }} uiBackground={BTN(C('#B0306A'))} onMouseDown={tap(() => openForge())} />
+        ) : null}
         <Button
           value={G.autoPick ? 'AUTO-UPGRADE: ON' : 'AUTO-UPGRADE: OFF'}
           fontSize={13}
@@ -1022,6 +1101,7 @@ const Root = () => (
     {G.phase === 'start' ? <StartModal /> : null}
     {G.phase === 'levelup' && G.run ? <LevelModal /> : null}
     {G.phase === 'chest' && G.chest ? <ChestModal /> : null}
+    {G.phase === 'forge' && G.run ? <ForgeModal /> : null}
     {G.phase === 'dead' ? <DeadModal /> : null}
     {G.shopOpen && G.phase !== 'levelup' && G.phase !== 'chest' ? <ShopModal /> : null}
     {G.armoryOpen && !G.shopOpen && (G.phase === 'idle' || G.phase === 'dead' || G.phase === 'start') ? <ArmoryModal /> : null}

@@ -3,7 +3,8 @@ import LAYOUT from '../../layout.json'
 import {
   WeaponId, PassiveId, EnemyKind, WEAPONS, PASSIVES, ENEMIES, MAX_WEAPON_LVL, MAX_PASSIVE_LVL,
   MAX_WEAPONS, MAX_PASSIVES, waveMix, xpNeed, ARMORY, NUKE, NUKE_TIER, GOD_TIER, isHoldable, manualLevelScale, bossFor, BossDef,
-  BOOSTS, BoostId, RARITY, GodId, GODS, GOD_UNLOCK, MAX_GODS, MAX_GOD_LVL, ARTS, ArtId, MAX_ART_LVL, BOSSES
+  BOOSTS, BoostId, RARITY, GodId, GODS, GOD_UNLOCK, MAX_GODS, MAX_GOD_LVL, ARTS, ArtId, MAX_ART_LVL, BOSSES,
+  FUSION_LVL, ART_SLOTS, MAX_ESSENCE, FusionStats, fusionStats, fusionName
 } from './defs'
 
 export type Rect = { x0: number; z0: number; x1: number; z1: number }
@@ -130,6 +131,7 @@ export type Ev =
   | { t: 'genesis'; x: number; z: number; r: number }
   | { t: 'secondWind' }
   | { t: 'autoPick'; label: string; color: string }
+  | { t: 'fuse'; core: ArtId; ess: ArtId; n: number }
   | { t: 'mPhase'; boss: number; phase: number }
   | { t: 'ascend' }
 
@@ -179,7 +181,7 @@ export function setRandom(fn: () => number) {
 export type RunSnap = {
   v: number; time: number; level: number; xp: number; kills: number; gold: number; hp: number; maxHp: number
   pendingLevels: number; rerolls: number; pvpKills: number
-  weapons: [WeaponId, number][]; passives: [PassiveId, number][]; evolved: WeaponId[]; gods?: [GodId, number][]; arts?: [ArtId, number][]; potions?: Record<PotionKind, number>
+  weapons: [WeaponId, number][]; passives: [PassiveId, number][]; evolved: WeaponId[]; gods?: [GodId, number][]; arts?: [ArtId, number][]; fusions?: [ArtId, ArtId[]][]; potions?: Record<PotionKind, number>
   bossIndex: number; bossQueue: number; bossesSlain: number; boostDmg: number; boostArea: number; boostRegen: number
   nextElite: number; nextRing: number
   boons?: Record<string, number>
@@ -279,6 +281,10 @@ export class Run {
   projs: Proj[] = []
   // arts
   arts = new Map<ArtId, number>()
+  /** fused arts: core → essences melted into it (the essences no longer cast on their own) */
+  fusions = new Map<ArtId, ArtId[]>()
+  /** arts melted into another art: never offered again this run */
+  consumed = new Set<ArtId>()
   /** recent damage per second (rolling ~30 s), so bosses can be sized to the hunter */
   dps = 0
   private dpsAcc = 0
@@ -325,7 +331,7 @@ export class Run {
       v: 1,
       time: Math.floor(this.time), level: this.level, xp: Math.floor(this.xp), kills: this.kills, gold: Math.floor(this.gold),
       hp: Math.ceil(this.hp), maxHp: this.maxHp, pendingLevels: this.pendingLevels, rerolls: this.rerolls, pvpKills: this.pvpKills,
-      weapons: [...this.weapons.entries()], passives: [...this.passives.entries()], evolved: [...this.evolved], gods: [...this.gods.entries()], arts: [...this.arts.entries()], potions: { ...this.potions },
+      weapons: [...this.weapons.entries()], passives: [...this.passives.entries()], evolved: [...this.evolved], gods: [...this.gods.entries()], arts: [...this.arts.entries()], fusions: [...this.fusions.entries()], potions: { ...this.potions },
       // bosses on the field come back (twins: both, so the pair stays together)
       bossIndex: this.bossIndex - this.bossesAlive().length, bossQueue: this.bossQueue + this.bossesAlive().length, bossesSlain: this.bossesSlain,
       boostDmg: this.boostDmg, boostArea: this.boostArea, boostRegen: this.boostRegen,
@@ -345,6 +351,17 @@ export class Run {
     r.gods = new Map(s.gods ?? [])
     r.arts = new Map((s.arts ?? []).filter(([id]) => ARTS[id]))
     for (const id of r.arts.keys()) r.artSeen.add(id)
+    for (const [core, ess] of s.fusions ?? []) {
+      if (!r.arts.has(core)) continue
+      const list = (ess ?? []).filter((e) => ARTS[e] && e !== core).slice(0, MAX_ESSENCE)
+      if (!list.length) continue
+      r.fusions.set(core, list)
+      for (const e of list) {
+        r.consumed.add(e)
+        r.arts.delete(e)
+        r.artSeen.add(e)
+      }
+    }
     if (s.potions) r.potions = { hp: Math.min(9, s.potions.hp | 0), rage: Math.min(5, s.potions.rage | 0), phoenix: Math.min(1, s.potions.phoenix | 0) }
     r.awakened = s.level >= GOD_UNLOCK
     r.time = s.time
@@ -1261,9 +1278,49 @@ export class Run {
     const out: Option[] = []
     for (const id of Object.keys(ARTS) as ArtId[]) {
       const lv = this.arts.get(id) ?? 0
+      if (this.consumed.has(id)) continue
+      if (lv === 0 && this.artSlotsFull()) continue
       if (lv < MAX_ART_LVL && this.artUnlocked(id)) out.push({ kind: 'art', id, to: lv + 1 })
     }
     return out
+  }
+
+  // ── fusion (Lv 250+) ──
+  fusionOpen() {
+    return this.level >= FUSION_LVL
+  }
+  artSlotsFull() {
+    return this.fusionOpen() && this.arts.size >= ART_SLOTS
+  }
+  /** can ESS melt into CORE? both mastered, and the result holds at most MAX_ESSENCE essences */
+  canFuse(core: ArtId, ess: ArtId) {
+    if (!this.fusionOpen() || core === ess) return false
+    if ((this.arts.get(core) ?? 0) < MAX_ART_LVL || (this.arts.get(ess) ?? 0) < MAX_ART_LVL) return false
+    return (this.fusions.get(core)?.length ?? 0) + 1 + (this.fusions.get(ess)?.length ?? 0) <= MAX_ESSENCE
+  }
+  /** what fusing would make, without doing it */
+  fusePreview(core: ArtId, ess: ArtId): { name: string; essences: ArtId[]; stats: FusionStats } {
+    const essences = [...(this.fusions.get(core) ?? []), ess, ...(this.fusions.get(ess) ?? [])]
+    return { name: fusionName(core, essences), essences, stats: fusionStats(essences) }
+  }
+  fusablePairs() {
+    let n = 0
+    const ids = [...this.arts.keys()]
+    for (const a of ids) for (const b of ids) if (this.canFuse(a, b)) n++
+    return n
+  }
+  fuse(core: ArtId, ess: ArtId) {
+    if (!this.canFuse(core, ess)) return false
+    const { essences } = this.fusePreview(core, ess)
+    this.fusions.set(core, essences)
+    this.fusions.delete(ess)
+    this.arts.delete(ess)
+    for (const e of essences) this.consumed.add(e)
+    this.events.push({ t: 'fuse', core, ess, n: essences.length })
+    return true
+  }
+  artName(id: ArtId) {
+    return fusionName(id, this.fusions.get(id) ?? [])
   }
 
   levelChoices(): Option[] {
@@ -1449,7 +1506,10 @@ export class Run {
     if (!this.arts.size) return
 
     const sc = manualLevelScale(this.level) * (this.godBorn ? 1.25 : 1)
-    const dmgOf = (base: number, _tier: number) => base * sc * (1 + 0.22 * (lvRaw - 1)) * (lvRaw >= MAX_ART_LVL ? 1.35 : 1)
+    // the art being cast right now: its fusion bonuses (none for an unfused art)
+    const NOFUSE: FusionStats = { dmg: 1, area: 1, cd: 1, slow: 0 }
+    let fz = NOFUSE
+    const dmgOf = (base: number, _tier: number) => base * sc * fz.dmg * (1 + 0.22 * (lvRaw - 1)) * (lvRaw >= MAX_ART_LVL ? 1.35 : 1)
     const near = (R: number) => foes.filter((e) => e.alive && Math.hypot(e.x - this.x, e.z - this.z) < R)
     const pick = <T>(a: T[]) => a[Math.floor(rand() * a.length)]
     const nearest = (R: number) => {
@@ -1466,7 +1526,7 @@ export class Run {
       const t = nearest(R)
       return t ? (Math.atan2(t.x - this.x, t.z - this.z) * 180) / Math.PI : this.yaw
     }
-    const strike = (k: string, x: number, z: number, r: number, delay: number, dmg: number, slow = 0) => {
+    const strike = (k: string, x: number, z: number, r: number, delay: number, dmg: number, slow = fz.slow) => {
       const c = clampArena(x, z, 0.3)
       this.ownStrikes.push({ x: c.x, z: c.z, r, t: delay, dmg, slow })
       this.events.push({ t: 'mStrike', x: c.x, z: c.z, r, delay, k, own: true })
@@ -1505,9 +1565,12 @@ export class Run {
       const lv = lvOf(id)
       lvRaw = lv
       const tier = TIER[lv] ?? 0
-      return lv > 0 && this.ready('art_' + id, cd * (tier >= 4 ? 0.85 : 1) * (lv >= 6 ? 0.92 : 1), dt) ? tier : 0
+      const ess = this.fusions.get(id)
+      fz = ess ? fusionStats(ess) : NOFUSE
+      A = this.area * fz.area
+      return lv > 0 && this.ready('art_' + id, cd * fz.cd * (tier >= 4 ? 0.85 : 1) * (lv >= 6 ? 0.92 : 1), dt) ? tier : 0
     }
-    const A = this.area
+    let A = this.area
     let lv = 0
     // ── rift arts ──
     if ((lv = go('ember', 2.6))) {

@@ -6,7 +6,7 @@ import { movePlayerTo } from '~system/RestrictedActions'
 import LAYOUT from '../../layout.json'
 import { Run, Option, Ev, inArena, optionLabel, inPvpZone } from './core'
 import type { Entity } from '@dcl/sdk/ecs'
-import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS, GODS, MAX_GOD_LVL, ARTS, MAX_ART_LVL } from './defs'
+import { WeaponId, WEAPONS, PASSIVES, ARMORY, NUKE_TIER, GOD_TIER, isHoldable, bossFor, GOLD_PACKS, GODS, MAX_GOD_LVL, ARTS, MAX_ART_LVL, ArtId, FUSION_LVL, ART_SLOTS } from './defs'
 import { renderRun, clearView, setupView, setAim, upgradeFx, rankOf, rankName, setGodForm, queueRemoteFx, fxTiers, haloTiersOf, projKind, lookOf, ascendFx, skyText } from './view'
 import { encodeFx, decodeFx } from './fxnet'
 import { playerInCasino } from '../casino/holdem/ui'
@@ -22,7 +22,7 @@ import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, 
 import { getUserAccount, sendAsync, requirePayment } from '~system/EthereumController'
 import { getPlayer } from '@dcl/sdk/players'
 
-export type Phase = 'idle' | 'start' | 'running' | 'levelup' | 'chest' | 'dead'
+export type Phase = 'idle' | 'start' | 'running' | 'levelup' | 'chest' | 'forge' | 'dead'
 export type MetaKey = 'might' | 'hp' | 'magnet' | 'xp'
 export const META: Record<MetaKey, { name: string; desc: string; max: number }> = {
   might: { name: 'Power', desc: '+5% damage', max: 5 },
@@ -95,6 +95,12 @@ export const G = {
   autoPick: true,
   lastModalT: -99,
   autoToast: null as null | { text: string; color: string; t: number },
+  /** the Fusion Forge (Lv 250+): pick a CORE, then an ESSENCE */
+  forge: { core: null as ArtId | null, ess: null as ArtId | null, intro: false, from: 'running' as Phase },
+  /** the forge opened by itself once this run (at Lv 250) */
+  forgeIntroDone: false,
+  /** how many fusable pairs the HUD last announced */
+  forgePairsSeen: 0,
   ascendName: '',
   // potion belt in the lobby (server-owned) + run feel
   profileBelt: { hp: 0, rage: 0, phoenix: 0 },
@@ -394,6 +400,8 @@ export function startRun(w: WeaponId) {
   G.pvpKills = 0
   G.phase = 'running'
   G.lastAttackerId = ''
+  G.forgeIntroDone = false
+  G.forgePairsSeen = 0
   banner(G.isGod ? `✦ GOD WALKS THE RIFT ✦  ${WEAPONS[w].name} in hand` : `HOLD THE RIFT! ${WEAPONS[w].name} equipped`, 3)
   musicLevel(0.16)
 }
@@ -569,7 +577,62 @@ function nextModal() {
     if (res.rolls.some((o) => o.kind === 'evolve')) play('evolve')
     return
   }
+  if (r.fusionOpen() && !G.forgeIntroDone) {
+    G.forgeIntroDone = true
+    banner('⚗ FUSION AWAKENS — melt two mastered arts into one stronger art', 5)
+    play('evolve', 0.9)
+    openForge(true)
+    return
+  }
   G.phase = 'running'
+}
+
+// ── Fusion Forge ──
+export function openForge(intro = false) {
+  const r = G.run
+  if (!r || !r.fusionOpen()) return
+  if (G.phase !== 'running' && G.phase !== 'levelup') return
+  G.forge = { core: null, ess: null, intro, from: G.phase === 'levelup' ? 'levelup' : 'running' }
+  G.phase = 'forge'
+}
+export function closeForge() {
+  const r = G.run
+  G.forge.core = null
+  G.forge.ess = null
+  // back to the same level-up cards (fusing never invalidates them: essences are already MAX)
+  G.phase = G.forge.from === 'levelup' && r && r.pendingLevels > 0 ? 'levelup' : 'running'
+}
+/** first tap picks the CORE, second tap the ESSENCE; tapping a picked art again un-picks it */
+export function forgePick(id: ArtId) {
+  const f = G.forge
+  const r = G.run
+  if (!r) return
+  if (f.core === id) {
+    f.core = f.ess
+    f.ess = null
+  } else if (f.ess === id) f.ess = null
+  else if (!f.core) f.core = id
+  else if (r.canFuse(f.core, id)) f.ess = id
+  else banner('those two cannot fuse — both must be MAX and a fusion holds at most ★★★', 2)
+  play('buy', 1.5)
+}
+export function forgeSwap() {
+  const f = G.forge
+  if (!f.core || !f.ess) return
+  const r = G.run
+  if (!r || !r.canFuse(f.ess, f.core)) return
+  const c = f.core
+  f.core = f.ess
+  f.ess = c
+  play('buy', 1.3)
+}
+export function forgeConfirm() {
+  const f = G.forge
+  const r = G.run
+  if (!r || !f.core || !f.ess) return
+  if (!r.fuse(f.core, f.ess)) return
+  f.core = null
+  f.ess = null
 }
 
 export function buyPotion(id: PotionKind) {
@@ -785,6 +848,16 @@ function handle(evs: Ev[]) {
       case 'rageEnd':
         banner('rage wears off…', 1.2)
         break
+      case 'fuse': {
+        const name = r.artName(e.core)
+        G.flash = 0.5
+        play('evolve')
+        play('jackpot', 1.2)
+        upgradeFx(r, 'evolve', e.core, `⚗ ${name.toUpperCase()}`, ARTS[e.core].color)
+        banner(`⚗ FUSED — ${name}`, 3.5)
+        G.forgePairsSeen = r.fusablePairs()
+        break
+      }
       case 'secondWind':
         banner('✦ SECOND WIND ✦  the rift gives newcomers one more chance', 4)
         break
@@ -900,6 +973,12 @@ function handle(evs: Ev[]) {
     }
   }
   if (G.phase === 'running' && G.ascendT <= 0 && (r.pendingLevels > 0 || G.chestQueue.length)) nextModal()
+  // a new pair of mastered arts can fuse: say so once (the forge button pulses until used)
+  if (G.phase === 'running' && G.forgeIntroDone && r.fusionOpen()) {
+    const pairs = r.fusablePairs()
+    if (pairs > G.forgePairsSeen) banner(`⚗ FUSION READY — open the Fusion Forge${r.artSlotsFull() ? ` (art slots ${r.arts.size}/${ART_SLOTS} full)` : ''}`, 3)
+    G.forgePairsSeen = pairs
+  }
 }
 
 export function setupGame() {
