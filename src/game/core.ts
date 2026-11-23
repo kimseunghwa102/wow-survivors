@@ -181,7 +181,7 @@ export function setRandom(fn: () => number) {
 export type RunSnap = {
   v: number; time: number; level: number; xp: number; kills: number; gold: number; hp: number; maxHp: number
   pendingLevels: number; rerolls: number; pvpKills: number
-  weapons: [WeaponId, number][]; passives: [PassiveId, number][]; evolved: WeaponId[]; gods?: [GodId, number][]; arts?: [ArtId, number][]; fusions?: [ArtId, ArtId[]][]; potions?: Record<PotionKind, number>
+  weapons: [WeaponId, number][]; passives: [PassiveId, number][]; evolved: WeaponId[]; gods?: [GodId, number][]; arts?: [ArtId, number][]; fusions?: [ArtId, ArtId[]][]; legacyArts?: boolean; potions?: Record<PotionKind, number>
   bossIndex: number; bossQueue: number; bossesSlain: number; boostDmg: number; boostArea: number; boostRegen: number
   nextElite: number; nextRing: number
   boons?: Record<string, number>
@@ -285,6 +285,8 @@ export class Run {
   fusions = new Map<ArtId, ArtId[]>()
   /** arts melted into another art: never offered again this run */
   consumed = new Set<ArtId>()
+  /** a run saved past Lv 250 before fusion existed: keeps learning arts without a slot limit (fusing stays optional) */
+  legacyArts = false
   /** recent damage per second (rolling ~30 s), so bosses can be sized to the hunter */
   dps = 0
   private dpsAcc = 0
@@ -331,7 +333,7 @@ export class Run {
       v: 1,
       time: Math.floor(this.time), level: this.level, xp: Math.floor(this.xp), kills: this.kills, gold: Math.floor(this.gold),
       hp: Math.ceil(this.hp), maxHp: this.maxHp, pendingLevels: this.pendingLevels, rerolls: this.rerolls, pvpKills: this.pvpKills,
-      weapons: [...this.weapons.entries()], passives: [...this.passives.entries()], evolved: [...this.evolved], gods: [...this.gods.entries()], arts: [...this.arts.entries()], fusions: [...this.fusions.entries()], potions: { ...this.potions },
+      weapons: [...this.weapons.entries()], passives: [...this.passives.entries()], evolved: [...this.evolved], gods: [...this.gods.entries()], arts: [...this.arts.entries()], fusions: [...this.fusions.entries()], legacyArts: this.legacyArts, potions: { ...this.potions },
       // bosses on the field come back (twins: both, so the pair stays together)
       bossIndex: this.bossIndex - this.bossesAlive().length, bossQueue: this.bossQueue + this.bossesAlive().length, bossesSlain: this.bossesSlain,
       boostDmg: this.boostDmg, boostArea: this.boostArea, boostRegen: this.boostRegen,
@@ -351,6 +353,8 @@ export class Run {
     r.gods = new Map(s.gods ?? [])
     r.arts = new Map((s.arts ?? []).filter(([id]) => ARTS[id]))
     for (const id of r.arts.keys()) r.artSeen.add(id)
+    // saved before the fusion update (no fusions field) and already past Lv 250 → no slot limit for this run
+    r.legacyArts = !!s.legacyArts || (s.fusions === undefined && s.level >= FUSION_LVL)
     for (const [core, ess] of s.fusions ?? []) {
       if (!r.arts.has(core)) continue
       const list = (ess ?? []).filter((e) => ARTS[e] && e !== core).slice(0, MAX_ESSENCE)
@@ -1290,7 +1294,7 @@ export class Run {
     return this.level >= FUSION_LVL
   }
   artSlotsFull() {
-    return this.fusionOpen() && this.arts.size >= ART_SLOTS
+    return this.fusionOpen() && !this.legacyArts && this.arts.size >= ART_SLOTS
   }
   /** can ESS melt into CORE? both mastered, and the result holds at most MAX_ESSENCE essences */
   canFuse(core: ArtId, ess: ArtId) {

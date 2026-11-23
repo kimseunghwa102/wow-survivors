@@ -580,6 +580,11 @@ function nextModal() {
     if (res.rolls.some((o) => o.kind === 'evolve')) play('evolve')
     return
   }
+  if (r.fusionOpen() && !G.forgeIntroDone && r.legacyArts) {
+    // an older run resumed past Lv 250: nothing changes for it, the forge is just there if wanted
+    G.forgeIntroDone = true
+    banner('⚗ NEW: FUSION FORGE — optional for this run (no art limit). Fuse arts any time for a cleaner screen', 6)
+  }
   if (r.fusionOpen() && !G.forgeIntroDone) {
     G.forgeIntroDone = true
     banner('⚗ FUSION AWAKENS — melt two mastered arts into one stronger art', 5)

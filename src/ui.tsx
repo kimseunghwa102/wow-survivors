@@ -187,7 +187,7 @@ function RightMid() {
             {[...r.gods.entries()].map(([id, lv]) => (
               <Label key={`g${id}`} value={`✦ ${GODS[id].name}  <b>${lv >= MAX_GOD_LVL ? 'MAX' : 'Lv' + lv}</b>`} fontSize={13} color={C(GODS[id].color)} uiTransform={{ height: 18 }} textAlign="middle-left" />
             ))}
-            {r.arts.size ? <Label value={r.fusionOpen() ? `<b>✧ ARTS</b>  slots ${r.arts.size}/${ART_SLOTS}` : `<b>✧ ARTS</b>  ${r.arts.size}`} fontSize={11} color={C('#E8D28A')} uiTransform={{ height: 15, margin: { top: 4 } }} textAlign="middle-left" /> : null}
+            {r.arts.size ? <Label value={r.fusionOpen() && !r.legacyArts ? `<b>✧ ARTS</b>  slots ${r.arts.size}/${ART_SLOTS}` : `<b>✧ ARTS</b>  ${r.arts.size}`} fontSize={11} color={C('#E8D28A')} uiTransform={{ height: 15, margin: { top: 4 } }} textAlign="middle-left" /> : null}
             {artRows(r.arts).map((row, i) => (
               <Label key={`a${i}`} value={row} fontSize={11} color={C('#F2E6C8')} uiTransform={{ height: 15 }} textAlign="middle-left" />
             ))}
@@ -599,7 +599,7 @@ function ForgeModal() {
   const pv = f.core && f.ess ? r.fusePreview(f.core, f.ess) : null
   const step = !f.core ? '1 · tap the CORE art — its attack pattern stays' : !f.ess ? '2 · tap an ESSENCE art — it melts in and adds its element' : '3 · check the result, then FUSE'
   return (
-    <Modal title="⚗ FUSION FORGE" sub={`${f.intro ? `Lv ${FUSION_LVL}: art slots are now ${ART_SLOTS}. ` : ''}Two MAX arts become one stronger art — one effect on screen instead of two. Up to ${'★'.repeat(MAX_ESSENCE)}.`} color={C('#FF6FB0')}>
+    <Modal title="⚗ FUSION FORGE" sub={`${r.legacyArts ? 'Optional for this run (it started before fusion, so it keeps every art). ' : f.intro ? `Lv ${FUSION_LVL}: art slots are now ${ART_SLOTS}. ` : ''}Two MAX arts become one stronger art — one effect on screen instead of two. Up to ${'★'.repeat(MAX_ESSENCE)}.`} color={C('#FF6FB0')}>
       <Label value={`<b>${step}</b>`} fontSize={15} color={WHITE} uiTransform={{ height: 22 }} />
       <Label value={`📖 recipe book: ${G.codex.size} discovered — same core + new element mix = new recipe`} fontSize={11} color={C('#E8D28A')} uiTransform={{ height: 16, margin: { bottom: 6 } }} />
       <UiEntity uiTransform={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', width: 900 }}>
