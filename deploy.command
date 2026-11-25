@@ -6,7 +6,7 @@ if [ -d .git ] && command -v git >/dev/null 2>&1; then echo "[0/3] Checking for 
 echo "[1/3] Installing packages (first time only takes a few minutes)..."
 npm install --no-audit --no-fund || { read -n 1 -s -r -p "Press any key to close"; exit 1; }
 echo "[2/3] Building the scene..."
-npx sdk-commands build || { read -n 1 -s -r -p "Press any key to close"; exit 1; }
+npx --no-install sdk-commands build || { read -n 1 -s -r -p "Press any key to close"; exit 1; }
 echo "[3/3] Deploying to Decentraland. A browser tab will open:"
 echo "      connect the wallet that owns the Wow Casino estate and click \"Sign and Deploy\"."
 npm run deploy
