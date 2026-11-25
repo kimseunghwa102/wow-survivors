@@ -621,6 +621,15 @@ export function jackpotFx(name: string, kind: 'divine' | 'dung', x: number, z: n
 }
 
 // ── Fusion Forge ──
+/** switch one of your own skills off / on (it stays owned and keeps levelling, it just stops firing) */
+export function toggleSkill(key: string, name: string) {
+  const r = G.run
+  if (!r) return
+  const on = r.toggleSkill(key)
+  play('buy', on ? 1.2 : 0.8)
+  banner(on ? `✓ ${name}: ON` : `⏸ ${name}: OFF — tap it again to turn it back on`, 2)
+}
+
 /** show / hide other hunters' skill effects. Their avatars, names and PvP hits are unaffected. */
 export function toggleOthersFx() {
   G.showOthersFx = !G.showOthersFx

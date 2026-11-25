@@ -182,7 +182,7 @@ export function setRandom(fn: () => number) {
 export type RunSnap = {
   v: number; time: number; level: number; xp: number; kills: number; gold: number; hp: number; maxHp: number
   pendingLevels: number; rerolls: number; pvpKills: number
-  weapons: [WeaponId, number][]; passives: [PassiveId, number][]; evolved: WeaponId[]; gods?: [GodId, number][]; arts?: [ArtId, number][]; fusions?: [ArtId, ArtId[]][]; legacyArts?: boolean; potions?: Record<PotionKind, number>
+  weapons: [WeaponId, number][]; passives: [PassiveId, number][]; evolved: WeaponId[]; gods?: [GodId, number][]; arts?: [ArtId, number][]; fusions?: [ArtId, ArtId[]][]; legacyArts?: boolean; off?: string[]; potions?: Record<PotionKind, number>
   bossIndex: number; bossQueue: number; bossesSlain: number; boostDmg: number; boostArea: number; boostRegen: number
   nextElite: number; nextRing: number
   boons?: Record<string, number>
@@ -336,7 +336,7 @@ export class Run {
       v: 1,
       time: Math.floor(this.time), level: this.level, xp: Math.floor(this.xp), kills: this.kills, gold: Math.floor(this.gold),
       hp: Math.ceil(this.hp), maxHp: this.maxHp, pendingLevels: this.pendingLevels, rerolls: this.rerolls, pvpKills: this.pvpKills,
-      weapons: [...this.weapons.entries()], passives: [...this.passives.entries()], evolved: [...this.evolved], gods: [...this.gods.entries()], arts: [...this.arts.entries()], fusions: [...this.fusions.entries()], legacyArts: this.legacyArts, potions: { ...this.potions },
+      weapons: [...this.weapons.entries()], passives: [...this.passives.entries()], evolved: [...this.evolved], gods: [...this.gods.entries()], arts: [...this.arts.entries()], fusions: [...this.fusions.entries()], legacyArts: this.legacyArts, off: [...this.off], potions: { ...this.potions },
       // bosses on the field come back (twins: both, so the pair stays together)
       bossIndex: this.bossIndex - this.bossesAlive().length, bossQueue: this.bossQueue + this.bossesAlive().length, bossesSlain: this.bossesSlain,
       boostDmg: this.boostDmg, boostArea: this.boostArea, boostRegen: this.boostRegen,
@@ -356,6 +356,7 @@ export class Run {
     r.gods = new Map(s.gods ?? [])
     r.arts = new Map((s.arts ?? []).filter(([id]) => ARTS[id]))
     for (const id of r.arts.keys()) r.artSeen.add(id)
+    for (const k of s.off ?? []) if (typeof k === 'string' && k.length < 24) r.off.add(k)
     // saved before the fusion update (no fusions field) and already past Lv 250 → no slot limit for this run
     r.legacyArts = !!s.legacyArts || (s.fusions === undefined && s.level >= FUSION_LVL)
     for (const [core, ess] of s.fusions ?? []) {
@@ -449,11 +450,22 @@ export class Run {
   get need() {
     return xpNeed(this.level)
   }
+  /** firing level: 0 while the hunter has switched the skill off */
   w(id: WeaponId) {
-    return this.weapons.get(id) ?? 0
+    return this.off.has('w:' + id) ? 0 : this.weapons.get(id) ?? 0
   }
   g(id: GodId) {
-    return this.gods.get(id) ?? 0
+    return this.off.has('g:' + id) ? 0 : this.gods.get(id) ?? 0
+  }
+  /** skills the hunter switched off ('w:lash', 'g:kame', 'a:ember'): they stay owned and keep levelling, they just don't fire */
+  off = new Set<string>()
+  toggleSkill(key: string) {
+    if (this.off.has(key)) this.off.delete(key)
+    else this.off.add(key)
+    return !this.off.has(key)
+  }
+  skillOn(key: string) {
+    return !this.off.has(key)
   }
   evo(id: WeaponId) {
     return this.evolved.has(id)
@@ -1249,7 +1261,7 @@ export class Run {
   allUpgrades(): Option[] {
     const opts: Option[] = []
     for (const id of Object.keys(WEAPONS) as WeaponId[]) {
-      const lv = this.w(id)
+      const lv = this.weapons.get(id) ?? 0
       if (lv === 0 && this.weapons.size >= MAX_WEAPONS) continue
       if (lv < MAX_WEAPON_LVL) opts.push({ kind: 'weapon', id, to: lv + 1 })
     }
@@ -1265,7 +1277,7 @@ export class Run {
     if (this.level < GOD_UNLOCK && !this.godBorn) return []
     const out: Option[] = []
     for (const id of Object.keys(GODS) as GodId[]) {
-      const lv = this.g(id)
+      const lv = this.gods.get(id) ?? 0
       if (lv === 0 && this.gods.size >= MAX_GODS) continue
       if (lv < MAX_GOD_LVL) out.push({ kind: 'god', id, to: lv + 1 })
     }
@@ -1431,7 +1443,7 @@ export class Run {
     }
     if (!all.length) return this.boostChoices(Math.max(3, n))
     // owned items are twice as likely, so builds snowball
-    const weighted = all.map((o) => ({ o, w: (o.kind === 'weapon' ? this.w(o.id) : o.kind === 'passive' ? this.p(o.id) : o.kind === 'art' ? this.arts.get(o.id) ?? 0 : 0) > 0 ? 2.2 : 1 }))
+    const weighted = all.map((o) => ({ o, w: (o.kind === 'weapon' ? this.weapons.get(o.id) ?? 0 : o.kind === 'passive' ? this.p(o.id) : o.kind === 'art' ? this.arts.get(o.id) ?? 0 : 0) > 0 ? 2.2 : 1 }))
     const out: Option[] = []
     while (out.length < n && weighted.length) {
       const total = weighted.reduce((s, x) => s + x.w, 0)
@@ -1618,7 +1630,7 @@ export class Run {
       }
     }
     const crowd = (R = 14) => this.densest(foes, R)
-    const lvOf = (id: ArtId) => this.arts.get(id) ?? 0
+    const lvOf = (id: ArtId) => (this.off.has('a:' + id) ? 0 : this.arts.get(id) ?? 0)
     // levels 1-8 map to tiers 1-5 (the tier decides counts/sizes; every level adds damage)
     const TIER = [0, 1, 2, 3, 3, 4, 4, 4, 5]
     let lvRaw = 1
@@ -2749,7 +2761,7 @@ export class Run {
       if (prize === 'double') count += 2
     }
     while (rolls.length < count) {
-      const owned = this.allUpgrades().filter((o) => (o.kind === 'weapon' ? this.w(o.id) : o.kind === 'passive' ? this.p(o.id) : 0) > 0)
+      const owned = this.allUpgrades().filter((o) => (o.kind === 'weapon' ? this.weapons.get(o.id) ?? 0 : o.kind === 'passive' ? this.p(o.id) : 0) > 0)
       const pool = owned.length ? owned : this.allUpgrades()
       if (!pool.length) {
         const o: Option = this.boostChoices(1)[0] ?? { kind: 'boost', id: 'dmg' }

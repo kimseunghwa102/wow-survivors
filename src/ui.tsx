@@ -3,7 +3,7 @@ import { CORE_ONLY } from './edition'
 import { Color4 } from '@dcl/sdk/math'
 import { buyPotion, drinkPotion } from './game/game'
 import { Ui as CasinoUi, playerInCasino } from './casino/holdem/ui'
-import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard, openForge, closeForge, forgePick, forgeSwap, forgeConfirm, toggleOthersFx } from './game/game'
+import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard, openForge, closeForge, forgePick, forgeSwap, forgeConfirm, toggleOthersFx, toggleSkill } from './game/game'
 import { optionLabel, Option, ARENA_EVENTS, VAULT_PRIZES, COMBO_TIERS, POTION_DEFS, PotionKind } from './game/core'
 import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable, GODS, MAX_GOD_LVL, GOD_UNLOCK, ARTS, ArtId, MAX_ART_LVL, ART_SLOTS, FUSION_LVL, ELEMENTS, ART_ELEMENT, MAX_ESSENCE, recipeKey, RECIPE_REWARD_PER_STAR } from './game/defs'
 import { feed, topRuns, remotes, relayOnline, relayState, heardCount } from './game/net'
@@ -151,6 +151,23 @@ function GoldHud() {
   )
 }
 
+/** one of your skills in the list: tap to switch it off / on */
+function SkillRow(p: { key?: string; k: string; name: string; text: string; color: Color4; w?: string | number; size?: number }) {
+  const r = G.run!
+  const on = r.skillOn(p.k)
+  const fs = p.size ?? 12
+  return (
+    <UiEntity
+      uiTransform={{ width: (p.w ?? '100%') as any, height: fs + 5, flexDirection: 'row', alignItems: 'center' }}
+      uiBackground={on ? undefined : { color: C('#000000', 0.35) }}
+      onMouseDown={tap(() => toggleSkill(p.k, p.name))}
+    >
+      <Label value={on ? '●' : '○'} fontSize={fs - 2} color={on ? p.color : DIM} uiTransform={{ width: 12, height: fs + 4 }} />
+      <Label value={on ? p.text : `${p.text}  OFF`} fontSize={fs} color={on ? p.color : DIM} uiTransform={{ height: fs + 4, flexGrow: 1 }} textAlign="middle-left" />
+    </UiEntity>
+  )
+}
+
 /** two items per line */
 function pairs(items: string[]) {
   const rows: string[] = []
@@ -179,25 +196,22 @@ function RightMid() {
         <UiEntity uiTransform={{ width: '100%', flexDirection: 'column' }}>
           {/* loadout */}
           <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', padding: 8, margin: { top: 6 } }} uiBackground={FRAME}>
-            <Label value="<b>SKILLS</b>" fontSize={11} color={DIM} uiTransform={{ height: 15 }} textAlign="middle-left" />
-            {ws.map(([id, lv]) => (
-              <Label
-                key={id}
-                value={`${r.evolved.has(id) ? '✦ ' + WEAPONS[id].evo : WEAPONS[id].name}  <b>${lv >= MAX_WEAPON_LVL ? 'MAX' : 'Lv' + lv}</b>`}
-                fontSize={12}
-                color={C(WEAPONS[id].color)}
-                uiTransform={{ height: 16 }}
-                textAlign="middle-left"
-              />
-            ))}
+            <Label value={`<b>SKILLS</b>  ·  tap one to turn it off${r.off.size ? `  (${r.off.size} off)` : ''}`} fontSize={10} color={DIM} uiTransform={{ height: 15 }} textAlign="middle-left" />
+            {ws.map(([id, lv]) => {
+              const name = r.evolved.has(id) ? '✦ ' + WEAPONS[id].evo : WEAPONS[id].name
+              return <SkillRow key={id} k={`w:${id}`} name={name} text={`${name}  <b>${lv >= MAX_WEAPON_LVL ? 'MAX' : 'Lv' + lv}</b>`} color={C(WEAPONS[id].color)} />
+            })}
             {r.gods.size ? <Label value="<b>✦ GOD POWERS</b>" fontSize={11} color={GOLD} uiTransform={{ height: 15, margin: { top: 4 } }} textAlign="middle-left" /> : null}
             {[...r.gods.entries()].map(([id, lv]) => (
-              <Label key={`g${id}`} value={`✦ ${GODS[id].name}  <b>${lv >= MAX_GOD_LVL ? 'MAX' : 'Lv' + lv}</b>`} fontSize={13} color={C(GODS[id].color)} uiTransform={{ height: 18 }} textAlign="middle-left" />
+              <SkillRow key={`g${id}`} k={`g:${id}`} name={GODS[id].name} text={`✦ ${GODS[id].name}  <b>${lv >= MAX_GOD_LVL ? 'MAX' : 'Lv' + lv}</b>`} color={C(GODS[id].color)} />
             ))}
             {r.arts.size ? <Label value={r.fusionOpen() && !r.legacyArts ? `<b>✧ ARTS</b>  slots ${r.arts.size}/${ART_SLOTS}` : `<b>✧ ARTS</b>  ${r.arts.size}`} fontSize={11} color={C('#E8D28A')} uiTransform={{ height: 15, margin: { top: 4 } }} textAlign="middle-left" /> : null}
-            {artRows(r.arts).map((row, i) => (
-              <Label key={`a${i}`} value={row} fontSize={11} color={C('#F2E6C8')} uiTransform={{ height: 15 }} textAlign="middle-left" />
-            ))}
+            <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'wrap' }}>
+              {[...r.arts.entries()].map(([id, lv]) => {
+                const name = r.fusions.has(id) ? `⚗ ${r.artName(id)}` : ARTS[id].name
+                return <SkillRow key={`a${id}`} k={`a:${id}`} name={name} text={r.fusions.has(id) ? name : `${name} ${lv >= MAX_ART_LVL ? 'MAX' : lv}`} color={C(ARTS[id].color)} w={r.fusions.has(id) ? '100%' : '50%'} size={11} />
+              })}
+            </UiEntity>
             {r.fusionOpen() ? <ForgeButton /> : null}
             {ps.length ? <UiEntity uiTransform={{ height: 4 }} /> : null}
             {pairs(ps.map(([id, lv]) => `${PASSIVES[id].name} ${lv >= MAX_PASSIVE_LVL ? 'MAX' : lv}`)).map((row, i) => (
