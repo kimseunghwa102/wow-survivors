@@ -151,6 +151,116 @@ function GoldHud() {
   )
 }
 
+/** compact loadout card in the right column */
+function SkillSummary() {
+  const r = G.run!
+  const off = r.off.size
+  const total = r.weapons.size + r.gods.size + r.arts.size
+  return (
+    <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', padding: 8, margin: { top: 6 } }} uiBackground={FRAME}>
+      <Label
+        value={`<b>SKILLS ${total}</b>  ·  ⚔ ${r.weapons.size}${r.gods.size ? `  ✦ ${r.gods.size}` : ''}${r.arts.size ? `  ✧ ${r.arts.size}` : ''}${r.passives.size ? `  ◇ ${r.passives.size}` : ''}`}
+        fontSize={12}
+        color={WHITE}
+        uiTransform={{ height: 16 }}
+        textAlign="middle-left"
+      />
+      <Label value={off ? `<b>⏸ ${off} turned off</b>` : 'all skills firing'} fontSize={11} color={off ? C('#FFB03A') : DIM} uiTransform={{ height: 15 }} textAlign="middle-left" />
+      <Button
+        value={G.skillsOpen ? '✕ CLOSE SKILL SWITCHES' : '⚙ TURN SKILLS ON / OFF'}
+        fontSize={13}
+        color={WHITE}
+        uiTransform={{ width: '100%', height: 32, margin: { top: 4 } }}
+        uiBackground={BTN(G.skillsOpen ? C('#7B3BFF') : C('#2D5A8A'))}
+        onMouseDown={tap(() => {
+          G.skillsOpen = !G.skillsOpen
+          if (G.skillsOpen) G.infoOpen = false
+        })}
+      />
+      {r.fusionOpen() ? <ForgeButton /> : null}
+    </UiEntity>
+  )
+}
+
+/** one switch in the SKILLS panel: a big tile, lit when on, grey with OFF when off */
+function SkillTile(p: { key?: string; k: string; name: string; lv: string; color: string }) {
+  const r = G.run!
+  const on = r.skillOn(p.k)
+  return (
+    <UiEntity
+      uiTransform={{ width: 168, height: 48, margin: 3, flexDirection: 'row', alignItems: 'center', padding: { left: 8, right: 8 } }}
+      uiBackground={BTN(on ? C(p.color, 0.28) : C('#1A1A1A', 0.9))}
+      onMouseDown={tap(() => toggleSkill(p.k, p.name))}
+    >
+      <UiEntity uiTransform={{ width: 34, height: 20, flexShrink: 0, justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: on ? C('#1FA85A') : C('#5A2020') }}>
+        <Label value={on ? '<b>ON</b>' : '<b>OFF</b>'} fontSize={10} color={WHITE} />
+      </UiEntity>
+      <UiEntity uiTransform={{ flexDirection: 'column', margin: { left: 7 }, flexGrow: 1 }}>
+        <Label value={`<b>${p.name}</b>`} fontSize={12} color={on ? C(p.color) : DIM} uiTransform={{ height: 16 }} textAlign="middle-left" />
+        <Label value={p.lv} fontSize={10} color={DIM} uiTransform={{ height: 13 }} textAlign="middle-left" />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+/** the SKILL SWITCHES panel: every skill as a tile; tap to turn it off / on. The run keeps going. */
+function SkillPanel() {
+  const r = G.run
+  if (!G.skillsOpen || !r || G.phase !== 'running') return null
+  const lvTxt = (lv: number, max: number) => (lv >= max ? 'MAX' : `Lv ${lv}`)
+  const section = (title: string, tiles: any[]) =>
+    tiles.length ? (
+      <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', margin: { top: 4 } }}>
+        <Label value={`<b>${title}</b>`} fontSize={12} color={GOLD} uiTransform={{ height: 16 }} textAlign="middle-left" />
+        <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'wrap' }}>{tiles}</UiEntity>
+      </UiEntity>
+    ) : null
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 90, right: 282 }, width: 540, flexDirection: 'column', padding: 12 }} uiBackground={FRAME}>
+      <Label value="<b>⚙ SKILL SWITCHES</b>" fontSize={18} color={WHITE} uiTransform={{ height: 24 }} textAlign="middle-left" />
+      <Label value="tap a skill to turn it OFF (it stops firing but stays yours and keeps levelling) — tap again for ON" fontSize={11} color={DIM} uiTransform={{ height: 15 }} textAlign="middle-left" />
+      {section(
+        '⚔ WEAPONS',
+        [...r.weapons.entries()].map(([id, lv]) => (
+          <SkillTile key={`w${id}`} k={`w:${id}`} name={r.evolved.has(id) ? '✦ ' + WEAPONS[id].evo : WEAPONS[id].name} lv={lvTxt(lv, MAX_WEAPON_LVL)} color={WEAPONS[id].color} />
+        ))
+      )}
+      {section(
+        '✦ GOD POWERS',
+        [...r.gods.entries()].map(([id, lv]) => <SkillTile key={`g${id}`} k={`g:${id}`} name={GODS[id].name} lv={lvTxt(lv, MAX_GOD_LVL)} color={GODS[id].color} />)
+      )}
+      {section(
+        '✧ ARTS',
+        [...r.arts.entries()].map(([id, lv]) => (
+          <SkillTile key={`a${id}`} k={`a:${id}`} name={r.fusions.has(id) ? '⚗ ' + r.artName(id) : ARTS[id].name} lv={r.fusions.has(id) ? 'FUSED' : lvTxt(lv, MAX_ART_LVL)} color={ARTS[id].color} />
+        ))
+      )}
+      {r.passives.size ? (
+        <Label
+          value={`◇ always on: ${[...r.passives.entries()].map(([id, lv]) => `${PASSIVES[id].name} ${lv >= MAX_PASSIVE_LVL ? 'MAX' : lv}`).join(' · ')}`}
+          fontSize={10}
+          color={DIM}
+          uiTransform={{ height: 28, width: '100%', margin: { top: 4 } }}
+          textAlign="middle-left"
+        />
+      ) : null}
+      <UiEntity uiTransform={{ flexDirection: 'row', margin: { top: 6 } }}>
+        <Button
+          value="✓ ALL ON"
+          fontSize={13}
+          color={WHITE}
+          uiTransform={{ width: 140, height: 32, margin: { right: 6 } }}
+          uiBackground={BTN(r.off.size ? C('#1FA85A') : C('#2A2A2A'))}
+          onMouseDown={tap(() => {
+            r.off.clear()
+          })}
+        />
+        <Button value="CLOSE" fontSize={13} color={WHITE} uiTransform={{ width: 140, height: 32 }} uiBackground={BTN(C('#2A2A3A'))} onMouseDown={tap(() => (G.skillsOpen = false))} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
 /** one of your skills in the list: tap to switch it off / on */
 function SkillRow(p: { key?: string; k: string; name: string; text: string; color: Color4; w?: string | number; size?: number }) {
   const r = G.run!
@@ -194,30 +304,8 @@ function RightMid() {
       <GoldHud />
       {r ? (
         <UiEntity uiTransform={{ width: '100%', flexDirection: 'column' }}>
-          {/* loadout */}
-          <UiEntity uiTransform={{ width: '100%', flexDirection: 'column', padding: 8, margin: { top: 6 } }} uiBackground={FRAME}>
-            <Label value={`<b>SKILLS</b>  ·  tap one to turn it off${r.off.size ? `  (${r.off.size} off)` : ''}`} fontSize={10} color={DIM} uiTransform={{ height: 15 }} textAlign="middle-left" />
-            {ws.map(([id, lv]) => {
-              const name = r.evolved.has(id) ? '✦ ' + WEAPONS[id].evo : WEAPONS[id].name
-              return <SkillRow key={id} k={`w:${id}`} name={name} text={`${name}  <b>${lv >= MAX_WEAPON_LVL ? 'MAX' : 'Lv' + lv}</b>`} color={C(WEAPONS[id].color)} />
-            })}
-            {r.gods.size ? <Label value="<b>✦ GOD POWERS</b>" fontSize={11} color={GOLD} uiTransform={{ height: 15, margin: { top: 4 } }} textAlign="middle-left" /> : null}
-            {[...r.gods.entries()].map(([id, lv]) => (
-              <SkillRow key={`g${id}`} k={`g:${id}`} name={GODS[id].name} text={`✦ ${GODS[id].name}  <b>${lv >= MAX_GOD_LVL ? 'MAX' : 'Lv' + lv}</b>`} color={C(GODS[id].color)} />
-            ))}
-            {r.arts.size ? <Label value={r.fusionOpen() && !r.legacyArts ? `<b>✧ ARTS</b>  slots ${r.arts.size}/${ART_SLOTS}` : `<b>✧ ARTS</b>  ${r.arts.size}`} fontSize={11} color={C('#E8D28A')} uiTransform={{ height: 15, margin: { top: 4 } }} textAlign="middle-left" /> : null}
-            <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'wrap' }}>
-              {[...r.arts.entries()].map(([id, lv]) => {
-                const name = r.fusions.has(id) ? `⚗ ${r.artName(id)}` : ARTS[id].name
-                return <SkillRow key={`a${id}`} k={`a:${id}`} name={name} text={r.fusions.has(id) ? name : `${name} ${lv >= MAX_ART_LVL ? 'MAX' : lv}`} color={C(ARTS[id].color)} w={r.fusions.has(id) ? '100%' : '50%'} size={11} />
-              })}
-            </UiEntity>
-            {r.fusionOpen() ? <ForgeButton /> : null}
-            {ps.length ? <UiEntity uiTransform={{ height: 4 }} /> : null}
-            {pairs(ps.map(([id, lv]) => `${PASSIVES[id].name} ${lv >= MAX_PASSIVE_LVL ? 'MAX' : lv}`)).map((row, i) => (
-              <Label key={`p${i}`} value={row} fontSize={11} color={DIM} uiTransform={{ height: 14 }} textAlign="middle-left" />
-            ))}
-          </UiEntity>
+          {/* loadout: a short summary — the full list with on/off switches lives in the SKILLS panel */}
+          <SkillSummary />
           <Feed />
         </UiEntity>
       ) : null}
@@ -283,7 +371,10 @@ function Dock() {
   )
   const cells = [
     G.run ? b('auto', on ? '⚔ AUTO ON [E]' : '⚔ AUTO OFF [E]', on ? C('#1FA85A') : C('#3A2A4A'), () => toggleAuto()) : null,
-    b('info', G.infoOpen ? '✕ UPGRADES [1]' : '📖 UPGRADES [1]', G.infoOpen ? C('#7B3BFF') : C('#2A1A40'), () => (G.infoOpen = !G.infoOpen)),
+    b('info', G.infoOpen ? '✕ UPGRADES [1]' : '📖 UPGRADES [1]', G.infoOpen ? C('#7B3BFF') : C('#2A1A40'), () => {
+      G.infoOpen = !G.infoOpen
+      if (G.infoOpen) G.skillsOpen = false
+    }),
     b('fx', G.showOthersFx ? "👁 OTHERS' SKILLS ON" : "🙈 OTHERS' SKILLS OFF", G.showOthersFx ? C('#1F6FA8') : C('#3A3A3A'), toggleOthersFx),
     b('board', G.boardOpen ? '✕ RANKINGS' : '🏆 RANKINGS', G.boardOpen ? C('#7B3BFF') : C('#2A1A40'), openBoard),
     CORE_ONLY ? null : b('gold', G.firstPurchase ? '💎 TREASURY +50%' : '💎 TREASURY [4]', C('#C08A00'), openGoldShop)
@@ -1104,6 +1195,7 @@ const Root = () => (
     {(G.phase === 'running' || G.phase === 'levelup' || G.phase === 'chest') && !playerInCasino() ? <PotionBelt /> : null}
     {playerInCasino() ? null : <Dock />}
     <InfoPanel />
+    <SkillPanel />
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 22, right: RIGHT }, width: 250, flexDirection: 'column' }}>
       <SidePanel />
       <RightMid />

@@ -67,6 +67,8 @@ export const G = {
   /** short-lived note after toggling, shown on the button */
   othersFxNoteT: 0,
   infoOpen: false, // upgrades overview panel (key 1)
+  /** the skill on/off panel (does not pause the run) */
+  skillsOpen: false,
   goldShopOpen: false,
   goldShop: { enabled: false, gold: 10000, usd: 10 },
   packSel: 1,
