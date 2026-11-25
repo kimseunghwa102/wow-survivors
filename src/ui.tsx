@@ -78,7 +78,7 @@ function SidePanel() {
   if (!r) return null
   const hurt = G.hurtFlash > 0
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 22, right: RIGHT }, width: 250, flexDirection: 'column' }}>
+    <UiEntity uiTransform={{ width: 250, flexDirection: 'column' }}>
       {/* hero card: level badge, HP, XP, kills */}
       <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', alignItems: 'center', padding: { left: 10, right: 14, top: 12, bottom: 12 } }} uiBackground={FRAME}>
         <UiEntity uiTransform={{ width: 64, height: 64, flexShrink: 0, flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }} uiBackground={IMG('images/ui_badge.png')}>
@@ -151,6 +151,13 @@ function GoldHud() {
   )
 }
 
+/** two items per line */
+function pairs(items: string[]) {
+  const rows: string[] = []
+  for (let i = 0; i < items.length; i += 2) rows.push(items.slice(i, i + 2).join('  ·  '))
+  return rows
+}
+
 /** arts, two per line; a fused art shows its fused name */
 function artRows(arts: Map<ArtId, number>) {
   const r = G.run
@@ -166,7 +173,7 @@ function RightMid() {
   const ws = r ? ([...r.weapons.entries()] as [WeaponId, number][]) : []
   const ps = r ? ([...r.passives.entries()] as [PassiveId, number][]) : []
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: '42%', right: RIGHT }, width: 250, flexDirection: 'column' }}>
+    <UiEntity uiTransform={{ width: 250, flexDirection: 'column', margin: { top: 6 } }}>
       <GoldHud />
       {r ? (
         <UiEntity uiTransform={{ width: '100%', flexDirection: 'column' }}>
@@ -177,9 +184,9 @@ function RightMid() {
               <Label
                 key={id}
                 value={`${r.evolved.has(id) ? '✦ ' + WEAPONS[id].evo : WEAPONS[id].name}  <b>${lv >= MAX_WEAPON_LVL ? 'MAX' : 'Lv' + lv}</b>`}
-                fontSize={13}
+                fontSize={12}
                 color={C(WEAPONS[id].color)}
-                uiTransform={{ height: 18 }}
+                uiTransform={{ height: 16 }}
                 textAlign="middle-left"
               />
             ))}
@@ -193,8 +200,8 @@ function RightMid() {
             ))}
             {r.fusionOpen() ? <ForgeButton /> : null}
             {ps.length ? <UiEntity uiTransform={{ height: 4 }} /> : null}
-            {ps.map(([id, lv]) => (
-              <Label key={id} value={`${PASSIVES[id].name}  ${lv >= MAX_PASSIVE_LVL ? 'MAX' : 'Lv' + lv}`} fontSize={12} color={DIM} uiTransform={{ height: 16 }} textAlign="middle-left" />
+            {pairs(ps.map(([id, lv]) => `${PASSIVES[id].name} ${lv >= MAX_PASSIVE_LVL ? 'MAX' : lv}`)).map((row, i) => (
+              <Label key={`p${i}`} value={row} fontSize={11} color={DIM} uiTransform={{ height: 14 }} textAlign="middle-left" />
             ))}
           </UiEntity>
           <Feed />
@@ -210,7 +217,7 @@ function BossBar() {
   if (!r || !list.length) return null
   const twin = list.length > 1
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 66 }, width: '100%', justifyContent: 'center', flexDirection: 'row' }}>
+    <UiEntity uiTransform={{ width: '100%', margin: { bottom: 4 }, justifyContent: 'center', flexDirection: 'row' }}>
       {list.map((b, i) => {
         const d = bossFor(b.boss ?? 0)
         return (
@@ -231,19 +238,19 @@ function NextBoss() {
   const d = bossFor(r.bossIndex)
   if (r.ascended || !Number.isFinite(d.lvl))
     return (
-      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 66 }, width: '100%', justifyContent: 'center' }}>
+      <UiEntity uiTransform={{ width: '100%', margin: { bottom: 4 }, justifyContent: 'center' }}>
         <Label value="☀ <b>You are God.</b> No one is left above you — only the swarm remains." fontSize={12} color={C('#FFD86A', 0.9)} />
       </UiEntity>
     )
   if (d.god)
     return (
-      <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 66 }, width: '100%', justifyContent: 'center' }}>
+      <UiEntity uiTransform={{ width: '100%', margin: { bottom: 4 }, justifyContent: 'center' }}>
         <Label value={`the final trial: <b>THE ALMIGHTY</b> at Lv ${d.lvl}`} fontSize={13} color={C('#FFE9A8', 0.95)} />
       </UiEntity>
     )
   const twin = d.twin ? bossFor(r.bossIndex + 1) : null
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 66 }, width: '100%', justifyContent: 'center' }}>
+    <UiEntity uiTransform={{ width: '100%', margin: { bottom: 4 }, justifyContent: 'center' }}>
       <Label value={twin ? `next: <b>TWIN BOSSES</b> ${d.name} & ${twin.name} at Lv ${d.lvl}` : `next boss: <b>${d.name}</b> at Lv ${d.lvl}`} fontSize={12} color={C(d.color, 0.85)} />
     </UiEntity>
   )
@@ -256,54 +263,20 @@ function Flash() {
 
 function Dock() {
   const on = G.autoAttack
+  // compact 2-column grid in the bottom-right corner (it used to be a tall column that ran into the skill list)
+  const b = (key: string, value: string, bg: Color4, onTap: () => void) => (
+    <Button key={key} value={value} fontSize={12} color={WHITE} uiTransform={{ width: 148, height: 32, margin: 2 }} uiBackground={BTN(bg)} onMouseDown={tap(onTap)} />
+  )
+  const cells = [
+    G.run ? b('auto', on ? '⚔ AUTO ON [E]' : '⚔ AUTO OFF [E]', on ? C('#1FA85A') : C('#3A2A4A'), () => toggleAuto()) : null,
+    b('info', G.infoOpen ? '✕ UPGRADES [1]' : '📖 UPGRADES [1]', G.infoOpen ? C('#7B3BFF') : C('#2A1A40'), () => (G.infoOpen = !G.infoOpen)),
+    b('fx', G.showOthersFx ? "👁 OTHERS' SKILLS ON" : "🙈 OTHERS' SKILLS OFF", G.showOthersFx ? C('#1F6FA8') : C('#3A3A3A'), toggleOthersFx),
+    b('board', G.boardOpen ? '✕ RANKINGS' : '🏆 RANKINGS', G.boardOpen ? C('#7B3BFF') : C('#2A1A40'), openBoard),
+    CORE_ONLY ? null : b('gold', G.firstPurchase ? '💎 TREASURY +50%' : '💎 TREASURY [4]', C('#C08A00'), openGoldShop)
+  ].filter(Boolean)
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: 24, right: 16 }, flexDirection: 'column', alignItems: 'flex-end' }}>
-      {CORE_ONLY ? null : (
-      <Button
-        value={G.firstPurchase ? '💎 TREASURY [4] · +50%' : '💎 TREASURY [4]'}
-        fontSize={15}
-        color={WHITE}
-        uiTransform={{ width: 210, height: 40, margin: { bottom: 6 } }}
-        uiBackground={BTN(C('#C08A00'))}
-        onMouseDown={tap(openGoldShop)}
-      />
-      )}
-      <Button
-        value={G.infoOpen ? '✕ CLOSE UPGRADES [1]' : '📖 UPGRADES [1]'}
-        fontSize={15}
-        color={WHITE}
-        uiTransform={{ width: 210, height: 40, margin: { bottom: 6 } }}
-        uiBackground={BTN(G.infoOpen ? C('#7B3BFF') : C('#2A1A40'))}
-        onMouseDown={tap(() => (G.infoOpen = !G.infoOpen))}
-      />
-      {G.run ? (
-        <Button
-          value={on ? '⚔ AUTO ATTACK  ON [E]' : '⚔ AUTO ATTACK  OFF [E]'}
-          fontSize={15}
-          color={WHITE}
-          uiTransform={{ width: 210, height: 44 }}
-          uiBackground={BTN(on ? C('#1FA85A') : C('#3A2A4A'))}
-          onMouseDown={toggleAuto}
-        />
-      ) : null}
-      <Button
-        value={G.showOthersFx ? "👁 OTHERS' SKILLS  ON" : "🙈 OTHERS' SKILLS  OFF"}
-        fontSize={15}
-        color={WHITE}
-        uiTransform={{ width: 210, height: 40, margin: { top: 6 } }}
-        uiBackground={BTN(G.showOthersFx ? C('#1F6FA8') : C('#3A3A3A'))}
-        onMouseDown={tap(toggleOthersFx)}
-      />
-      <Label value={G.showOthersFx ? 'tap to hide other hunters’ effects' : 'only your own skills are drawn'} fontSize={10} color={DIM} uiTransform={{ height: 14 }} />
-      <Button
-        value={G.boardOpen ? '✕ CLOSE RANKINGS' : '🏆 LIVE RANKINGS'}
-        fontSize={15}
-        color={WHITE}
-        uiTransform={{ width: 210, height: 40, margin: { bottom: 6, top: 6 } }}
-        uiBackground={BTN(G.boardOpen ? C('#7B3BFF') : C('#2A1A40'))}
-        onMouseDown={tap(openBoard)}
-      />
-      <Label value={G.run && G.phase === 'running' ? 'keys: 1 upgrades · 2 switch weapon · 3 BLOOD POTION · 4 RAGE · E auto · F nuke' : 'keys: 1 upgrades · 2 switch weapon · 3 buy next · 4 gold shop · E auto · F nuke'} fontSize={11} color={DIM} uiTransform={{ height: 16 }} />
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: 18, right: 14 }, width: 304, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+      {cells}
     </UiEntity>
   )
 }
@@ -445,7 +418,7 @@ function HpBar() {
   const r = G.run
   if (!r) return null
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: 70 }, width: '100%', justifyContent: 'center', flexDirection: 'row' }}>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: 118 }, width: '100%', justifyContent: 'center', flexDirection: 'row' }}>
       <TexBar frac={r.hp / r.maxHp} fill="images/ui_hp.png" white={G.hurtFlash > 0} w={200} h={9} />
     </UiEntity>
   )
@@ -459,7 +432,7 @@ function Feed() {
       <Label value={`👥 ${heard} other hunter${heard === 1 ? '' : 's'} · ${relayOnline() ? 'live link ✓' : 'link: ' + relayState}`} fontSize={10} color={relayOnline() ? C('#3DFF8E') : C('#FFB03A')} uiTransform={{ height: 14 }} textAlign="middle-left" />
       <Label value={`heard: relay ${heardCount.relay} · p2p ${heardCount.p2p}`} fontSize={9} color={DIM} uiTransform={{ height: 12 }} textAlign="middle-left" />
       {feed.length ? <Label value="<b>RIFT FEED</b>" fontSize={11} color={C('#FF5468')} uiTransform={{ height: 15 }} textAlign="middle-left" /> : null}
-      {feed.map((f, i) => (
+      {feed.slice(-3).map((f, i) => (
         <Label key={`${f.t}-${i}`} value={f.text} fontSize={11} color={C(f.color)} uiTransform={{ height: 16 }} textAlign="middle-left" />
       ))}
     </UiEntity>
@@ -469,7 +442,7 @@ function Feed() {
 function Banner() {
   if (G.bannerT <= 0 || !G.banner) return null
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 140 }, width: '100%', justifyContent: 'center' }}>
+    <UiEntity uiTransform={{ width: '100%', margin: { bottom: 4 }, justifyContent: 'center' }}>
       <UiEntity uiTransform={{ padding: { left: 30, right: 30, top: 12, bottom: 12 } }} uiBackground={MODAL}>
         <Label value={`<b>${G.banner}</b>`} fontSize={22} color={GOLD} />
       </UiEntity>
@@ -914,7 +887,7 @@ function ArenaHud() {
   if (!a) return null
   const d = ARENA_EVENTS[a.kind]
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 112 }, width: '100%', justifyContent: 'center' }}>
+    <UiEntity uiTransform={{ width: '100%', margin: { bottom: 4 }, justifyContent: 'center' }}>
       <UiEntity uiTransform={{ flexDirection: 'column', alignItems: 'center', padding: { left: 18, right: 18, top: 6, bottom: 6 } }} uiBackground={MODAL}>
         <Label value={`<b>${d.name}</b>  ${a.kind === 'elitehunt' ? `${G.run!.bounties.length} bounties left` : mmss(Math.max(0, a.t))}`} fontSize={18} color={C(d.color)} uiTransform={{ height: 24 }} />
         <Label value={d.desc} fontSize={12} color={WHITE} uiTransform={{ height: 16 }} />
@@ -1052,7 +1025,7 @@ function AutoToast() {
   const t = G.autoToast
   if (!t || G.phase !== 'running') return null
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: 150 }, width: '100%', justifyContent: 'center' }}>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: 136 }, width: '100%', justifyContent: 'center' }}>
       <UiEntity uiTransform={{ padding: { left: 12, right: 12, top: 3, bottom: 3 } }} uiBackground={{ color: C('#0C0A14', 0.7 * Math.min(1, t.t * 2)) }}>
         <Label value={t.text} fontSize={14} color={C(t.color, Math.min(1, t.t * 2))} />
       </UiEntity>
@@ -1065,7 +1038,7 @@ function PvpBadge() {
   const r = G.run
   if (!r || G.phase !== 'running' || !G.inArena) return null
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 88 }, width: '100%', justifyContent: 'center' }}>
+    <UiEntity uiTransform={{ width: '100%', margin: { bottom: 4 }, justifyContent: 'center' }}>
       <UiEntity uiTransform={{ padding: { left: 10, right: 10, top: 2, bottom: 2 } }} uiBackground={{ color: G.inPvp ? C('#7A0A16', 0.85) : C('#10141E', 0.55) }}>
         <Label value={G.inPvp ? '<b>⚔ BLOOD RING · PvP ON</b>' : '🛡 safe from hunters · PvP only in the Blood Ring'} fontSize={G.inPvp ? 13 : 11} color={G.inPvp ? C('#FFD0D6') : DIM} />
       </UiEntity>
@@ -1106,15 +1079,21 @@ const Root = () => (
     <LowHp />
     <Flash />
     <TopHud />
-    <ArenaHud />
+    {/* top-centre stack: boss bar (or next boss), PvP status, arena event, banner — never on top of each other */}
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 62 }, width: '100%', flexDirection: 'column', alignItems: 'center' }}>
+      {G.run && G.run.bossesAlive().length ? <BossBar /> : <NextBoss />}
+      <PvpBadge />
+      <ArenaHud />
+      <Banner />
+    </UiEntity>
     <ComboHud />
     {(G.phase === 'running' || G.phase === 'levelup' || G.phase === 'chest') && !playerInCasino() ? <PotionBelt /> : null}
-    <BossBar />
     {playerInCasino() ? null : <Dock />}
     <InfoPanel />
-    <NextBoss />
-    <SidePanel />
-    <RightMid />
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 22, right: RIGHT }, width: 250, flexDirection: 'column' }}>
+      <SidePanel />
+      <RightMid />
+    </UiEntity>
     <HpBar />
     <LobbyHint />
     {G.phase === 'start' ? <StartModal /> : null}
@@ -1129,10 +1108,8 @@ const Root = () => (
     {G.boardOpen && G.phase !== 'levelup' && G.phase !== 'chest' && !G.questOpen ? <BoardModal /> : null}
     <GoldShop />
     <SlayerReveal />
-    <PvpBadge />
     <AutoToast />
     <AscendEnding />
-    <Banner />
   </UiEntity>
 )
 

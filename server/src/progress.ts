@@ -112,7 +112,7 @@ export async function claimQuest(db: Sql, address: string, i: number, now = Date
  * Banks newly earned gold (live gold), feeds daily quests and checks the NIGHTSWARM reward.
  * `final` = the run ended (pvp death may lower res.gold below what was already banked: nothing is taken back).
  */
-export async function trackRun(db: Sql, address: string, run: any, res: { time: number; level: number; kills: number; gold: number; flagged: boolean }, bossesClaim: number) {
+export async function trackRun(db: Sql, address: string, run: any, res: { time: number; level: number; kills: number; gold: number; flagged: boolean; hardFlag?: boolean }, bossesClaim: number) {
   const bosses = Math.max(0, Math.min(Math.floor(n(bossesClaim)), 3 + Math.floor(res.level / 8)))
   const given = n(run.gold_given)
   // clampRun already caps gold to what is physically possible; over-claims are flagged off the boards
@@ -133,13 +133,13 @@ export async function trackRun(db: Sql, address: string, run: any, res: { time: 
   let slayer = false
   if (!res.flagged && bosses >= SLAYER.bosses && res.level >= SLAYER.level) slayer = await grantSlayer(db, address)
   let god = false
-  if (!res.flagged && bosses >= GOD.bosses && res.level >= GOD.level && res.time >= GOD.minTime) god = await grantGod(db, address)
+  if (!(res.hardFlag ?? res.flagged) && bosses >= GOD.bosses && res.level >= GOD.level && res.time >= GOD.minTime) god = await grantGod(db, address)
   return { banked: bankNow, slayer, god }
 }
 
 /** once per wallet: the God skin + title, worn at once; the Hall of Gods lists god_at */
-export async function grantGod(db: Sql, address: string) {
-  const r = await db.query('UPDATE players SET god_at = NOW() WHERE address = $1 AND god_at IS NULL', [address])
+export async function grantGod(db: Sql, address: string, at?: Date) {
+  const r = await db.query('UPDATE players SET god_at = COALESCE($2, NOW()) WHERE address = $1 AND god_at IS NULL', [address, at ?? null])
   if (!r.rowCount) return false
   for (const it of GOD.items) {
     const u = await db.query('UPDATE player_items SET qty = qty + 1 WHERE address = $1 AND item = $2', [address, it])
@@ -162,14 +162,35 @@ export async function grantSlayer(db: Sql, address: string) {
 }
 
 // ───────────── rankings (live) ─────────────
-type Row = { n: string; t: number; l: number; k: number; live?: boolean }
+type Row = { n: string; t: number; l: number; k: number; b?: number; live?: boolean }
 function liveCutoff(now: number) {
   return now - 60_000
 }
 
 /** all-time board (personal bests) with players who are mid-run right now merged in live */
+/**
+ * Catch-up for Gods the live check missed (before the gold-flag fix): any run that reached Lv 1111 with the whole
+ * ladder slain (43 bosses) after 6 h+ of play. god_at = when that run was last saved, so the true first God wins.
+ */
+export async function grantMissedGods(db: Sql) {
+  const rows = (
+    await db.query(
+      `SELECT r.address, COALESCE(r.ended_at, r.checkpoint_at) AS at FROM runs r JOIN players p ON p.address = r.address
+       WHERE p.god_at IS NULL AND p.flags < 3 AND r.level >= $1 AND r.bosses >= $2 AND r.time_sec >= $3
+       ORDER BY COALESCE(r.ended_at, r.checkpoint_at) ASC`,
+      [GOD.level, GOD.bosses, GOD.minTime]
+    )
+  ).rows
+  for (const r of rows) if (await grantGod(db, r.address, r.at ? new Date(r.at) : undefined)) console.log(`[god] granted (catch-up) ${String(r.address).slice(0, 8)}…`)
+}
+let missedChecked = 0
+
 export async function boards(db: Sql, now = Date.now()) {
   await payWeekly(db, now)
+  if (now - missedChecked > 60_000) {
+    missedChecked = now
+    await grantMissedGods(db)
+  }
   const best = (await db.query('SELECT address, name, best_time, best_level, best_kills FROM players WHERE best_time > 0 AND flags < 3 ORDER BY best_time DESC, best_kills DESC LIMIT 30')).rows
   const open = (await db.query('SELECT r.address, r.time_sec, r.level, r.kills, r.checkpoint_at, p.name, p.flags FROM runs r JOIN players p ON p.address = r.address WHERE r.ended_at IS NULL AND r.checkpoint_at IS NOT NULL')).rows.filter(
     (r: any) => new Date(r.checkpoint_at).getTime() > liveCutoff(now) && n(r.flags) < 3
@@ -185,13 +206,13 @@ export async function boards(db: Sql, now = Date.now()) {
   const allTime = [...all.values()].sort((a, b) => b.t - a.t || b.k - a.k).slice(0, 10)
 
   const ws = weekStart(now)
-  const week = (await db.query('SELECT r.address, r.time_sec, r.level, r.kills, r.ended_at, r.checkpoint_at, r.flagged, p.name, p.flags FROM runs r JOIN players p ON p.address = r.address WHERE r.started_at >= $1 AND r.time_sec IS NOT NULL', [new Date(ws)])).rows
+  const week = (await db.query('SELECT r.address, r.time_sec, r.level, r.kills, r.bosses, r.ended_at, r.checkpoint_at, r.flagged, p.name, p.flags FROM runs r JOIN players p ON p.address = r.address WHERE r.started_at >= $1 AND r.time_sec IS NOT NULL', [new Date(ws)])).rows
   const wk = new Map<string, Row>()
   for (const r of week) {
     if (r.flagged || n(r.flags) >= 3) continue
     const live = !r.ended_at && r.checkpoint_at && new Date(r.checkpoint_at).getTime() > liveCutoff(now)
     const cur = wk.get(r.address)
-    const row = { n: r.name, t: n(r.time_sec), l: n(r.level), k: n(r.kills), live: !!live || !!cur?.live }
+    const row = { n: r.name, t: n(r.time_sec), l: n(r.level), k: n(r.kills), b: n(r.bosses), live: !!live || !!cur?.live }
     if (!cur || row.t > cur.t) wk.set(r.address, row)
     else if (live) cur.live = true
   }

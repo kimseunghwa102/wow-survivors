@@ -178,6 +178,24 @@ async function main() {
     const board = await (await fetch(base + '/api/leaderboard')).json()
     assert(Array.isArray(board.gods) && board.gods.length === 1, 'Hall of Gods lists the new God')
     assert(board.firstGod && board.firstGod.name === 'Gabriel' && /^0x/.test(board.firstGod.address), 'WHO IS GOD?: the first God is named for the throne')
+    // a rich deep run: gold far over the cap is clamped, but it does not cancel godhood
+    const rich = await identity()
+    await signed(rich, 'POST', '/api/profile', { name: 'Midas' })
+    const rr = await signed(rich, 'POST', '/api/run/start', { weapon: 'lash' })
+    await db.query(`UPDATE runs SET started_at = NOW() - INTERVAL '70000 seconds' WHERE id = $1`, [rr.json.runId])
+    const rg = await signed(rich, 'POST', '/api/run/save', { runId: rr.json.runId, snap: { v: 1, time: 66000, level: 1150, kills: 900000, gold: 66000 * 200, bossesSlain: 43, weapons: [['lash', 8]], passives: [], evolved: [] } })
+    assert(rg.json.god === true, 'a gold over-claim alone does not cancel a real God kill')
+    // catch-up: a run that met every rule before the fix (stored, no grant) is granted on the next board read, dated by the run
+    const late = await identity()
+    await signed(late, 'POST', '/api/profile', { name: 'Paul' })
+    const lr = await signed(late, 'POST', '/api/run/start', { weapon: 'lash' })
+    await db.query(`UPDATE runs SET level = 1183, bosses = 43, time_sec = 25982, checkpoint_at = NOW() - INTERVAL '1 day' WHERE id = $1`, [lr.json.runId])
+    const { grantMissedGods } = await import('../src/progress')
+    await grantMissedGods(db)
+    const pg = (await db.query(`SELECT god_at FROM players WHERE address = $1`, [late.owner.address.toLowerCase()])).rows[0]
+    assert(pg && pg.god_at, 'catch-up grants a God the live check missed')
+    const b2 = await (await fetch(base + '/api/leaderboard')).json()
+    assert(b2.firstGod.name === 'Paul', 'the earliest God (by when their run was saved) takes the throne')
     const end = await signed(gabe, 'POST', '/api/run/end', { runId: gr.json.runId, time: 66200, level: 1113, kills: 993000, gold: 794000, bossesSlain: 43 })
     assert(end.json.ok && end.json.god === false && end.json.profile.god === true && end.json.profile.best.time === 66200, 'an 18 h run ends cleanly (no longer cut at 3 h)')
   }
