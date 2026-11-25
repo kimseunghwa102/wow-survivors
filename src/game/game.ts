@@ -62,6 +62,10 @@ export const G = {
   aim: 0,
   nukeAsk: false,
   autoAttack: false, // auto-swing the armory weapon at the nearest foe
+  /** draw other hunters' skill effects (off = a clean screen with only your own skills) */
+  showOthersFx: true,
+  /** short-lived note after toggling, shown on the button */
+  othersFxNoteT: 0,
   infoOpen: false, // upgrades overview panel (key 1)
   goldShopOpen: false,
   goldShop: { enabled: false, gold: 10000, usd: 10 },
@@ -617,6 +621,14 @@ export function jackpotFx(name: string, kind: 'divine' | 'dung', x: number, z: n
 }
 
 // ── Fusion Forge ──
+/** show / hide other hunters' skill effects. Their avatars, names and PvP hits are unaffected. */
+export function toggleOthersFx() {
+  G.showOthersFx = !G.showOthersFx
+  G.othersFxNoteT = 2.5
+  play('buy', G.showOthersFx ? 1.2 : 0.8)
+  banner(G.showOthersFx ? "👁 OTHER HUNTERS' SKILLS: SHOWN" : "🙈 OTHER HUNTERS' SKILLS: HIDDEN — only your own skills are drawn", 2.5)
+}
+
 export function openForge(intro = false) {
   const r = G.run
   if (!r || !r.fusionOpen()) return
@@ -1085,6 +1097,7 @@ export function setupGame() {
   void loadBoard()
   setupNet({
     onFx: (fromId, tiers, packets) => {
+      if (!G.showOthersFx) return
       const evs: Ev[] = []
       const t = tiers.map((v) => Math.max(0, Math.min(3, Math.round(v || 0))))
       for (const p of packets) {

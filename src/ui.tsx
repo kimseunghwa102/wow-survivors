@@ -3,7 +3,7 @@ import { CORE_ONLY } from './edition'
 import { Color4 } from '@dcl/sdk/math'
 import { buyPotion, drinkPotion } from './game/game'
 import { Ui as CasinoUi, playerInCasino } from './casino/holdem/ui'
-import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard, openForge, closeForge, forgePick, forgeSwap, forgeConfirm } from './game/game'
+import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard, openForge, closeForge, forgePick, forgeSwap, forgeConfirm, toggleOthersFx } from './game/game'
 import { optionLabel, Option, ARENA_EVENTS, VAULT_PRIZES, COMBO_TIERS, POTION_DEFS, PotionKind } from './game/core'
 import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable, GODS, MAX_GOD_LVL, GOD_UNLOCK, ARTS, ArtId, MAX_ART_LVL, ART_SLOTS, FUSION_LVL, ELEMENTS, ART_ELEMENT, MAX_ESSENCE, recipeKey, RECIPE_REWARD_PER_STAR } from './game/defs'
 import { feed, topRuns, remotes, relayOnline, relayState, heardCount } from './game/net'
@@ -286,6 +286,15 @@ function Dock() {
           onMouseDown={toggleAuto}
         />
       ) : null}
+      <Button
+        value={G.showOthersFx ? "👁 OTHERS' SKILLS  ON" : "🙈 OTHERS' SKILLS  OFF"}
+        fontSize={15}
+        color={WHITE}
+        uiTransform={{ width: 210, height: 40, margin: { top: 6 } }}
+        uiBackground={BTN(G.showOthersFx ? C('#1F6FA8') : C('#3A3A3A'))}
+        onMouseDown={tap(toggleOthersFx)}
+      />
+      <Label value={G.showOthersFx ? 'tap to hide other hunters’ effects' : 'only your own skills are drawn'} fontSize={10} color={DIM} uiTransform={{ height: 14 }} />
       <Button
         value={G.boardOpen ? '✕ CLOSE RANKINGS' : '🏆 LIVE RANKINGS'}
         fontSize={15}
