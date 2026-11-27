@@ -4,7 +4,7 @@
 // Up there: the sealed GATE TO THE LAND OF THE GODS (-27,128), THE DIVINE VAULT (god-only wearables, not yet
 // revealed), THE PANTHEON (every God's name) and the DESCENT well back down.
 // Static art: models/god_lounge.glb (blender/build_godlounge.py).
-import { engine, Transform, GltfContainer, LightSource, Tween, pointerEventsSystem, InputAction } from '@dcl/sdk/ecs'
+import { engine, Transform, GltfContainer, LightSource, Tween, pointerEventsSystem, InputAction, MeshCollider, ColliderLayer } from '@dcl/sdk/ecs'
 import { Color3, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { movePlayerTo, teleportTo } from '~system/RestrictedActions'
 import { getPlayer } from '@dcl/sdk/players'
@@ -38,6 +38,13 @@ function mayEnter() {
   if (G.isGod) return true
   const id = (getPlayer()?.userId ?? '').toLowerCase()
   return id === CREATOR
+}
+
+/** click-only box (no physics: you can still walk into the well) */
+function clickBox(pos: Vector3, size: Vector3) {
+  const e = node(pos, undefined, undefined, size)
+  MeshCollider.setBox(e, ColliderLayer.CL_POINTER)
+  return e
 }
 
 function spin(src: string, pos: Vector3, axis: Vector3, speed: number) {
@@ -120,7 +127,23 @@ export function buildGodLounge() {
   text(V(LOBBY_WELL.x, 3.05, LOBBY_WELL.z), "✦ GOD'S ASCENT ✦", 2.6, '#FFE9A8', { billboard: true, outline: '#3A2400' })
   text(V(LOBBY_WELL.x, 2.55, LOBBY_WELL.z), 'step in to rise to the 2F GOD LOUNGE\nLv 1111 GODs only', 1.35, '#E8DAFF', { billboard: true, outline: '#14001E' })
 
+  // clicking the well works too (same rules as stepping in)
+  const wellHit = clickBox(V(LOBBY_WELL.x, 1.0, LOBBY_WELL.z), V(3.6, 2.0, 3.6))
+  pointerEventsSystem.onPointerDown({ entity: wellHit, opts: { button: InputAction.IA_POINTER, hoverText: "GOD'S ASCENT — rise to the 2F GOD LOUNGE", maxDistance: 10 } }, () => tryAscend())
+  const downHit = clickBox(V(DESCENT.x, LY + 1.0, DESCENT.z), V(3.6, 2.0, 3.6))
+  pointerEventsSystem.onPointerDown({ entity: downHit, opts: { button: InputAction.IA_POINTER, hoverText: 'DESCENT — back to the Sanctuary', maxDistance: 10 } }, () => {
+    if (!WARP.on) startWarp('down')
+  })
+
   let deny = 0
+  const tryAscend = () => {
+    if (WARP.on) return
+    if (mayEnter()) return startWarp('up')
+    if (deny > 0) return
+    deny = 5
+    play('warn')
+    banner("✦ GOD'S ASCENT ✦  Only GODs may rise — defeat THE ALMIGHTY at Lv 1111.", 4)
+  }
   let cool = 0
   let kick = 0
   let acc = 3
@@ -162,13 +185,7 @@ export function buildGodLounge() {
     }
     if (cool > 0) return
     if (p.y < 2.5 && Math.hypot(p.x - LOBBY_WELL.x, p.z - LOBBY_WELL.z) < WELL_R) {
-      if (G.phase === 'running' || G.phase === 'levelup' || G.phase === 'chest' || G.phase === 'forge') return
-      if (mayEnter()) startWarp('up')
-      else if (deny <= 0) {
-        deny = 5
-        play('warn')
-        banner("✦ GOD'S ASCENT ✦  Only GODs may rise — defeat THE ALMIGHTY at Lv 1111.", 4)
-      }
+      tryAscend()
       return
     }
     if (inLounge && Math.hypot(p.x - DESCENT.x, p.z - DESCENT.z) < WELL_R) startWarp('down')

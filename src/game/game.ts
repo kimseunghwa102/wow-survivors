@@ -17,7 +17,9 @@ import { ARENA_EVENTS, VaultPrize, VAULT_PRIZES, POTION_DEFS, PotionKind } from 
 import { attachCosmetic, anchorOf, detach } from './cosmetics'
 import { play, setupSfx, musicLevel } from './sfx'
 import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf, sendFx, pushFeed, sendAscend, sendJackpot } from './net'
-import { serverQuests, serverClaimQuest, QuestState, serverBuyPotion, serverFusion } from './persist'
+import { serverQuests, serverClaimQuest, QuestState, serverBuyPotion, serverFusion, serverPet } from './persist'
+import { PetSave, PetKind, petStats, PET_INFO, petLevel } from './defs'
+import { setupPetView, renderPet } from './petview'
 import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile, serverArmoryBuy, serverClaimDaily, shopConfig, shopQuote, shopConfirm, serverSaveRun, serverAbandon, pingServer } from './persist'
 import { getUserAccount, sendAsync, requirePayment } from '~system/EthereumController'
 import { getPlayer } from '@dcl/sdk/players'
@@ -93,6 +95,12 @@ export const G = {
   slayerReveal: 0,
   /** beat THE ALMIGHTY (server-confirmed): every run starts as God */
   isGod: false,
+  // SOULBOUND PET
+  pet: null as PetSave | null,
+  souls: {} as Partial<Record<PetKind, number>>,
+  petOpen: false,
+  petBusy: false,
+  petReleaseAsk: false,
   /** the ending: seconds since ascension (0 = not playing) */
   ascendT: 0,
   /** standing in THE BLOOD RING (PvP) */
@@ -136,6 +144,9 @@ export function applyProfile(p: ServerProfile | null) {
   if (p.firstPurchase !== undefined) G.firstPurchase = p.firstPurchase
   if (p.belt) G.profileBelt = { ...p.belt }
   if (p.god) G.isGod = true
+  G.pet = p.pet ?? null
+  G.souls = p.souls ?? {}
+  if (G.run) G.run.pet = G.pet ? petStats(G.pet) : null
   if (p.codex) for (const k of p.codex) G.codex.add(k)
   wearMine()
 }
@@ -372,6 +383,7 @@ export function resumeRun() {
   save.runId = s.runId
   G.run = Run.restore(s.snap, { ...G.meta }, G.armory, equipped())
   if (G.isGod) G.run.becomeGod()
+  G.run.pet = G.pet ? petStats(G.pet) : null
   G.runBanked = s.snap.gold
   G.doubleBonus = 0
   G.armoryOpen = false
@@ -403,6 +415,7 @@ export function startRun(w: WeaponId) {
   })
   G.run = new Run(w, { ...G.meta }, G.armory, equipped())
   if (G.isGod) G.run.becomeGod()
+  G.run.pet = G.pet ? petStats(G.pet) : null
   G.runBanked = 0
   G.doubleBonus = 0
   G.armoryOpen = false
@@ -756,7 +769,7 @@ function endRun(killer?: string) {
   submitRun({ n: me().name, t, l: r.level, k: r.kills })
   const banked = G.runBanked
   if (save.online) {
-    void serverEndRun({ time: r.time, level: r.level, kills: r.kills, gold: r.gold, pvpKills: G.pvpKills, killer, bossesSlain: r.bossesSlain }).then((res) => {
+    void serverEndRun({ time: r.time, level: r.level, kills: r.kills, gold: r.gold, pvpKills: G.pvpKills, killer, bossesSlain: r.bossesSlain, souls: { ...r.souls } as Record<string, number> }).then((res) => {
       if (res) {
         if (res.inv) save.inv = res.inv
         applyProfile(res.profile)
@@ -1059,6 +1072,7 @@ function handle(evs: Ev[]) {
 
 export function setupGame() {
   setupView()
+  setupPetView()
   setupSfx()
   // load the wallet's saved progress (retries while the player identity / server wakes up)
   let tries = 0
@@ -1292,6 +1306,7 @@ export function setupGame() {
       }
       G.nukeAsk = false
       renderRun(r, evs, dt)
+      renderPet(r.pet, r, G.inArena && G.phase !== 'dead', dt)
       handle(evs)
       // share my skill effects so other hunters see the magic
       if (G.inArena && G.phase !== 'dead') {
@@ -1315,6 +1330,7 @@ export function setupGame() {
     } else {
       // no run of my own: still draw other players' effects
       renderRun(null, [], dt)
+      renderPet(myPetStats(), null, false, dt)
     }
     // golden wings on my back while Seraph Wings is active
     {
@@ -1371,4 +1387,43 @@ export function setupGame() {
       })
     }
   })
+}
+
+// ───────── SOULBOUND PET ─────────
+let petStatsCache: { key: string; stats: ReturnType<typeof petStats> | null } = { key: '', stats: null }
+export function myPetStats() {
+  const key = JSON.stringify(G.pet)
+  if (key !== petStatsCache.key) petStatsCache = { key, stats: G.pet ? petStats(G.pet) : null }
+  return petStatsCache.stats
+}
+function petCall(action: 'tame' | 'feed' | 'release', body: Record<string, unknown>, ok: (p: ServerProfile) => void) {
+  if (G.petBusy) return
+  if (!save.online) return banner('The save server is offline — try again in a moment', 3)
+  G.petBusy = true
+  void serverPet(action, body)
+    .then((r) => {
+      if (r.profile) {
+        applyProfile(r.profile)
+        ok(r.profile)
+      }
+    })
+    .catch((e) => banner(String(e?.message ?? e), 3))
+    .finally(() => (G.petBusy = false))
+}
+export function tamePet(kind: PetKind) {
+  petCall('tame', { kind }, () => {
+    play('evolve')
+    banner(`🐾 You tamed a ${PET_INFO[kind].name}! Feed it the souls you hunt.`, 4)
+  })
+}
+export function feedPet(kind: PetKind, n: number) {
+  const before = G.pet ? petLevel(G.pet.fed) : 0
+  petCall('feed', { kind, n }, (p) => {
+    const after = p.pet ? petLevel(p.pet.fed) : 0
+    play(after > before ? 'levelup' : 'gem')
+    if (after > before) banner(`🐾 ${myPetStats()?.name} grew to Lv ${after}!`, 3)
+  })
+}
+export function releasePet() {
+  petCall('release', {}, () => banner('Your pet was set free. Tame a new one any time.', 3))
 }

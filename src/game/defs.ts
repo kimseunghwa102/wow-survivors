@@ -2,7 +2,7 @@
 
 export type WeaponId = 'lash' | 'bolt' | 'orbit' | 'aura' | 'thunder' | 'nova' | 'frost' | 'chain' | 'chakram' | 'mine' | 'beam' | 'wisp'
 export type PassiveId = 'might' | 'haste' | 'expanse' | 'duplicator' | 'plating' | 'vitality' | 'bloodstone' | 'magnet' | 'swiftness' | 'fortune'
-export type EnemyKind = 'bat' | 'ghoul' | 'skeleton' | 'wraith' | 'elite' | 'boss'
+export type EnemyKind = 'bat' | 'ghoul' | 'skeleton' | 'wraith' | 'slime' | 'slimelet' | 'spider' | 'imp' | 'wisp' | 'hound' | 'brute' | 'elite' | 'boss'
 
 export const MAX_WEAPON_LVL = 8
 export const MAX_PASSIVE_LVL = 5
@@ -115,16 +115,25 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   ghoul: { hp: 18, speed: 1.9, dmg: 8, xp: 2, r: 0.4, model: 'models/ghoul.glb', scale: 1, hover: 0 },
   skeleton: { hp: 30, speed: 2.5, dmg: 10, xp: 3, r: 0.4, model: 'models/skeleton.glb', scale: 1, hover: 0 },
   wraith: { hp: 24, speed: 3.7, dmg: 12, xp: 4, r: 0.45, model: 'models/wraith.glb', scale: 1, hover: 0 },
+  // the wider bestiary: each has its own trick (see Run.moveEnemies)
+  slime: { hp: 22, speed: 1.6, dmg: 7, xp: 2, r: 0.5, model: 'models/slime.glb', scale: 1, hover: 0 }, // splits in two when it dies
+  slimelet: { hp: 7, speed: 3.0, dmg: 4, xp: 1, r: 0.3, model: 'models/slime.glb', scale: 0.55, hover: 0 },
+  spider: { hp: 20, speed: 2.6, dmg: 9, xp: 3, r: 0.45, model: 'models/spider.glb', scale: 1, hover: 0 }, // pounces
+  imp: { hp: 16, speed: 2.8, dmg: 6, xp: 4, r: 0.38, model: 'models/imp.glb', scale: 1, hover: 0 }, // keeps its distance, throws fireballs
+  wisp: { hp: 10, speed: 3.2, dmg: 22, xp: 3, r: 0.35, model: 'models/wisp.glb', scale: 1, hover: 0 }, // rushes in and explodes
+  hound: { hp: 34, speed: 4.4, dmg: 13, xp: 5, r: 0.5, model: 'models/hound.glb', scale: 1, hover: 0 }, // fast pack hunter
+  brute: { hp: 120, speed: 1.45, dmg: 18, xp: 8, r: 0.75, model: 'models/brute.glb', scale: 1, hover: 0 }, // stone giant, shrugs off knockback
   elite: { hp: 320, speed: 2.1, dmg: 20, xp: 25, r: 0.8, model: 'models/ghoul_elite.glb', scale: 1.7, hover: 0 },
   boss: { hp: 1, speed: 1.7, dmg: 35, xp: 120, r: 1.2, model: 'models/lich.glb', scale: 1, hover: 0 } // stats come from BOSSES
 }
 
 /** which kinds spawn at a given run time (seconds), with weights */
 export function waveMix(t: number): [EnemyKind, number][] {
-  if (t < 60) return [['bat', 80], ['ghoul', 20]]
-  if (t < 120) return [['bat', 40], ['ghoul', 40], ['skeleton', 20]]
-  if (t < 240) return [['bat', 25], ['ghoul', 30], ['skeleton', 30], ['wraith', 15]]
-  return [['bat', 20], ['ghoul', 20], ['skeleton', 35], ['wraith', 25]]
+  if (t < 60) return [['bat', 70], ['ghoul', 20], ['slime', 10]]
+  if (t < 120) return [['bat', 30], ['ghoul', 25], ['skeleton', 15], ['slime', 15], ['spider', 15]]
+  if (t < 240) return [['bat', 15], ['ghoul', 15], ['skeleton', 20], ['wraith', 10], ['slime', 10], ['spider', 12], ['imp', 10], ['wisp', 8]]
+  if (t < 480) return [['bat', 10], ['ghoul', 10], ['skeleton', 18], ['wraith', 14], ['spider', 10], ['imp', 12], ['wisp', 8], ['brute', 8], ['hound', 10]]
+  return [['bat', 5], ['ghoul', 5], ['skeleton', 15], ['wraith', 15], ['slime', 5], ['spider', 10], ['imp', 12], ['wisp', 10], ['hound', 15], ['brute', 13]]
 }
 
 /** experience needed to go from `lvl` to `lvl+1` */
@@ -476,3 +485,66 @@ export const COSMETICS: CosmeticDef[] = [
   { id: 'god_skin', name: 'Divine Radiance', model: 'models/cos_god.glb', anchor: 'back', anim: true }
 ]
 export const RAID_PARCEL = { x: -91, y: 71 }
+
+// ═════════════ SOULBOUND PET ═════════════
+// Tame one monster, then melt the souls of the monsters you hunt into it. Every soul makes it grow;
+// each kind of soul gives its own trait, so no two pets end up alike. (server: server/src/pet.ts)
+export const PET_KINDS = ['bat', 'ghoul', 'skeleton', 'wraith', 'slime', 'spider', 'imp', 'wisp', 'hound', 'brute'] as const
+export type PetKind = (typeof PET_KINDS)[number]
+/** one soul per this many kills of a kind (must match SOUL_EVERY on the server) */
+export const SOUL_EVERY = 20
+export type PetSave = { base: PetKind; mix: Partial<Record<PetKind, number>>; fed: number }
+export const PET_INFO: Record<PetKind, { name: string; adj: string; color: string; trait: string }> = {
+  bat: { name: 'Bat', adj: 'Vampiric', color: '#B04BFF', trait: 'faster bites · heals you a little' },
+  ghoul: { name: 'Ghoul', adj: 'Rotting', color: '#7DFF5A', trait: 'poison bite that splashes' },
+  skeleton: { name: 'Skeleton', adj: 'Bone', color: '#E8E2D0', trait: 'raw damage' },
+  wraith: { name: 'Wraith', adj: 'Phantom', color: '#3FE6FF', trait: 'long reach' },
+  slime: { name: 'Slime', adj: 'Gelatinous', color: '#4AF0A0', trait: 'big splash damage' },
+  spider: { name: 'Spider', adj: 'Venom', color: '#9AFF3A', trait: 'webs slow enemies' },
+  imp: { name: 'Imp', adj: 'Infernal', color: '#FF6A2A', trait: 'fire bolts hit a second foe' },
+  wisp: { name: 'Wisp', adj: 'Radiant', color: '#FFF2A0', trait: 'critical hits' },
+  hound: { name: 'Hound', adj: 'Feral', color: '#FF3B4E', trait: 'attacks faster · runs faster' },
+  brute: { name: 'Brute', adj: 'Titanic', color: '#C9A27A', trait: 'heavy blows knock foes back' }
+}
+/** pet level from souls fed: Lv 1 → 10 needs ~300 souls, Lv 100 needs ~30 000 */
+export const petLevel = (fed: number) => 1 + Math.floor(Math.sqrt(Math.max(0, fed) / 3))
+/** grows from cub to colossus */
+export const petScale = (lvl: number) => Math.min(6, 0.75 + 0.045 * (lvl - 1))
+export function petShares(p: PetSave): [PetKind, number][] {
+  const tot = Math.max(1, p.fed)
+  return (Object.keys(p.mix) as PetKind[]).filter((k) => (p.mix[k] ?? 0) > 0).map((k) => [k, (p.mix[k] ?? 0) / tot] as [PetKind, number]).sort((a, b) => b[1] - a[1])
+}
+export function petName(p: PetSave) {
+  const lv = petLevel(p.fed)
+  const top = petShares(p).find(([k, f]) => k !== p.base && f >= 0.15)
+  const size = lv >= 120 ? 'Colossal ' : lv >= 60 ? 'Giant ' : lv >= 25 ? 'Great ' : ''
+  return `${size}${top ? PET_INFO[top[0]].adj + ' ' : ''}${PET_INFO[p.base].name}`
+}
+export type PetStats = {
+  base: PetKind; lvl: number; scale: number; name: string; color: string
+  dmg: number; rate: number; range: number; splash: number; slow: number; chain: number; vamp: number; crit: number; knock: number; speed: number
+  shares: [PetKind, number][]
+}
+/** turn a saved pet into combat numbers (the base kind counts as a 40% share on top of what was fed) */
+export function petStats(p: PetSave): PetStats {
+  const lvl = petLevel(p.fed)
+  const sh = new Map<PetKind, number>()
+  for (const [k, f] of petShares(p)) sh.set(k, f * 0.6)
+  sh.set(p.base, (sh.get(p.base) ?? 0) + 0.4)
+  const f = (k: PetKind) => sh.get(k) ?? 0
+  const top = [...sh.entries()].sort((a, b) => b[1] - a[1])
+  return {
+    base: p.base, lvl, scale: petScale(lvl), name: petName(p), color: PET_INFO[(top.find(([k]) => k !== p.base && k && (p.mix[k] ?? 0) > 0)?.[0]) ?? p.base].color,
+    dmg: (1 + 0.06 * (lvl - 1)) * (1 + 1.2 * f('skeleton') + 0.8 * f('brute')),
+    rate: 1.1 * (1 + 0.9 * f('bat') + 1.1 * f('hound')),
+    range: 6 + 7 * f('wraith') + Math.min(4, lvl * 0.04),
+    splash: 1.2 * f('ghoul') + 3.2 * f('slime') + Math.min(1.5, lvl * 0.01),
+    slow: 2.5 * f('spider'),
+    chain: f('imp') >= 0.12 ? 1 + (f('imp') >= 0.35 ? 1 : 0) : 0,
+    vamp: 0.006 * f('bat'),
+    crit: Math.min(0.6, 0.05 + 0.6 * f('wisp')),
+    knock: 2 + 14 * f('brute'),
+    speed: 6 + 6 * f('hound'),
+    shares: petShares(p)
+  }
+}

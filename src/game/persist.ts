@@ -3,6 +3,7 @@
 import { signedFetch } from '~system/SignedFetch'
 import { API_URL } from '../config'
 import type { RunSnap } from './core'
+import type { PetSave, PetKind } from './defs'
 
 export type ServerProfile = {
   address: string
@@ -22,6 +23,9 @@ export type ServerProfile = {
   god?: boolean
   /** fusion recipes this hunter has made (core|elements) */
   codex?: string[]
+  /** SOULBOUND PET + unspent souls */
+  pet?: PetSave | null
+  souls?: Partial<Record<PetKind, number>>
 }
 export type BoardRow = { n: string; t: number; l: number; k: number; live?: boolean }
 export type GlobalBoard = {
@@ -98,7 +102,7 @@ export async function serverBuyPotion(id: string) {
   return r.profile as ServerProfile
 }
 
-export async function serverEndRun(result: { time: number; level: number; kills: number; gold: number; pvpKills: number; killer?: string; bossesSlain?: number }) {
+export async function serverEndRun(result: { time: number; level: number; kills: number; gold: number; pvpKills: number; killer?: string; bossesSlain?: number; souls?: Record<string, number> }) {
   if (!save.online || !save.runId) return null
   const runId = save.runId
   save.runId = ''
@@ -221,4 +225,11 @@ export async function raidPublic() {
   const r = await fetch(API_URL + '/api/raid')
   const j = await r.json()
   return j.raid as { hp: number; maxHp: number; alive: boolean; killer: string | null; respawnAt: number; now: number; top: { n: string; d: number }[] }
+}
+
+/** SOULBOUND PET: tame / feed / release (the server owns the pet and the souls) */
+export async function serverPet(action: 'tame' | 'feed' | 'release', body: Record<string, unknown> = {}) {
+  const r = await call('POST', `/api/pet/${action}`, body)
+  if (r.profile) save.profile = r.profile
+  return r as { ok: boolean; profile: ServerProfile | null }
 }

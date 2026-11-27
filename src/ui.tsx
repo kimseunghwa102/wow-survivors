@@ -3,7 +3,7 @@ import { CORE_ONLY } from './edition'
 import { Color4 } from '@dcl/sdk/math'
 import { buyPotion, drinkPotion } from './game/game'
 import { Ui as CasinoUi, playerInCasino } from './casino/holdem/ui'
-import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard, openForge, closeForge, forgePick, forgeSwap, forgeConfirm, toggleOthersFx, toggleSkill } from './game/game'
+import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard, openForge, closeForge, forgePick, forgeSwap, forgeConfirm, toggleOthersFx, toggleSkill, tamePet, feedPet, releasePet, myPetStats } from './game/game'
 import { optionLabel, Option, ARENA_EVENTS, VAULT_PRIZES, COMBO_TIERS, POTION_DEFS, PotionKind } from './game/core'
 import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable, GODS, MAX_GOD_LVL, GOD_UNLOCK, ARTS, ArtId, MAX_ART_LVL, ART_SLOTS, FUSION_LVL, ELEMENTS, ART_ELEMENT, MAX_ESSENCE, recipeKey, RECIPE_REWARD_PER_STAR } from './game/defs'
 import { feed, topRuns, remotes, relayOnline, relayState, heardCount } from './game/net'
@@ -11,6 +11,7 @@ import { save } from './game/persist'
 import { play } from './game/sfx'
 import { engine, UiCanvasInformation } from '@dcl/sdk/ecs'
 import { WARP, WARP_SWALLOW, WARP_LEN } from './godlounge'
+import { PET_KINDS, PET_INFO, PetKind, petLevel, SOUL_EVERY } from './game/defs'
 
 const tap = (fn: () => void) => () => {
   play('click')
@@ -308,6 +309,7 @@ function RightMid() {
         <UiEntity uiTransform={{ width: '100%', flexDirection: 'column' }}>
           {/* loadout: a short summary — the full list with on/off switches lives in the SKILLS panel */}
           <SkillSummary />
+          <Label value={`🐾 ${r.pet ? r.pet.name + ' · ' : ''}souls this run ✦ ${Object.values(r.souls).reduce((a, b) => a + (b ?? 0), 0)}`} fontSize={12} color={r.pet ? C(r.pet.color) : DIM} uiTransform={{ height: 18, width: 250 }} textAlign="middle-left" />
           <Feed />
         </UiEntity>
       ) : null}
@@ -377,7 +379,7 @@ function Dock() {
       G.infoOpen = !G.infoOpen
       if (G.infoOpen) G.skillsOpen = false
     }),
-    b('fx', G.showOthersFx ? "👁 OTHERS' SKILLS ON" : "🙈 OTHERS' SKILLS OFF", G.showOthersFx ? C('#1F6FA8') : C('#3A3A3A'), toggleOthersFx),
+    b('pet', G.petOpen ? '✕ PET' : G.pet ? '🐾 MY PET' : '🐾 TAME A PET', G.petOpen ? C('#7B3BFF') : C('#1F7A6A'), () => (G.petOpen = !G.petOpen)),
     b('board', G.boardOpen ? '✕ RANKINGS' : '🏆 RANKINGS', G.boardOpen ? C('#7B3BFF') : C('#2A1A40'), openBoard),
     CORE_ONLY ? null : b('gold', G.firstPurchase ? '💎 TREASURY +50%' : '💎 TREASURY [4]', C('#C08A00'), openGoldShop)
   ].filter(Boolean)
@@ -1179,6 +1181,123 @@ function AscendEnding() {
   )
 }
 
+/** top-right: show / hide the other hunters' skill effects (big and obvious) */
+function OthersToggle() {
+  if (playerInCasino()) return null
+  const on = G.showOthersFx
+  return (
+    <UiEntity uiTransform={{ width: 250, height: 40, margin: { bottom: 6 }, flexDirection: 'row', alignItems: 'center', padding: { left: 10, right: 6 } }} uiBackground={BTN(on ? C('#1F6FA8') : C('#5A1A24'))} onMouseDown={tap(toggleOthersFx)}>
+      <Label value={on ? '👁' : '🙈'} fontSize={20} color={WHITE} uiTransform={{ width: 30 }} />
+      <Label value={"<b>OTHERS' SKILLS</b>"} fontSize={14} color={WHITE} uiTransform={{ width: 140 }} textAlign="middle-left" />
+      <UiEntity uiTransform={{ width: 62, height: 28, justifyContent: 'center', alignItems: 'center' }} uiBackground={{ color: on ? C('#3DFF8E') : C('#2A2A2A') }}>
+        <Label value={on ? '<b>ON</b>' : '<b>OFF</b>'} fontSize={15} color={on ? C('#002A10') : C('#FF8A9A')} />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+/** SOULBOUND PET: tame one monster, feed it souls, watch it grow */
+function PetModal() {
+  const pet = G.pet
+  const close = <Button value="CLOSE" fontSize={15} color={WHITE} uiTransform={{ width: 160, height: 38, margin: 6 }} uiBackground={BTN(C('#3A2A4A'))} onMouseDown={tap(() => ((G.petOpen = false), (G.petReleaseAsk = false)))} />
+  const soulsOf = (k: PetKind) => G.souls[k] ?? 0
+  if (!pet) {
+    return (
+      <Modal title="🐾 TAME YOUR PET" sub={`Pick one monster. Then feed it the souls you hunt (1 soul per ${SOUL_EVERY} kills of a kind) — it grows huge and takes on their powers.`}>
+        <UiEntity uiTransform={{ width: 940, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' }}>
+          {PET_KINDS.map((k) => (
+            <UiEntity key={k} uiTransform={{ width: 176, height: 118, margin: 5, flexDirection: 'column', padding: 8 }} uiBackground={FRAME}>
+              <UiEntity uiTransform={{ width: '100%', height: 5, margin: { bottom: 5 } }} uiBackground={{ color: C(PET_INFO[k].color) }} />
+              <Label value={`<b>${PET_INFO[k].name}</b>`} fontSize={17} color={C(PET_INFO[k].color)} uiTransform={{ height: 22 }} />
+              <Label value={PET_INFO[k].trait} fontSize={11} color={WHITE} uiTransform={{ height: 28, width: '100%' }} />
+              <Button value={G.petBusy ? '…' : 'TAME'} fontSize={13} color={WHITE} uiTransform={{ width: '100%', height: 30 }} uiBackground={BTN(C('#1F7A6A'))} onMouseDown={tap(() => tamePet(k))} />
+            </UiEntity>
+          ))}
+        </UiEntity>
+        {close}
+      </Modal>
+    )
+  }
+  const st = myPetStats()!
+  const lv = petLevel(pet.fed)
+  const from = 3 * (lv - 1) * (lv - 1)
+  const to = 3 * lv * lv
+  const frac = (pet.fed - from) / Math.max(1, to - from)
+  const pct = (v: number) => `${Math.round(v * 100)}%`
+  const stats: [string, string][] = [
+    ['POWER', `×${st.dmg.toFixed(2)}`], ['ATTACKS', `${st.rate.toFixed(1)}/s`], ['REACH', `${st.range.toFixed(1)} m`], ['SPLASH', st.splash > 0.1 ? `${st.splash.toFixed(1)} m` : '—'],
+    ['WEB SLOW', st.slow > 0.05 ? `${st.slow.toFixed(1)} s` : '—'], ['CHAIN', st.chain ? `+${st.chain}` : '—'], ['CRIT', pct(st.crit)], ['LIFESTEAL', st.vamp > 0 ? `${(st.vamp * 100).toFixed(2)}%/hit` : '—']
+  ]
+  const owned = PET_KINDS.filter((k) => soulsOf(k) > 0)
+  return (
+    <Modal title={`🐾 ${st.name.toUpperCase()}`} sub={`a tamed ${PET_INFO[pet.base].name} · Lv ${lv} · size ×${st.scale.toFixed(2)} · ${pet.fed.toLocaleString()} souls fused`} color={C(st.color)}>
+      <UiEntity uiTransform={{ flexDirection: 'row', width: 900 }}>
+        {/* left: the pet */}
+        <UiEntity uiTransform={{ width: 430, flexDirection: 'column', padding: 10, margin: { right: 10 } }} uiBackground={FRAME}>
+          <Label value={`<b>NEXT LEVEL</b>  ${pet.fed.toLocaleString()} / ${to.toLocaleString()} souls`} fontSize={13} color={GOLD} uiTransform={{ height: 20 }} textAlign="middle-left" />
+          <TexBar frac={frac} fill="images/ui_xp.png" h={12} mt={2} />
+          <UiEntity uiTransform={{ flexDirection: 'row', flexWrap: 'wrap', width: '100%', margin: { top: 10 } }}>
+            {stats.map(([k, v]) => (
+              <UiEntity key={k} uiTransform={{ width: 100, height: 44, flexDirection: 'column', margin: 2 }}>
+                <Label value={k} fontSize={10} color={DIM} uiTransform={{ height: 14 }} textAlign="middle-left" />
+                <Label value={`<b>${v}</b>`} fontSize={16} color={WHITE} uiTransform={{ height: 24 }} textAlign="middle-left" />
+              </UiEntity>
+            ))}
+          </UiEntity>
+          <Label value="<b>FUSED SOULS</b>" fontSize={13} color={GOLD} uiTransform={{ height: 20, margin: { top: 6 } }} textAlign="middle-left" />
+          <UiEntity uiTransform={{ flexDirection: 'row', width: '100%', height: 16 }} uiBackground={{ color: C('#1A1424') }}>
+            {st.shares.map(([k, f]) => (
+              <UiEntity key={k} uiTransform={{ width: `${Math.max(1, f * 100)}%`, height: '100%' }} uiBackground={{ color: C(PET_INFO[k].color) }} />
+            ))}
+          </UiEntity>
+          <UiEntity uiTransform={{ flexDirection: 'column', width: '100%', margin: { top: 4 } }}>
+            {st.shares.length ? (
+              st.shares.slice(0, 5).map(([k, f]) => (
+                <Label key={k} value={`<color=${PET_INFO[k].color}>■</color> ${PET_INFO[k].name} ${pct(f)} — ${PET_INFO[k].trait}`} fontSize={12} color={WHITE} uiTransform={{ height: 17 }} textAlign="middle-left" />
+              ))
+            ) : (
+              <Label value="nothing fused yet — feed it souls →" fontSize={12} color={DIM} uiTransform={{ height: 17 }} textAlign="middle-left" />
+            )}
+          </UiEntity>
+        </UiEntity>
+        {/* right: souls to feed */}
+        <UiEntity uiTransform={{ width: 460, flexDirection: 'column', padding: 10 }} uiBackground={FRAME}>
+          <Label value="<b>YOUR SOULS</b>  · feed them to fuse their power" fontSize={13} color={GOLD} uiTransform={{ height: 20 }} textAlign="middle-left" />
+          {owned.length ? (
+            owned.map((k) => (
+              <UiEntity key={k} uiTransform={{ flexDirection: 'row', alignItems: 'center', width: '100%', height: 34, margin: { top: 2 } }}>
+                <UiEntity uiTransform={{ width: 6, height: 26 }} uiBackground={{ color: C(PET_INFO[k].color) }} />
+                <Label value={`<b>${PET_INFO[k].name}</b>`} fontSize={13} color={C(PET_INFO[k].color)} uiTransform={{ width: 86, margin: { left: 6 } }} textAlign="middle-left" />
+                <Label value={`✦ ${soulsOf(k).toLocaleString()}`} fontSize={13} color={WHITE} uiTransform={{ width: 86 }} textAlign="middle-left" />
+                {[1, 10, soulsOf(k)].map((n, i) => (
+                  <Button key={String(i)} value={i === 2 ? 'ALL' : `+${n}`} fontSize={12} color={WHITE} uiTransform={{ width: 70, height: 28, margin: 2 }} uiBackground={BTN(soulsOf(k) >= n ? C('#1F7A6A') : C('#2A2A2A'))} onMouseDown={tap(() => soulsOf(k) >= n && n > 0 && feedPet(k, n))} />
+                ))}
+              </UiEntity>
+            ))
+          ) : (
+            <Label value={`no souls yet — hunt in the rift:\n1 soul for every ${SOUL_EVERY} kills of a kind`} fontSize={13} color={DIM} uiTransform={{ height: 40 }} textAlign="middle-left" />
+          )}
+        </UiEntity>
+      </UiEntity>
+      <UiEntity uiTransform={{ flexDirection: 'row', margin: { top: 8 } }}>
+        {close}
+        <Button
+          value={G.petReleaseAsk ? 'REALLY SET FREE? (souls lost)' : 'SET FREE'}
+          fontSize={13}
+          color={WHITE}
+          uiTransform={{ width: 240, height: 38, margin: 6 }}
+          uiBackground={BTN(G.petReleaseAsk ? C('#B0202A') : C('#4A2A2A'))}
+          onMouseDown={tap(() => {
+            if (!G.petReleaseAsk) return (G.petReleaseAsk = true)
+            G.petReleaseAsk = false
+            releasePet()
+          })}
+        />
+      </UiEntity>
+    </Modal>
+  )
+}
+
 /** GOD'S ASCENT: a vortex swallows the screen, a golden flash, then the new floor fades in */
 function WarpOverlay() {
   if (!WARP.on) return null
@@ -1233,7 +1352,9 @@ const Root = () => (
     {playerInCasino() ? null : <Dock />}
     <InfoPanel />
     <SkillPanel />
+    {G.petOpen && G.phase !== 'levelup' && G.phase !== 'chest' && G.phase !== 'forge' ? <PetModal /> : null}
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 22, right: RIGHT }, width: 250, flexDirection: 'column' }}>
+      <OthersToggle />
       <SidePanel />
       <RightMid />
     </UiEntity>

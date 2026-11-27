@@ -5,7 +5,7 @@ import {
   MAX_WEAPONS, MAX_PASSIVES, waveMix, xpNeed, ARMORY, NUKE, NUKE_TIER, GOD_TIER, isHoldable, manualLevelScale, bossFor, BossDef,
   BOOSTS, BoostId, RARITY, GodId, GODS, GOD_UNLOCK, MAX_GODS, MAX_GOD_LVL, ARTS, ArtId, MAX_ART_LVL, BOSSES,
   FUSION_LVL, ART_SLOTS, MAX_ESSENCE, FusionStats, fusionStats, fusionName, ELEMENTS, ART_ELEMENT, FURY_PER_STAR, FURY_MAX, DREAD_HEAL, DREAD_LVL, DREAD_DMG, apex,
-  DIVINE_CHANCE, DUNG_CHANCE, Jackpot, JACKPOT_ART, isJackpotArt
+  DIVINE_CHANCE, DUNG_CHANCE, Jackpot, JACKPOT_ART, isJackpotArt, PET_KINDS, PetKind, PetStats, SOUL_EVERY
 } from './defs'
 
 export type Rect = { x0: number; z0: number; x1: number; z1: number }
@@ -86,6 +86,8 @@ export type Ev =
   | { t: 'swing'; x: number; z: number; yaw: number; range: number; arc: number; tier: number }
   | { t: 'quake'; x: number; z: number; r: number }
   | { t: 'tracer'; x: number; z: number; yaw: number; len: number }
+  | { t: 'soul'; kind: PetKind; x: number; z: number }
+  | { t: 'petHit'; x: number; z: number; big: boolean }
   | { t: 'zeus'; pts: [number, number][] }
   | { t: 'divine'; x: number; z: number; r: number }
   | { t: 'nukeLaunch'; x: number; z: number; tx: number; tz: number; delay: number }
@@ -188,6 +190,8 @@ export type RunSnap = {
   boons?: Record<string, number>
   ascended?: boolean
   godBorn?: boolean
+  /** pet souls earned this run (cumulative; the server banks them up to kills / SOUL_EVERY) */
+  souls?: Record<string, number>
 }
 
 export class Run {
@@ -195,6 +199,15 @@ export class Run {
   x = 0
   z = 0
   yaw = 0
+  // SOULBOUND PET (set by the game from the saved profile) + souls hunted this run
+  pet: PetStats | null = null
+  petX = 0
+  petZ = 0
+  petYaw = 0
+  petCd = 0.5
+  petPlaced = false
+  souls: Partial<Record<PetKind, number>> = {}
+  private soulAcc: Partial<Record<PetKind, number>> = {}
   hp = TUNING.baseHp
   maxHp = TUNING.baseHp
   level = 1
@@ -343,7 +356,8 @@ export class Run {
       nextElite: this.nextElite, nextRing: this.nextRing,
       ascended: this.ascended,
       godBorn: this.godBorn,
-      boons: { ...this.boons }
+      boons: { ...this.boons },
+      souls: { ...this.souls } as Record<string, number>
     }
   }
 
@@ -372,6 +386,7 @@ export class Run {
     }
     if (s.potions) r.potions = { hp: Math.min(9, s.potions.hp | 0), rage: Math.min(5, s.potions.rage | 0), phoenix: Math.min(1, s.potions.phoenix | 0) }
     r.awakened = s.level >= GOD_UNLOCK
+    for (const k of PET_KINDS) if (s.souls && Number(s.souls[k]) > 0) r.souls[k] = Math.floor(Number(s.souls[k]))
     r.time = s.time
     r.level = s.level
     r.xp = s.xp
@@ -483,6 +498,7 @@ export class Run {
     this.spawn(dt)
     this.moveEnemies(dt)
     this.fire(dt, remotes)
+    this.petStep(dt)
     this.moveProjs(dt, remotes)
     this.collect(dt)
     this.bossStep(dt)
@@ -599,10 +615,50 @@ export class Run {
         e.slow -= dt
         chill = e.boss !== undefined ? 0.75 : 0.45
       }
-      const stepLen = Math.min(e.speed * chill * dt, Math.max(0, dist - reach))
-      e.x += (mx / ml) * stepLen + e.kx * dt
-      e.z += (mz / ml) * stepLen + e.kz * dt
-      if (e.boss !== undefined) {
+      // per-kind tricks
+      let spd = 1
+      let away = false
+      if (e.kind === 'imp') {
+        // keeps its distance and throws fireballs
+        if (dist < 5.5) away = true
+        else if (dist < 8.5) spd = 0.15
+        e.atkCd = (e.atkCd ?? 1 + rand() * 2) - dt * chill
+        if (e.atkCd <= 0 && dist < 13 && chill > 0 && this.hostile.length < 30) {
+          e.atkCd = 2.4 + rand()
+          const a = Math.atan2(dx, dz)
+          this.hostile.push({ id: this.nextId++, x: e.x, z: e.z, vx: Math.sin(a) * 7, vz: Math.cos(a) * 7, life: 2.6, dmg: e.dmg * 1.5, k: 'fire' })
+        }
+      } else if (e.kind === 'spider') {
+        // pounces from a few metres away
+        e.atkCd = (e.atkCd ?? 1.5 + rand() * 2) - dt
+        if (e.charging && e.charging > 0) {
+          e.charging -= dt
+          spd = 4.2
+        } else if (e.atkCd <= 0 && dist > 2 && dist < 7.5) {
+          e.atkCd = 3 + rand()
+          e.charging = 0.35
+        }
+      } else if (e.kind === 'wisp') {
+        // rushes in and explodes
+        spd = dist < 6 ? 1.7 : 1
+        if (dist < e.r + 0.75 && chill > 0) {
+          this.events.push({ t: 'slam', x: e.x, z: e.z, r: 1.8 })
+          if (this.invuln <= 0) {
+            const dmg = e.dmg * Math.max(0.25, 1 - this.armor * 0.08) * (this.god ? 0.5 : 1)
+            this.hp -= dmg
+            this.lastAttacker = ''
+            this.events.push({ t: 'hurt', dmg })
+            this.breakCombo(true)
+          }
+          this.killEnemy(e)
+          continue
+        }
+      }
+      const stepLen = away ? e.speed * chill * dt * 0.8 : Math.min(e.speed * chill * spd * dt, Math.max(0, dist - reach))
+      const dir = away ? -1 : 1
+      e.x += (mx / ml) * stepLen * dir + e.kx * dt
+      e.z += (mz / ml) * stepLen * dir + e.kz * dt
+      if (e.boss !== undefined || e.kind === 'brute') {
         e.kx = 0
         e.kz = 0
       }
@@ -699,6 +755,75 @@ export class Run {
   }
   private lashHealBudget = 0
 
+  // ───────── SOULBOUND PET ─────────
+  private petStep(dt: number) {
+    const p = this.pet
+    if (!p) return
+    // follow a little behind and to the right of the hunter
+    const yr = (this.yaw * Math.PI) / 180
+    const off = 1.2 + p.scale * 0.6
+    const tx = this.x - Math.sin(yr) * off * 0.7 + Math.cos(yr) * off * 0.7
+    const tz = this.z - Math.cos(yr) * off * 0.7 - Math.sin(yr) * off * 0.7
+    if (!this.petPlaced || Math.hypot(tx - this.petX, tz - this.petZ) > 25) {
+      this.petX = tx
+      this.petZ = tz
+      this.petPlaced = true
+    }
+    const ddx = tx - this.petX
+    const ddz = tz - this.petZ
+    const dd = Math.hypot(ddx, ddz)
+    if (dd > 0.15) {
+      const st = Math.min(dd, p.speed * (dd > 4 ? 1.8 : 1) * dt)
+      this.petX += (ddx / dd) * st
+      this.petZ += (ddz / dd) * st
+      this.petYaw = (Math.atan2(ddx, ddz) * 180) / Math.PI
+    }
+    this.petCd -= dt
+    if (this.petCd > 0) return
+    let best: Enemy | undefined
+    let bd = p.range
+    for (const e of this.enemies) {
+      if (!e.alive) continue
+      const d = Math.hypot(e.x - this.petX, e.z - this.petZ)
+      if (d < bd) (bd = d), (best = e)
+    }
+    if (!best) {
+      this.petCd = 0.2
+      return
+    }
+    this.petCd = 1 / p.rate
+    const target = best
+    const crit = rand() < p.crit
+    const base = (6 + 1.4 * this.level) * p.dmg * (crit ? 2.5 : 1)
+    const strike = (e: Enemy, mult: number) => {
+      const d = Math.hypot(e.x - this.petX, e.z - this.petZ) || 1
+      this.hitEnemy(e, base * mult, ((e.x - this.petX) / d) * p.knock, ((e.z - this.petZ) / d) * p.knock)
+      if (p.slow > 0 && e.boss === undefined) e.slow = Math.max(e.slow ?? 0, p.slow)
+      this.events.push({ t: 'tracer', x: this.petX, z: this.petZ, yaw: (Math.atan2(e.x - this.petX, e.z - this.petZ) * 180) / Math.PI, len: Math.max(1, d) })
+    }
+    this.petYaw = (Math.atan2(target.x - this.petX, target.z - this.petZ) * 180) / Math.PI
+    strike(target, 1)
+    this.events.push({ t: 'petHit', x: target.x, z: target.z, big: crit || p.splash > 1 })
+    if (p.splash > 0.1)
+      for (const e of this.enemies) if (e.alive && e !== target && Math.hypot(e.x - target.x, e.z - target.z) < p.splash) this.hitEnemy(e, base * 0.5)
+    let from = target
+    const hitSet = new Set<number>([target.id])
+    for (let c = 0; c < p.chain; c++) {
+      let nx: Enemy | undefined
+      let nd = 5
+      for (const e of this.enemies) {
+        if (!e.alive || hitSet.has(e.id)) continue
+        const d = Math.hypot(e.x - from.x, e.z - from.z)
+        if (d < nd) (nd = d), (nx = e)
+      }
+      if (!nx) break
+      hitSet.add(nx.id)
+      strike(nx, 0.7)
+      from = nx
+    }
+    if (p.vamp > 0) this.hp = Math.min(this.maxHp, this.hp + this.maxHp * p.vamp * this.healMul())
+  }
+
   private killEnemy(e: Enemy) {
     e.alive = false
     this.kills++
@@ -718,6 +843,18 @@ export class Run {
       for (let i = 0; i < 6; i++) this.drop('coin', e.x + (rand() - 0.5) * 2, e.z + (rand() - 0.5) * 2, 1)
     }
     this.events.push({ t: 'kill', kind: e.kind, x: e.x, z: e.z })
+    // pet souls: one per SOUL_EVERY kills of a kind
+    const sk = (e.kind === 'slimelet' ? 'slime' : e.kind) as PetKind
+    if ((PET_KINDS as readonly string[]).includes(sk)) {
+      const a = (this.soulAcc[sk] ?? 0) + 1
+      if (a >= SOUL_EVERY) {
+        this.soulAcc[sk] = 0
+        this.souls[sk] = (this.souls[sk] ?? 0) + 1
+        this.events.push({ t: 'soul', kind: sk, x: e.x, z: e.z })
+      } else this.soulAcc[sk] = a
+    }
+    // a slime splits in two
+    if (e.kind === 'slime') for (const s of [-1, 1]) this.spawnEnemy('slimelet', e.x + s * 0.5, e.z + s * 0.3)
     if (e.kind === 'boss') {
       const bi = e.boss ?? 0
       this.bossIds = this.bossIds.filter((id) => id !== e.id)

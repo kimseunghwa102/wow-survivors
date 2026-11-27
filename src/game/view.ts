@@ -42,7 +42,11 @@ class Pool {
 }
 
 // ─────────────── pools ───────────────
-const ENEMY_POOL: Record<EnemyKind, number> = { bat: 52, ghoul: 38, skeleton: 33, wraith: 24, elite: 3, boss: 0 }
+// [pre-made, max] per kind (pools grow lazily up to max)
+const ENEMY_POOL: Record<EnemyKind, [number, number]> = {
+  bat: [36, 52], ghoul: [24, 38], skeleton: [22, 36], wraith: [14, 28], slime: [8, 20], slimelet: [8, 24], spider: [8, 22],
+  imp: [6, 18], wisp: [6, 16], hound: [6, 22], brute: [4, 16], elite: [3, 3], boss: [0, 0]
+}
 const enemyPools = {} as Record<EnemyKind, Pool>
 type EVis = { e: Entity; kind: EnemyKind; px: number; pz: number; tx: number; tz: number; acc: number; yaw: number; sc: number; squash: number }
 const enemyEnt = new Map<number, EVis>()
@@ -122,7 +126,7 @@ export function setupView() {
       Animator.create(m, { states: [{ clip: 'Idle', playing: true, loop: true, speed: k === 'bat' ? 1.6 : 1 }] })
       modelOf.set(e, m)
       return e
-    }, ENEMY_POOL[k])
+    }, ENEMY_POOL[k][0], ENEMY_POOL[k][1])
   }
   const pick = (src: string, n: number, spin = 120) =>
     new Pool(() => {
@@ -618,6 +622,10 @@ function playEvents(events: Ev[], run: Run | null, tiers?: number[]) {
       // handled
     } else if (playSkill2(ev, run, tiers)) {
       // handled
+    } else if (ev.t === 'petHit') {
+      deathPuff(ev.x, ev.z, ev.big ? 1.2 : 0.6)
+    } else if (ev.t === 'soul') {
+      spawnPuff(ev.x, ev.z, 0.8)
     } else if (ev.t === 'kill') {
       deathPuff(ev.x, ev.z, ev.kind === 'elite' ? 2.2 : ev.kind === 'boss' ? 4 : 1)
     } else if (ev.t === 'swing') {
@@ -1213,7 +1221,7 @@ function clearSkills2() {
 
 // ───────── GOD POWERS + sky-god boss attacks ─────────
 let featherPool: Pool[]
-const GP = {} as Record<'kame' | 'meteor' | 'hole' | 'lsword' | 'nuke' | 'bbeam' | 'borb', Pool[]>
+const GP = {} as Record<'kame' | 'meteor' | 'hole' | 'lsword' | 'nuke' | 'bbeam' | 'borb' | 'impfire', Pool[]>
 const gAnims: Anim[] = []
 const orbEnt = new Map<number, { e: Entity; pool: Pool }>()
 const allyEnt = new Map<number, { e: Entity; pool: Pool }>()
@@ -1233,6 +1241,7 @@ function setupGods() {
   GP.nuke = [mk('models/fx_nuke.glb', 1, 4)]
   GP.bbeam = [mk('models/fx_bbeam.glb', 1, 3)]
   GP.borb = [mk('models/fx_borb.glb', 12, 40, 300)]
+  GP.impfire = [mk('models/fx_impfire.glb', 8, 32)]
   MP.ringWarn = []
   MP.ring = []
   for (let i = 0; i < 6; i++) {
@@ -1591,14 +1600,17 @@ function renderGods(run: Run | null, dt: number) {
       seen.add(h.id)
       let o = orbEnt.get(h.id)
       if (!o) {
-        const pool = h.k === 'shade' ? MP.shade : h.k === 'fox' ? MP.fox : GP.borb[0]
+        const pool = h.k === 'shade' ? MP.shade : h.k === 'fox' ? MP.fox : h.k === 'fire' ? GP.impfire[0] : GP.borb[0]
         const e = pool.take()
         if (!e) continue
         o = { e, pool }
         orbEnt.set(h.id, o)
       }
       const t = Transform.getMutable(o.e)
-      if (h.k === 'shade') {
+      if (h.k === 'fire') {
+        t.position = V(h.x, 1.0, h.z)
+        t.rotation = yawQ((Math.atan2(h.vx, h.vz) * 180) / Math.PI)
+      } else if (h.k === 'shade') {
         t.position = V(h.x, 0, h.z)
         t.rotation = yawQ((Math.atan2(h.vx, h.vz) * 180) / Math.PI)
       } else t.position = V(h.x, h.k === 'fox' ? 0.1 : 1.1, h.z)

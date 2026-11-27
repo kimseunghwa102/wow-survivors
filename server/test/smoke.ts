@@ -230,6 +230,36 @@ async function main() {
     assert(dg.json.isNew && dg.json.reward === 500 && dg.json.codex.includes('DUNG'), 'ROYAL FLUSH saved (+500 consolation)')
   }
 
+  console.log('soulbound pet')
+  {
+    const pip = await identity()
+    await signed(pip, 'POST', '/api/profile', { name: 'Pip' })
+    const none = await signed(pip, 'POST', '/api/pet/feed', { kind: 'bat', n: 1 })
+    assert(none.status === 400, 'no pet yet → cannot feed')
+    const bad = await signed(pip, 'POST', '/api/pet/tame', { kind: 'dragon' })
+    assert(bad.status === 400, 'only hunted monsters can be tamed')
+    const t = await signed(pip, 'POST', '/api/pet/tame', { kind: 'slime' })
+    assert(t.json.ok && t.json.profile.pet.base === 'slime' && t.json.profile.pet.fed === 0, 'tamed a slime')
+    const t2 = await signed(pip, 'POST', '/api/pet/tame', { kind: 'bat' })
+    assert(t2.status === 400, 'one pet per hunter')
+    const pr = await signed(pip, 'POST', '/api/run/start', { weapon: 'lash' })
+    await db.query(`UPDATE runs SET started_at = NOW() - INTERVAL '600 seconds' WHERE id = $1`, [pr.json.runId])
+    // 600 s × ≤20 kills/s → at most 12050 kills → 602 souls; the hunter claims far more
+    const sv = await signed(pip, 'POST', '/api/run/save', { runId: pr.json.runId, snap: { v: 1, time: 590, level: 80, kills: 2000, gold: 100, souls: { bat: 60, imp: 40, dragon: 999 } } })
+    assert(sv.json.profile.souls.bat === 60 && sv.json.profile.souls.imp === 40 && !sv.json.profile.souls.dragon, 'souls banked (2000 kills → 100 souls, unknown kinds dropped)')
+    const sv2 = await signed(pip, 'POST', '/api/run/save', { runId: pr.json.runId, snap: { v: 1, time: 595, level: 80, kills: 2000, gold: 100, souls: { bat: 60, imp: 40 } } })
+    assert(sv2.json.profile.souls.bat === 60, 'the same souls are not banked twice')
+    const greedy = await signed(pip, 'POST', '/api/run/end', { runId: pr.json.runId, time: 599, level: 80, kills: 2200, gold: 100, souls: { bat: 5000, imp: 40 } })
+    const s3 = greedy.json.profile.souls
+    assert(s3.bat + s3.imp === 110, 'souls never exceed kills / 20 (2200 kills → 110)')
+    const f = await signed(pip, 'POST', '/api/pet/feed', { kind: 'imp', n: 30 })
+    assert(f.json.ok && f.json.profile.pet.mix.imp === 30 && f.json.profile.pet.fed === 30 && f.json.profile.souls.imp === s3.imp - 30, 'fed 30 imp souls into the slime')
+    const over = await signed(pip, 'POST', '/api/pet/feed', { kind: 'imp', n: 9999 })
+    assert(over.status === 400, 'cannot feed souls you do not have')
+    const rel = await signed(pip, 'POST', '/api/pet/release', {})
+    assert(rel.json.ok && rel.json.profile.pet === null, 'set free → can tame again')
+  }
+
   console.log('arena relay')
   {
     const { relay, _testClient, _testDrop } = await import('../src/arena')

@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express'
 import { verify } from '@dcl/platform-crypto-middleware'
 import { GOLD_PACK, GOLD_PACKS, FIRST_BUY_BONUS, hasBought, createQuote, confirmPurchase, settlePending, Rpc, PriceFeed, coingecko, Currency } from './payments'
 import { recordFusion } from './fusion'
+import { bankSouls, tamePet, feedPet, releasePet } from './pet'
 import { arenaTicket, arenaStats } from './arena'
 import { Sql, getOrCreate, toProfile, startRun, getOpenRun, finishRun, buy, leaderboard, rankOf, buyArmory, claimDaily, getResume, saveCheckpoint, bankAbandoned } from './db'
 import { raidRoutes, inventory } from './raid'
@@ -114,6 +115,7 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
       const b = req.body || {}
       const r = await saveCheckpoint(db, String(b.runId || ''), a.address, b.snap)
       if (!r) return res.status(404).json({ ok: false, error: 'run not found or already finished' })
+      await bankSouls(db, a.address, String(b.runId), b.snap?.souls)
       const p = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
       res.json({ ok: true, banked: r.banked, slayer: r.slayer, god: r.god, profile: p ? toProfile(p) : null, inv: r.slayer || r.god ? await inventory(db, a.address) : undefined })
     })
@@ -143,6 +145,7 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
         elapsed
       )
       const fin = await finishRun(db, run, a.address, result, Math.floor(num(b.gold)), killer, num(b.bossesSlain))
+      await bankSouls(db, a.address, run.id, b.souls)
       const p = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
       res.json({ ok: true, granted: result.gold + fin.bonus, paid: fin.paid, bonus: fin.bonus, newBest: fin.newBest, slayer: fin.slayer, god: fin.god, rank: await rankOf(db, p.best_time), profile: toProfile(p), inv: await inventory(db, a.address) })
     })
@@ -234,6 +237,33 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
       res.json({ ok: true, ticket: arenaTicket(a.address) })
     })
   )
+  // SOULBOUND PET: tame one monster, feed it the souls you hunt, set it free to start over
+  app.post(
+    '/api/pet/tame',
+    authed(async (req, res, a) => {
+      await getOrCreate(db, a.address, '', a.guest)
+      const r = await tamePet(db, a.address, req.body?.kind)
+      const p = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
+      res.status(r.ok ? 200 : 400).json({ ...r, profile: p ? toProfile(p) : null })
+    })
+  )
+  app.post(
+    '/api/pet/feed',
+    authed(async (req, res, a) => {
+      const r = await feedPet(db, a.address, req.body?.kind, req.body?.n)
+      const p = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
+      res.status(r.ok ? 200 : 400).json({ ...r, profile: p ? toProfile(p) : null })
+    })
+  )
+  app.post(
+    '/api/pet/release',
+    authed(async (_req, res, a) => {
+      const r = await releasePet(db, a.address)
+      const p = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
+      res.json({ ...r, profile: p ? toProfile(p) : null })
+    })
+  )
+
   app.get('/api/arena/health', (_req, res) => res.json({ ok: true, ...arenaStats() }))
 
   // fusion recipe book: save a fused art (and pay the first-time reward); the snapshot checkpoints the run first
