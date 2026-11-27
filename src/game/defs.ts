@@ -386,6 +386,18 @@ export const DREAD_HEAL = 0.12
 export const DREAD_LVL = 250
 /** Lv 250+ bosses also hit this much harder than before (before any fusion fury) */
 export const DREAD_DMG = 1.3
+/** APEX: from boss Lv 200 up, every level makes the boss tougher, harder-hitting, faster and longer to kill (keeps climbing to Lv 1111) */
+export const APEX_LVL = 200
+export function apex(lvl: number) {
+  const t = Math.max(0, lvl - APEX_LVL)
+  return {
+    hp: 1 + t / 110, //   Lv300 ×1.9 · Lv500 ×3.7 · Lv1000 ×8.3 · Lv1111 ×9.3
+    dmg: Math.min(2.4, 1 + t / 450), // Lv300 ×1.22 · Lv500 ×1.67 · Lv1000 ×2.4
+    haste: Math.min(1.75, 1 + t / 800), // attacks come this much more often
+    speed: Math.min(1.35, 1 + t / 1500),
+    time: Math.min(2.6, 1 + t / 320), // minimum fight length multiplier (Lv500 ×1.9 · Lv1000 ×2.6)
+  }
+}
 export function fusionName(core: ArtId, essences: ArtId[]): string {
   if (!essences.length) return ARTS[core].name
   const adjs: string[] = []

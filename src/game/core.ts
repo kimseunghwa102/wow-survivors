@@ -4,7 +4,7 @@ import {
   WeaponId, PassiveId, EnemyKind, WEAPONS, PASSIVES, ENEMIES, MAX_WEAPON_LVL, MAX_PASSIVE_LVL,
   MAX_WEAPONS, MAX_PASSIVES, waveMix, xpNeed, ARMORY, NUKE, NUKE_TIER, GOD_TIER, isHoldable, manualLevelScale, bossFor, BossDef,
   BOOSTS, BoostId, RARITY, GodId, GODS, GOD_UNLOCK, MAX_GODS, MAX_GOD_LVL, ARTS, ArtId, MAX_ART_LVL, BOSSES,
-  FUSION_LVL, ART_SLOTS, MAX_ESSENCE, FusionStats, fusionStats, fusionName, ELEMENTS, ART_ELEMENT, FURY_PER_STAR, FURY_MAX, DREAD_HEAL, DREAD_LVL, DREAD_DMG,
+  FUSION_LVL, ART_SLOTS, MAX_ESSENCE, FusionStats, fusionStats, fusionName, ELEMENTS, ART_ELEMENT, FURY_PER_STAR, FURY_MAX, DREAD_HEAL, DREAD_LVL, DREAD_DMG, apex,
   DIVINE_CHANCE, DUNG_CHANCE, Jackpot, JACKPOT_ART, isJackpotArt
 } from './defs'
 
@@ -1380,7 +1380,27 @@ export class Run {
   }
   /** BOSS FURY: bosses answer your fusions — harder hits, faster attacks */
   bossFury() {
+    return this.furyBase() * this.apexNow().dmg
+  }
+  private furyBase() {
     return Math.min(FURY_MAX, 1 + FURY_PER_STAR * this.fusionStars()) * (this.healMul() < 1 ? DREAD_DMG : 1)
+  }
+  /** attack tempo: fury + dread + APEX haste (divides attack cooldowns) */
+  bossTempo() {
+    return this.furyBase() * this.apexNow().haste
+  }
+  private apexCache = { t: -1, a: apex(0) }
+  /** APEX of the highest-level boss alive */
+  apexNow() {
+    if (this.apexCache.t !== this.time) {
+      let lv = 0
+      for (const id of this.bossIds) {
+        const b = this.enemies.find((e) => e.id === id)
+        if (b && b.alive) lv = Math.max(lv, bossFor(b.boss ?? 0).lvl)
+      }
+      this.apexCache = { t: this.time, a: apex(lv) }
+    }
+    return this.apexCache.a
   }
   artName(id: ArtId) {
     return fusionName(id, this.fusions.get(id) ?? [])
@@ -2274,12 +2294,15 @@ export class Run {
       const share = group.length > 1 ? 0.6 : 1
       const maxSec = idx < 8 ? 38 * share : Infinity
       const dps = Math.max(1, this.dps)
-      e.hp = e.maxHp = Math.round(Math.min(d.hp, Math.max(d.hp * 0.35, dps * maxSec)))
+      const ax = apex(d.lvl)
+      const baseHp = d.hp * ax.hp
+      e.hp = e.maxHp = Math.round(Math.min(baseHp, Math.max(baseHp * 0.35, dps * maxSec)))
       e.b0 = this.time
       e.bTaken = 0
       // mythic bosses hit for a share of your max HP, so they stay deadly however strong you are
       e.dmg = d.pct ? Math.max(d.dmg, this.maxHp * d.pct * 0.5) : d.dmg * (idx < 5 ? 0.6 : idx < 8 ? 0.8 : 1) // the first bosses go easier on newcomers
-      e.speed = d.speed
+      e.dmg *= ax.dmg
+      e.speed = d.speed * ax.speed
       e.r = d.r
       e.sc = d.scale
       e.xp = 0
@@ -2296,11 +2319,12 @@ export class Run {
       e.sized = true
       const d = bossFor(e.boss ?? 0)
       const twins = this.bossesAlive().length > 1 ? 0.6 : 1
-      const minSec = (d.god ? 150 : d.divine ? 70 : d.name === 'NIGHTSWARM' || d.name === 'AETHERION' ? 50 : 28) * twins
+      const ax = apex(d.lvl)
+      const minSec = (d.god ? 150 : d.divine ? 70 : d.name === 'NIGHTSWARM' || d.name === 'AETHERION' ? 50 : 28) * twins * ax.time
       const rate = (e.bTaken ?? 0) / (this.time - e.b0)
       const need = rate * (minSec - 3)
       if (need > e.hp) {
-        const f = Math.min(d.divine ? 2 : 1e6, need / e.hp)
+        const f = Math.min(d.divine ? 2 * ax.time : 1e6, need / e.hp)
         e.hp *= f
         e.maxHp *= f
       }
@@ -2552,7 +2576,7 @@ export class Run {
       b.atkCd = (b.atkCd ?? 2.4) - dt
       if (b.atkCd <= 0) {
         const ph = b.phase ?? 0
-        b.atkCd = ((d.cd ?? 3) * Math.pow(0.85, ph)) / this.bossFury()
+        b.atkCd = ((d.cd ?? 3) * Math.pow(0.85, ph)) / this.bossTempo()
         const n = (d.combo ?? 1) + (ph >= 2 ? 1 : 0)
         for (let k = 0; k < n; k++) {
           const mv = d.moves[(b.atkI ?? 0) % d.moves.length]
@@ -2563,7 +2587,7 @@ export class Run {
     } else if (d.attacks?.length) {
       b.atkCd = (b.atkCd ?? 3) - dt
       if (b.atkCd <= 0) {
-        b.atkCd = (3.4 - Math.min(1.2, (b.boss ?? 0) * 0.02)) / this.bossFury()
+        b.atkCd = (3.4 - Math.min(1.2, (b.boss ?? 0) * 0.02)) / this.bossTempo()
         b.atkI = (b.atkI ?? 0) + 1
         this.skyAttack(b, d, d.attacks[b.atkI % d.attacks.length])
       }
