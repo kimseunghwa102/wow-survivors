@@ -49,12 +49,12 @@ export function buildWorld() {
   // (the -103,78 cell is the WOW casino; it brings its own lights)
 
   // ── Sanctuary ──
-  const title = node(V(8, 4.2, 8))
+  const title = node(V(8, 5.4, 8))
   bob(title, 0.15, 2200)
   text(V(0, 0.4, 0), 'WOW NIGHTSWARM', 9, '#FFD86A', { parent: title, billboard: true, outline: '#2A0A3A' })
   text(V(0, -0.45, 0), 'Hold the rift. Break the swarm. Hunt your rivals.', 2.6, '#E8E2FF', { parent: title, billboard: true })
   // ── Hall of Gods: the ones who defeated THE ALMIGHTY (Lv 1111) ──
-  const gods = node(V(8, 6.7, 8))
+  const gods = node(V(8, 7.9, 8))
   bob(gods, 0.12, 2600)
   text(V(0, 0.35, 0), '☀ HALL OF GODS ☀', 4.4, '#FFD86A', { parent: gods, billboard: true, outline: '#2A1A00' })
   const godsT = text(V(0, -0.55, 0), '', 2.6, '#FFF6D8', { parent: gods, billboard: true, outline: '#2A1A00' })

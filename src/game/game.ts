@@ -1232,7 +1232,7 @@ export function setupGame() {
     const f = Vector3.rotate(Vector3.Forward(), pt.rotation)
     const yaw = (Math.atan2(f.x, f.z) * 180) / Math.PI
     const wasIn = G.inArena
-    G.inArena = inArena(px, pz)
+    G.inArena = inArena(px, pz) && pt.position.y < 30 // (the 2F God Lounge floats 40 m above the arena)
 
     if (G.phase === 'idle' && G.inArena) G.phase = 'start'
     if (G.phase === 'start' && !G.inArena) G.phase = 'idle'

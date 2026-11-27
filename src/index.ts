@@ -6,11 +6,14 @@ import { setupUi } from './ui'
 import { buildCasino } from './casino/build'
 import { CORE_ONLY } from './edition'
 import { buildThrone } from './throne'
+import { buildGodLounge } from './godlounge'
 
 export function main() {
   buildWorld()
   // WHO IS GOD? — the first God's throne at the east end of the arena
   buildThrone()
+  // 2F GOD LOUNGE (Lv 1111 Gods only) floating over the arena + the GOD'S ASCENT well in the Sanctuary
+  buildGodLounge()
   // GOLD HOLD'EM casino at -103,78 (the WOW casino, playing for WOW gold)
   if (!CORE_ONLY) buildCasino()
   setupGame()

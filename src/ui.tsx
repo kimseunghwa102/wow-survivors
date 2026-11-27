@@ -9,6 +9,8 @@ import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId,
 import { feed, topRuns, remotes, relayOnline, relayState, heardCount } from './game/net'
 import { save } from './game/persist'
 import { play } from './game/sfx'
+import { engine, UiCanvasInformation } from '@dcl/sdk/ecs'
+import { WARP, WARP_SWALLOW, WARP_LEN } from './godlounge'
 
 const tap = (fn: () => void) => () => {
   play('click')
@@ -1177,6 +1179,41 @@ function AscendEnding() {
   )
 }
 
+/** GOD'S ASCENT: a vortex swallows the screen, a golden flash, then the new floor fades in */
+function WarpOverlay() {
+  if (!WARP.on) return null
+  const cv = UiCanvasInformation.getOrNull(engine.RootEntity)
+  const W = cv?.width || 1920
+  const H = cv?.height || 1080
+  const t = WARP.t
+  const big = Math.hypot(W, H)
+  const ease = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x))
+  // 0 → swallow: the vortex grows from a point to beyond the screen; afterwards it collapses away
+  const grow = t < WARP_SWALLOW ? ease(t / WARP_SWALLOW) : 1 - ease((t - WARP_SWALLOW) / (WARP_LEN - WARP_SWALLOW))
+  const size = Math.max(4, big * (0.08 + 1.9 * grow * grow))
+  const frame = Math.floor(t * (14 + 30 * Math.min(1, t / WARP_SWALLOW))) % 8
+  const dark = t < WARP_SWALLOW ? 0.88 * ease(t / WARP_SWALLOW) : 0.88 * (1 - ease((t - WARP_SWALLOW) / 0.7))
+  const fx = Math.abs(t - WARP_SWALLOW)
+  const flash = Math.max(0, 1 - fx / 0.28)
+  const vAlpha = t < WARP_SWALLOW ? Math.min(1, t / 0.25) : Math.max(0, 1 - (t - WARP_SWALLOW) / 0.6)
+  const up = WARP.dir === 'up'
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { left: 0, top: 0 }, width: '100%', height: '100%' }}>
+      <UiEntity uiTransform={{ positionType: 'absolute', width: '100%', height: '100%' }} uiBackground={{ color: C(up ? '#08010F' : '#020008', dark) }} />
+      <UiEntity
+        uiTransform={{ positionType: 'absolute', position: { left: (W - size) / 2, top: (H - size) / 2 }, width: size, height: size }}
+        uiBackground={{ texture: { src: `images/warp/v${frame}.png` }, textureMode: 'stretch', color: C('#FFFFFF', vAlpha) }}
+      />
+      <UiEntity uiTransform={{ positionType: 'absolute', width: '100%', height: '100%' }} uiBackground={{ color: C(up ? '#FFF3D0' : '#E8DAFF', flash * 0.95) }} />
+      {t > WARP_SWALLOW + 0.15 ? (
+        <UiEntity uiTransform={{ positionType: 'absolute', position: { top: H * 0.38 }, width: '100%', justifyContent: 'center' }}>
+          <Label value={up ? '<b>✦ 2F · GOD LOUNGE ✦</b>' : '<b>SANCTUARY</b>'} fontSize={40} color={C(up ? '#FFE9A8' : '#E8DAFF', Math.max(0, 1 - (t - WARP_SWALLOW - 0.15) / 0.85))} />
+        </UiEntity>
+      ) : null}
+    </UiEntity>
+  )
+}
+
 const Root = () => (
   <UiEntity uiTransform={{ width: '100%', height: '100%', positionType: 'absolute' }}>
     {playerInCasino() ? <CasinoUi /> : null}
@@ -1216,6 +1253,7 @@ const Root = () => (
     <SlayerReveal />
     <AutoToast />
     <AscendEnding />
+    <WarpOverlay />
   </UiEntity>
 )
 
