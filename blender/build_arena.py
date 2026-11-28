@@ -332,7 +332,12 @@ def _shard(cx, cz, r, h, yaw, tilt):
 
 for (x, z, s, m) in [(20.5, 24, 1.2, CRYS), (44.0, 14, 1.0, CRYS_C), (43.5, 31.5, 0.9, CRYS), (25, 4.2, 0.9, CRYS_C), (39, 44, 1.0, CRYS),
                      (4.5, 63, 1.1, CRYS_C), (27.5, 60, 1.0, CRYS), (5, 76, 0.9, CRYS), (27, 76, 0.9, CRYS_C)]:
-    crystal(x, z, s, m)
+    if 40.6 <= x <= 47.6 and 12.2 < z <= 19.8:   # the PET SHOP stands here: draw it into a throwaway builder (keeps the random layout)
+        _real, B = B, Builder(M)
+        crystal(x, z, s, m)
+        B = _real
+    else:
+        crystal(x, z, s, m)
 
 
 def grave(x, z, yaw):
@@ -371,11 +376,18 @@ def by_throne(x, z):
     return 40.6 <= x <= 47.6 and 3.9 <= z <= 12.2
 
 
+# PET SHOP (models/pet_shop.glb) beside the throne at x 41.4-47.2, z 13-19.4: keep it clear too
+def by_shop(x, z):
+    return 40.6 <= x <= 47.6 and 12.2 < z <= 19.8
+
+
 for z in [6, 14, 22, 30, 40]:
     grave(19.6, z + random.uniform(-1, 1), 90 + random.uniform(-8, 8))
     gz = z + 2
     rz = random.uniform(-8, 8)  # drawn either way so the rest of the yard keeps its old random layout
-    if not by_throne(44.3, gz):
+    if by_shop(44.3, gz):
+        random.random()  # (what grave() would draw, so the rest of the yard keeps its layout)
+    elif not by_throne(44.3, gz):
         grave(44.3, gz, -90 + rz)
 for x in [22, 29, 36, 42]:
     grave(x, 3.4, random.uniform(-8, 8))

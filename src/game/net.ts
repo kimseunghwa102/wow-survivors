@@ -1,3 +1,5 @@
+import { PetVis } from './petview'
+import { decodePet } from './defs'
 // Multiplayer: other players' status, PvP hits, kill bounties and the shared leaderboard.
 import {
   engine, Entity, Schemas, Transform, PlayerIdentityData, MeshRenderer, Material, MaterialTransparencyMode,
@@ -150,10 +152,12 @@ export type Status = {
   wc?: number // spirit wisps
   wt?: number // wisp tier
   ps?: number[] // passives: index*10 + level
+  pt?: string // their pet (defs.encodePet)
 }
-type RemoteInfo = Status & { seen: number; x: number; z: number; entity?: Entity }
+type RemoteInfo = Status & { seen: number; x: number; z: number; y?: number; fx?: number; fz?: number; entity?: Entity }
 
 export const remotes = new Map<string, RemoteInfo>()
+const remotePets = new Map<string, PetVis>()
 export const feed: { text: string; color: string; t: number }[] = []
 let now = 0
 
@@ -429,10 +433,39 @@ function setupRemoteVisuals() {
       if (r) {
         r.x = t.position.x
         r.z = t.position.z
+        r.y = t.position.y
         r.entity = entity
         const f = Vector3.rotate(Vector3.Forward(), t.rotation)
+        r.fx = f.x
+        r.fz = f.z
         yawOf.set(id, (Math.atan2(f.x, f.z) * 180) / Math.PI)
       }
+    }
+    // other hunters' pets walk beside them
+    for (const [id, pv] of remotePets) {
+      const r = remotes.get(id)
+      if (!r) {
+        pv.destroy()
+        remotePets.delete(id)
+      }
+    }
+    for (const [id, r] of remotes) {
+      const look = now - r.seen < 3 && r.entity ? decodePet(r.pt) : null
+      let pv = remotePets.get(id)
+      if (!look) {
+        if (pv && pv.key) {
+          pv.hide()
+          pv.key = ''
+        }
+        continue
+      }
+      if (!pv) {
+        if (remotePets.size >= 24) continue
+        pv = new PetVis()
+        remotePets.set(id, pv)
+      }
+      pv.dress(look)
+      pv.move(dt, (r.y ?? 0) > 30 ? 40 : 0, { x: r.x, z: r.z, fx: r.fx ?? 0, fz: r.fz ?? 1 })
     }
     for (const [id, r] of remotes) {
       const v = visFor(id)

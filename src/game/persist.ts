@@ -3,7 +3,7 @@
 import { signedFetch } from '~system/SignedFetch'
 import { API_URL } from '../config'
 import type { RunSnap } from './core'
-import type { PetSave, PetKind } from './defs'
+import type { PetSave, PetKind, PetEntry } from './defs'
 
 export type ServerProfile = {
   address: string
@@ -25,6 +25,7 @@ export type ServerProfile = {
   codex?: string[]
   /** SOULBOUND PET + unspent souls */
   pet?: PetSave | null
+  pets?: Partial<Record<string, PetEntry>>
   souls?: Partial<Record<PetKind, number>>
 }
 export type BoardRow = { n: string; t: number; l: number; k: number; live?: boolean }
@@ -228,7 +229,7 @@ export async function raidPublic() {
 }
 
 /** SOULBOUND PET: tame / feed / release (the server owns the pet and the souls) */
-export async function serverPet(action: 'tame' | 'feed' | 'release', body: Record<string, unknown> = {}) {
+export async function serverPet(action: 'tame' | 'feed' | 'unlock' | 'active', body: Record<string, unknown> = {}) {
   const r = await call('POST', `/api/pet/${action}`, body)
   if (r.profile) save.profile = r.profile
   return r as { ok: boolean; profile: ServerProfile | null }

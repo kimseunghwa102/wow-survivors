@@ -4,7 +4,7 @@ import { RAID_SCHEMA } from './raid'
 import { PROGRESS_SCHEMA, trackRun } from './progress'
 import { CASINO_SCHEMA } from './casino/casino'
 import { FUSION_SCHEMA, codexOf } from './fusion'
-import { PET_SCHEMA, petOf, soulsOf, Pet, PetKind } from './pet'
+import { PET_SCHEMA, petOf, soulsOf, stableOf, Pet, PetKind } from './pet'
 import { META_KEYS, MetaKey, ARMORY_COST, DAILY_REWARD, dayKey, clampRun } from './rules'
 
 /** minimal pg-compatible client (pg.Pool in production, pg-mem in tests) */
@@ -77,6 +77,8 @@ export type Profile = {
   god: boolean
   codex: string[]
   pet: Pet | null
+  /** every pet you own (species → souls fed) */
+  pets: Record<string, { mix: Partial<Record<PetKind, number>>; fed: number }>
   souls: Partial<Record<PetKind, number>>
 }
 
@@ -97,6 +99,7 @@ export function toProfile(r: any): Profile {
     god: !!r.god_at,
     codex: codexOf(r),
     pet: petOf(r),
+    pets: Object.fromEntries(Object.entries(stableOf(r).pets).map(([k, v]) => [k, { mix: v.mix, fed: v.fed }])),
     souls: soulsOf(r)
   }
 }

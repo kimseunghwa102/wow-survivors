@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from 'express'
 import { verify } from '@dcl/platform-crypto-middleware'
 import { GOLD_PACK, GOLD_PACKS, FIRST_BUY_BONUS, hasBought, createQuote, confirmPurchase, settlePending, Rpc, PriceFeed, coingecko, Currency } from './payments'
 import { recordFusion } from './fusion'
-import { bankSouls, tamePet, feedPet, releasePet } from './pet'
+import { bankSouls, tamePet, feedPet, unlockPet, setActivePet } from './pet'
 import { arenaTicket, arenaStats } from './arena'
 import { Sql, getOrCreate, toProfile, startRun, getOpenRun, finishRun, buy, leaderboard, rankOf, buyArmory, claimDaily, getResume, saveCheckpoint, bankAbandoned } from './db'
 import { raidRoutes, inventory } from './raid'
@@ -237,7 +237,7 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
       res.json({ ok: true, ticket: arenaTicket(a.address) })
     })
   )
-  // SOULBOUND PET: tame one monster, feed it the souls you hunt, set it free to start over
+  // SOULBOUND PETS: tame a free pet, unlock the next ones at the PET SHOP, feed souls to the active pet
   app.post(
     '/api/pet/tame',
     authed(async (req, res, a) => {
@@ -256,11 +256,19 @@ export function createApp(db: Sql, auth: Authenticator, pay: PayOpts = {}) {
     })
   )
   app.post(
-    '/api/pet/release',
-    authed(async (_req, res, a) => {
-      const r = await releasePet(db, a.address)
+    '/api/pet/unlock',
+    authed(async (req, res, a) => {
+      const r = await unlockPet(db, a.address, req.body?.kind)
       const p = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
-      res.json({ ...r, profile: p ? toProfile(p) : null })
+      res.status(r.ok ? 200 : 400).json({ ...r, profile: p ? toProfile(p) : null })
+    })
+  )
+  app.post(
+    '/api/pet/active',
+    authed(async (req, res, a) => {
+      const r = await setActivePet(db, a.address, req.body?.kind)
+      const p = (await db.query('SELECT * FROM players WHERE address = $1', [a.address])).rows[0]
+      res.status(r.ok ? 200 : 400).json({ ...r, profile: p ? toProfile(p) : null })
     })
   )
 

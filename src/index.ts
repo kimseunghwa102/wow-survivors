@@ -7,6 +7,7 @@ import { buildCasino } from './casino/build'
 import { CORE_ONLY } from './edition'
 import { buildThrone } from './throne'
 import { buildGodLounge } from './godlounge'
+import { buildPetShop } from './petshop'
 
 export function main() {
   buildWorld()
@@ -14,6 +15,8 @@ export function main() {
   buildThrone()
   // 2F GOD LOUNGE (Lv 1111 Gods only) floating over the arena + the GOD'S ASCENT well in the Sanctuary
   buildGodLounge()
+  // PET SHOP beside the WHO IS GOD throne
+  buildPetShop()
   // GOLD HOLD'EM casino at -103,78 (the WOW casino, playing for WOW gold)
   if (!CORE_ONLY) buildCasino()
   setupGame()

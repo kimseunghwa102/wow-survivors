@@ -18,7 +18,7 @@ import { attachCosmetic, anchorOf, detach } from './cosmetics'
 import { play, setupSfx, musicLevel } from './sfx'
 import { setupNet, sendStatus, sendHit, sendKo, attackable, submitRun, me, nameOf, sendFx, pushFeed, sendAscend, sendJackpot } from './net'
 import { serverQuests, serverClaimQuest, QuestState, serverBuyPotion, serverFusion, serverPet } from './persist'
-import { PetSave, PetKind, petStats, PET_INFO, petLevel } from './defs'
+import { PetSave, PetKind, petStats, PET_INFO, petLevel, PetSpecies, PetEntry, encodePet, petLook } from './defs'
 import { setupPetView, renderPet } from './petview'
 import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, ServerProfile, serverArmoryBuy, serverClaimDaily, shopConfig, shopQuote, shopConfirm, serverSaveRun, serverAbandon, pingServer } from './persist'
 import { getUserAccount, sendAsync, requirePayment } from '~system/EthereumController'
@@ -97,10 +97,11 @@ export const G = {
   isGod: false,
   // SOULBOUND PET
   pet: null as PetSave | null,
+  pets: {} as Partial<Record<string, PetEntry>>,
+  atPetShop: false,
   souls: {} as Partial<Record<PetKind, number>>,
   petOpen: false,
   petBusy: false,
-  petReleaseAsk: false,
   /** the ending: seconds since ascension (0 = not playing) */
   ascendT: 0,
   /** standing in THE BLOOD RING (PvP) */
@@ -145,6 +146,7 @@ export function applyProfile(p: ServerProfile | null) {
   if (p.belt) G.profileBelt = { ...p.belt }
   if (p.god) G.isGod = true
   G.pet = p.pet ?? null
+  G.pets = p.pets ?? (p.pet ? { [p.pet.base]: { mix: p.pet.mix, fed: p.pet.fed } } : {})
   G.souls = p.souls ?? {}
   if (G.run) G.run.pet = G.pet ? petStats(G.pet) : null
   if (p.codex) for (const k of p.codex) G.codex.add(k)
@@ -1366,6 +1368,10 @@ export function setupGame() {
       statusT = 0
       const rr = G.run
       sendStatus({
+        pt: (() => {
+          const ps = myPetStats()
+          return ps ? encodePet(petLook(ps)) : undefined
+        })(),
         l: rr?.level ?? 0,
         hp: Math.round(rr?.hp ?? 0),
         mh: rr?.maxHp ?? 0,
@@ -1396,7 +1402,7 @@ export function myPetStats() {
   if (key !== petStatsCache.key) petStatsCache = { key, stats: G.pet ? petStats(G.pet) : null }
   return petStatsCache.stats
 }
-function petCall(action: 'tame' | 'feed' | 'release', body: Record<string, unknown>, ok: (p: ServerProfile) => void) {
+function petCall(action: 'tame' | 'feed' | 'unlock' | 'active', body: Record<string, unknown>, ok: (p: ServerProfile) => void) {
   if (G.petBusy) return
   if (!save.online) return banner('The save server is offline — try again in a moment', 3)
   G.petBusy = true
@@ -1410,11 +1416,22 @@ function petCall(action: 'tame' | 'feed' | 'release', body: Record<string, unkno
     .catch((e) => banner(String(e?.message ?? e), 3))
     .finally(() => (G.petBusy = false))
 }
-export function tamePet(kind: PetKind) {
+export function tamePet(kind: PetSpecies) {
   petCall('tame', { kind }, () => {
     play('evolve')
-    banner(`🐾 You tamed a ${PET_INFO[kind].name}! Feed it the souls you hunt.`, 4)
+    banner(`🐾 You tamed a ${PET_INFO[kind as PetKind | 'god'].name}! Feed it the souls you hunt.`, 4)
   })
+}
+/** PET SHOP: buy the next pet (needs full-size pets + GOLD) */
+export function unlockPet(kind: PetSpecies) {
+  if (!G.atPetShop) return banner('🐾 New pets are sold at the PET SHOP next to the WHO IS GOD throne', 3)
+  petCall('unlock', { kind }, () => {
+    play('buy')
+    banner(`🐾 ${PET_INFO[kind as PetKind | 'god'].name} joined your pets!`, 4)
+  })
+}
+export function setActivePet(kind: PetSpecies) {
+  petCall('active', { kind }, () => play('gem'))
 }
 export function feedPet(kind: PetKind, n: number) {
   const before = G.pet ? petLevel(G.pet.fed) : 0
@@ -1423,7 +1440,4 @@ export function feedPet(kind: PetKind, n: number) {
     play(after > before ? 'levelup' : 'gem')
     if (after > before) banner(`🐾 ${myPetStats()?.name} grew to Lv ${after}!`, 3)
   })
-}
-export function releasePet() {
-  petCall('release', {}, () => banner('Your pet was set free. Tame a new one any time.', 3))
 }

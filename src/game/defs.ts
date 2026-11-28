@@ -489,12 +489,33 @@ export const RAID_PARCEL = { x: -91, y: 71 }
 // ═════════════ SOULBOUND PET ═════════════
 // Tame one monster, then melt the souls of the monsters you hunt into it. Every soul makes it grow;
 // each kind of soul gives its own trait, so no two pets end up alike. (server: server/src/pet.ts)
+/** soul kinds (= the normal monsters) */
 export const PET_KINDS = ['bat', 'ghoul', 'skeleton', 'wraith', 'slime', 'spider', 'imp', 'wisp', 'hound', 'brute'] as const
 export type PetKind = (typeof PET_KINDS)[number]
+/** the 10 pets, in unlock order: 3 free, then one at a time at the PET SHOP, PET GOD last (server: server/src/pet.ts) */
+export const PET_SPECIES = ['bat', 'slime', 'ghoul', 'skeleton', 'spider', 'imp', 'wraith', 'hound', 'brute', 'god'] as const
+export type PetSpecies = (typeof PET_SPECIES)[number] | PetKind
+export const PET_FREE = 3
+export const PET_UNLOCK_GOLD = [100_000, 200_000, 400_000, 800_000, 1_600_000, 3_200_000, 10_000_000]
+/** full size (×6) */
+export const PET_MAX_LVL = 118
+export const petModel = (k: PetSpecies) => (k === 'god' ? 'models/pet_god.glb' : ENEMIES[k as PetKind].model)
+export const petModelScale = (k: PetSpecies) => (k === 'god' ? 1 : ENEMIES[k as PetKind].scale)
+export type PetEntry = { mix: Partial<Record<PetKind, number>>; fed: number }
+/** the next pet the shop shows (null when every pet is owned) */
+export function nextUnlock(pets: Partial<Record<string, PetEntry>>) {
+  for (let i = PET_FREE; i < PET_SPECIES.length; i++) {
+    const k = PET_SPECIES[i]
+    if (!pets[k]) return { kind: k as PetSpecies, index: i, gold: PET_UNLOCK_GOLD[i - PET_FREE], needMaxed: i - PET_FREE + 1 }
+  }
+  return null
+}
+export const maxedPets = (pets: Partial<Record<string, PetEntry>>) => Object.values(pets).filter((p) => p && petLevel(p.fed) >= PET_MAX_LVL).length
 /** one soul per this many kills of a kind (must match SOUL_EVERY on the server) */
 export const SOUL_EVERY = 20
-export type PetSave = { base: PetKind; mix: Partial<Record<PetKind, number>>; fed: number }
-export const PET_INFO: Record<PetKind, { name: string; adj: string; color: string; trait: string }> = {
+export type PetSave = { base: PetSpecies; mix: Partial<Record<PetKind, number>>; fed: number }
+export const PET_INFO: Record<PetKind | 'god', { name: string; adj: string; color: string; trait: string }> = {
+  god: { name: 'PET GOD', adj: 'Divine', color: '#FFE9A8', trait: 'a little god: every power at once' },
   bat: { name: 'Bat', adj: 'Vampiric', color: '#B04BFF', trait: 'faster bites · heals you a little' },
   ghoul: { name: 'Ghoul', adj: 'Rotting', color: '#7DFF5A', trait: 'poison bite that splashes' },
   skeleton: { name: 'Skeleton', adj: 'Bone', color: '#E8E2D0', trait: 'raw damage' },
@@ -518,10 +539,10 @@ export function petName(p: PetSave) {
   const lv = petLevel(p.fed)
   const top = petShares(p).find(([k, f]) => k !== p.base && f >= 0.15)
   const size = lv >= 120 ? 'Colossal ' : lv >= 60 ? 'Giant ' : lv >= 25 ? 'Great ' : ''
-  return `${size}${top ? PET_INFO[top[0]].adj + ' ' : ''}${PET_INFO[p.base].name}`
+  return `${size}${top ? PET_INFO[top[0]].adj + ' ' : ''}${PET_INFO[p.base as PetKind | 'god'].name}`
 }
 export type PetStats = {
-  base: PetKind; lvl: number; scale: number; name: string; color: string
+  base: PetSpecies; lvl: number; scale: number; name: string; color: string
   dmg: number; rate: number; range: number; splash: number; slow: number; chain: number; vamp: number; crit: number; knock: number; speed: number
   shares: [PetKind, number][]
 }
@@ -530,12 +551,13 @@ export function petStats(p: PetSave): PetStats {
   const lvl = petLevel(p.fed)
   const sh = new Map<PetKind, number>()
   for (const [k, f] of petShares(p)) sh.set(k, f * 0.6)
-  sh.set(p.base, (sh.get(p.base) ?? 0) + 0.4)
+  if (p.base === 'god') for (const k of PET_KINDS) sh.set(k, (sh.get(k) ?? 0) + 0.1) // PET GOD: a bit of everything
+  else sh.set(p.base as PetKind, (sh.get(p.base as PetKind) ?? 0) + 0.4)
   const f = (k: PetKind) => sh.get(k) ?? 0
   const top = [...sh.entries()].sort((a, b) => b[1] - a[1])
   return {
-    base: p.base, lvl, scale: petScale(lvl), name: petName(p), color: PET_INFO[(top.find(([k]) => k !== p.base && k && (p.mix[k] ?? 0) > 0)?.[0]) ?? p.base].color,
-    dmg: (1 + 0.06 * (lvl - 1)) * (1 + 1.2 * f('skeleton') + 0.8 * f('brute')),
+    base: p.base, lvl, scale: petScale(lvl), name: petName(p), color: PET_INFO[(top.find(([k]) => k !== p.base && k && (p.mix[k] ?? 0) > 0)?.[0]) ?? (p.base as PetKind | 'god')].color,
+    dmg: (1 + 0.06 * (lvl - 1)) * (1 + 1.2 * f('skeleton') + 0.8 * f('brute')) * (p.base === 'god' ? 1.6 : 1),
     rate: 1.1 * (1 + 0.9 * f('bat') + 1.1 * f('hound')),
     range: 6 + 7 * f('wraith') + Math.min(4, lvl * 0.04),
     splash: 1.2 * f('ghoul') + 3.2 * f('slime') + Math.min(1.5, lvl * 0.01),
@@ -547,4 +569,16 @@ export function petStats(p: PetSave): PetStats {
     speed: 6 + 6 * f('hound'),
     shares: petShares(p)
   }
+}
+/** what other hunters see of your pet (sent in the status message) */
+export type PetLook = { base: PetSpecies; lvl: number; color: string; name: string; spirits: PetKind[] }
+export const petLook = (s: PetStats): PetLook => ({ base: s.base, lvl: s.lvl, color: s.color, name: s.name, spirits: s.shares.filter(([k, f]) => k !== s.base && f >= 0.08).slice(0, 2).map(([k]) => k) })
+export const encodePet = (l: PetLook) => `${l.base}|${l.lvl}|${l.color}|${l.spirits.join(',')}|${l.name.slice(0, 40)}`
+export function decodePet(t: unknown): PetLook | null {
+  if (typeof t !== 'string' || t.length > 120) return null
+  const [b, lv, c, sp, n] = t.split('|')
+  if (!(PET_SPECIES as readonly string[]).includes(b) && !(PET_KINDS as readonly string[]).includes(b)) return null
+  if (!/^#[0-9A-Fa-f]{6}$/.test(c ?? '')) return null
+  const spirits = (sp ?? '').split(',').filter((k) => (PET_KINDS as readonly string[]).includes(k)) as PetKind[]
+  return { base: b as PetSpecies, lvl: Math.max(1, Math.min(999, Math.floor(Number(lv)) || 1)), color: c, name: String(n ?? '').slice(0, 40), spirits: spirits.slice(0, 2) }
 }

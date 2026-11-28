@@ -3,7 +3,7 @@ import { CORE_ONLY } from './edition'
 import { Color4 } from '@dcl/sdk/math'
 import { buyPotion, drinkPotion } from './game/game'
 import { Ui as CasinoUi, playerInCasino } from './casino/holdem/ui'
-import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard, openForge, closeForge, forgePick, forgeSwap, forgeConfirm, toggleOthersFx, toggleSkill, tamePet, feedPet, releasePet, myPetStats } from './game/game'
+import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard, openForge, closeForge, forgePick, forgeSwap, forgeConfirm, toggleOthersFx, toggleSkill, tamePet, feedPet, unlockPet, setActivePet, myPetStats } from './game/game'
 import { optionLabel, Option, ARENA_EVENTS, VAULT_PRIZES, COMBO_TIERS, POTION_DEFS, PotionKind } from './game/core'
 import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable, GODS, MAX_GOD_LVL, GOD_UNLOCK, ARTS, ArtId, MAX_ART_LVL, ART_SLOTS, FUSION_LVL, ELEMENTS, ART_ELEMENT, MAX_ESSENCE, recipeKey, RECIPE_REWARD_PER_STAR } from './game/defs'
 import { feed, topRuns, remotes, relayOnline, relayState, heardCount } from './game/net'
@@ -11,7 +11,7 @@ import { save } from './game/persist'
 import { play } from './game/sfx'
 import { engine, UiCanvasInformation } from '@dcl/sdk/ecs'
 import { WARP, WARP_SWALLOW, WARP_LEN } from './godlounge'
-import { PET_KINDS, PET_INFO, PetKind, petLevel, SOUL_EVERY } from './game/defs'
+import { PET_KINDS, PET_INFO, PetKind, petLevel, SOUL_EVERY, PET_SPECIES, PET_FREE, PET_MAX_LVL, nextUnlock, maxedPets, PetSpecies } from './game/defs'
 
 const tap = (fn: () => void) => () => {
   play('click')
@@ -1196,24 +1196,70 @@ function OthersToggle() {
   )
 }
 
-/** SOULBOUND PET: tame one monster, feed it souls, watch it grow */
+/** SOULBOUND PETS: a stable of 10 (3 free, then the PET SHOP), one walks with you; feed it souls to grow */
+const fmtG = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(n % 1e6 ? 1 : 0)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n))
+function PetStable() {
+  const nx = nextUnlock(G.pets)
+  const maxed = maxedPets(G.pets)
+  return (
+    <UiEntity uiTransform={{ flexDirection: 'row', width: 940, justifyContent: 'center', margin: { bottom: 8 } }}>
+      {PET_SPECIES.map((k, i) => {
+        const own = G.pets[k]
+        const info = PET_INFO[k as PetKind | 'god']
+        const active = G.pet?.base === k
+        const free = i < PET_FREE
+        const isNext = nx?.kind === k
+        const hidden = !own && !free && !isNext
+        const bg = active ? C('#2A5A3A') : own ? C('#2A2236') : isNext ? C('#3A2A10') : C('#141018')
+        const lv = own ? petLevel(own.fed) : 0
+        return (
+          <UiEntity key={k} uiTransform={{ width: 88, height: 92, margin: 2, flexDirection: 'column', alignItems: 'center', padding: 4 }} uiBackground={BTN(bg)}
+            onMouseDown={tap(() => (own ? !active && setActivePet(k) : free ? tamePet(k) : isNext ? unlockPet(k) : undefined))}>
+            <UiEntity uiTransform={{ width: '100%', height: 4, margin: { bottom: 4 } }} uiBackground={{ color: hidden ? C('#333333') : C(info.color) }} />
+            <Label value={hidden ? '<b>???</b>' : `<b>${k === 'god' ? 'PET GOD' : info.name}</b>`} fontSize={12} color={hidden ? DIM : C(info.color)} uiTransform={{ height: 18 }} />
+            <Label
+              value={own ? `Lv ${lv}${lv >= PET_MAX_LVL ? ' ★MAX' : ''}` : free ? 'FREE' : isNext ? `● ${fmtG(nx!.gold)}` : '🔒'}
+              fontSize={12} color={own ? WHITE : free ? C('#3DFF8E') : isNext ? GOLD : DIM} uiTransform={{ height: 18 }} />
+            <Label
+              value={active ? '<b>WITH YOU</b>' : own ? 'tap: take' : free ? 'tap: TAME' : isNext ? `needs ${nx!.needMaxed}★ (${maxed})` : 'hidden'}
+              fontSize={10} color={active ? C('#3DFF8E') : DIM} uiTransform={{ height: 16 }} />
+          </UiEntity>
+        )
+      })}
+    </UiEntity>
+  )
+}
+
+function PetShopRow() {
+  const nx = nextUnlock(G.pets)
+  if (!nx) return <Label value="★ You own every pet — even the PET GOD." fontSize={14} color={GOLD} uiTransform={{ height: 22 }} />
+  const maxed = maxedPets(G.pets)
+  const okMax = maxed >= nx.needMaxed
+  const okGold = G.bank >= nx.gold
+  const name = nx.kind === 'god' ? 'PET GOD' : PET_INFO[nx.kind as PetKind].name
+  return (
+    <UiEntity uiTransform={{ width: 940, height: 52, flexDirection: 'row', alignItems: 'center', padding: { left: 12, right: 8 }, margin: { bottom: 8 } }} uiBackground={FRAME}>
+      <Label value={`<b>🐾 PET SHOP</b>  next: <b>${name}</b>`} fontSize={15} color={GOLD} uiTransform={{ width: 300 }} textAlign="middle-left" />
+      <Label value={`${okMax ? '✓' : '✗'} full-size pets ${maxed}/${nx.needMaxed} (Lv ${PET_MAX_LVL})`} fontSize={13} color={okMax ? C('#3DFF8E') : C('#FF8A9A')} uiTransform={{ width: 230 }} textAlign="middle-left" />
+      <Label value={`${okGold ? '✓' : '✗'} ● ${nx.gold.toLocaleString()} GOLD`} fontSize={13} color={okGold ? C('#3DFF8E') : C('#FF8A9A')} uiTransform={{ width: 190 }} textAlign="middle-left" />
+      <Button
+        value={!G.atPetShop ? 'AT THE SHOP ONLY' : G.petBusy ? '…' : 'UNLOCK'}
+        fontSize={13} color={WHITE} uiTransform={{ width: 180, height: 36 }}
+        uiBackground={BTN(G.atPetShop && okMax && okGold ? C('#B07A10') : C('#3A3A3A'))}
+        onMouseDown={tap(() => unlockPet(nx.kind as PetSpecies))}
+      />
+    </UiEntity>
+  )
+}
+
 function PetModal() {
   const pet = G.pet
-  const close = <Button value="CLOSE" fontSize={15} color={WHITE} uiTransform={{ width: 160, height: 38, margin: 6 }} uiBackground={BTN(C('#3A2A4A'))} onMouseDown={tap(() => ((G.petOpen = false), (G.petReleaseAsk = false)))} />
+  const close = <Button value="CLOSE" fontSize={15} color={WHITE} uiTransform={{ width: 160, height: 38, margin: 6 }} uiBackground={BTN(C('#3A2A4A'))} onMouseDown={tap(() => (G.petOpen = false))} />
   const soulsOf = (k: PetKind) => G.souls[k] ?? 0
   if (!pet) {
     return (
-      <Modal title="🐾 TAME YOUR PET" sub={`Pick one monster. Then feed it the souls you hunt (1 soul per ${SOUL_EVERY} kills of a kind) — it grows huge and takes on their powers.`}>
-        <UiEntity uiTransform={{ width: 940, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' }}>
-          {PET_KINDS.map((k) => (
-            <UiEntity key={k} uiTransform={{ width: 176, height: 118, margin: 5, flexDirection: 'column', padding: 8 }} uiBackground={FRAME}>
-              <UiEntity uiTransform={{ width: '100%', height: 5, margin: { bottom: 5 } }} uiBackground={{ color: C(PET_INFO[k].color) }} />
-              <Label value={`<b>${PET_INFO[k].name}</b>`} fontSize={17} color={C(PET_INFO[k].color)} uiTransform={{ height: 22 }} />
-              <Label value={PET_INFO[k].trait} fontSize={11} color={WHITE} uiTransform={{ height: 28, width: '100%' }} />
-              <Button value={G.petBusy ? '…' : 'TAME'} fontSize={13} color={WHITE} uiTransform={{ width: '100%', height: 30 }} uiBackground={BTN(C('#1F7A6A'))} onMouseDown={tap(() => tamePet(k))} />
-            </UiEntity>
-          ))}
-        </UiEntity>
+      <Modal title="🐾 TAME YOUR FIRST PET" sub={`Three pets are free. Feed them the souls you hunt (1 soul per ${SOUL_EVERY} kills of a kind): they grow huge and take on those monsters' powers. Raise one to full size to reveal the next pet at the PET SHOP.`}>
+        <PetStable />
         {close}
       </Modal>
     )
@@ -1222,7 +1268,7 @@ function PetModal() {
   const lv = petLevel(pet.fed)
   const from = 3 * (lv - 1) * (lv - 1)
   const to = 3 * lv * lv
-  const frac = (pet.fed - from) / Math.max(1, to - from)
+  const frac = lv >= PET_MAX_LVL ? 1 : (pet.fed - from) / Math.max(1, to - from)
   const pct = (v: number) => `${Math.round(v * 100)}%`
   const stats: [string, string][] = [
     ['POWER', `×${st.dmg.toFixed(2)}`], ['ATTACKS', `${st.rate.toFixed(1)}/s`], ['REACH', `${st.range.toFixed(1)} m`], ['SPLASH', st.splash > 0.1 ? `${st.splash.toFixed(1)} m` : '—'],
@@ -1230,47 +1276,47 @@ function PetModal() {
   ]
   const owned = PET_KINDS.filter((k) => soulsOf(k) > 0)
   return (
-    <Modal title={`🐾 ${st.name.toUpperCase()}`} sub={`a tamed ${PET_INFO[pet.base].name} · Lv ${lv} · size ×${st.scale.toFixed(2)} · ${pet.fed.toLocaleString()} souls fused`} color={C(st.color)}>
-      <UiEntity uiTransform={{ flexDirection: 'row', width: 900 }}>
-        {/* left: the pet */}
-        <UiEntity uiTransform={{ width: 430, flexDirection: 'column', padding: 10, margin: { right: 10 } }} uiBackground={FRAME}>
-          <Label value={`<b>NEXT LEVEL</b>  ${pet.fed.toLocaleString()} / ${to.toLocaleString()} souls`} fontSize={13} color={GOLD} uiTransform={{ height: 20 }} textAlign="middle-left" />
+    <Modal title={`🐾 ${st.name.toUpperCase()}`} sub={`walking with you · Lv ${lv}${lv >= PET_MAX_LVL ? ' ★ FULL SIZE' : ''} · size ×${st.scale.toFixed(2)} of 6 · ${pet.fed.toLocaleString()} souls fused`} color={C(st.color)}>
+      <PetStable />
+      <PetShopRow />
+      <UiEntity uiTransform={{ flexDirection: 'row', width: 940 }}>
+        <UiEntity uiTransform={{ width: 460, flexDirection: 'column', padding: 10, margin: { right: 10 } }} uiBackground={FRAME}>
+          <Label value={lv >= PET_MAX_LVL ? '<b>★ FULL SIZE</b> — it still gets stronger with more souls' : `<b>NEXT LEVEL</b>  ${pet.fed.toLocaleString()} / ${to.toLocaleString()} souls · full size at Lv ${PET_MAX_LVL}`} fontSize={12} color={GOLD} uiTransform={{ height: 20 }} textAlign="middle-left" />
           <TexBar frac={frac} fill="images/ui_xp.png" h={12} mt={2} />
-          <UiEntity uiTransform={{ flexDirection: 'row', flexWrap: 'wrap', width: '100%', margin: { top: 10 } }}>
+          <UiEntity uiTransform={{ flexDirection: 'row', flexWrap: 'wrap', width: '100%', margin: { top: 8 } }}>
             {stats.map(([k, v]) => (
-              <UiEntity key={k} uiTransform={{ width: 100, height: 44, flexDirection: 'column', margin: 2 }}>
+              <UiEntity key={k} uiTransform={{ width: 108, height: 40, flexDirection: 'column', margin: 1 }}>
                 <Label value={k} fontSize={10} color={DIM} uiTransform={{ height: 14 }} textAlign="middle-left" />
-                <Label value={`<b>${v}</b>`} fontSize={16} color={WHITE} uiTransform={{ height: 24 }} textAlign="middle-left" />
+                <Label value={`<b>${v}</b>`} fontSize={15} color={WHITE} uiTransform={{ height: 22 }} textAlign="middle-left" />
               </UiEntity>
             ))}
           </UiEntity>
-          <Label value="<b>FUSED SOULS</b>" fontSize={13} color={GOLD} uiTransform={{ height: 20, margin: { top: 6 } }} textAlign="middle-left" />
-          <UiEntity uiTransform={{ flexDirection: 'row', width: '100%', height: 16 }} uiBackground={{ color: C('#1A1424') }}>
+          <Label value="<b>FUSED SOULS</b>" fontSize={12} color={GOLD} uiTransform={{ height: 18, margin: { top: 4 } }} textAlign="middle-left" />
+          <UiEntity uiTransform={{ flexDirection: 'row', width: '100%', height: 14 }} uiBackground={{ color: C('#1A1424') }}>
             {st.shares.map(([k, f]) => (
               <UiEntity key={k} uiTransform={{ width: `${Math.max(1, f * 100)}%`, height: '100%' }} uiBackground={{ color: C(PET_INFO[k].color) }} />
             ))}
           </UiEntity>
           <UiEntity uiTransform={{ flexDirection: 'column', width: '100%', margin: { top: 4 } }}>
             {st.shares.length ? (
-              st.shares.slice(0, 5).map(([k, f]) => (
-                <Label key={k} value={`<color=${PET_INFO[k].color}>■</color> ${PET_INFO[k].name} ${pct(f)} — ${PET_INFO[k].trait}`} fontSize={12} color={WHITE} uiTransform={{ height: 17 }} textAlign="middle-left" />
+              st.shares.slice(0, 4).map(([k, f]) => (
+                <Label key={k} value={`<color=${PET_INFO[k].color}>■</color> ${PET_INFO[k].name} ${pct(f)} — ${PET_INFO[k].trait}`} fontSize={11} color={WHITE} uiTransform={{ height: 16 }} textAlign="middle-left" />
               ))
             ) : (
-              <Label value="nothing fused yet — feed it souls →" fontSize={12} color={DIM} uiTransform={{ height: 17 }} textAlign="middle-left" />
+              <Label value="nothing fused yet — feed it souls →" fontSize={12} color={DIM} uiTransform={{ height: 16 }} textAlign="middle-left" />
             )}
           </UiEntity>
         </UiEntity>
-        {/* right: souls to feed */}
-        <UiEntity uiTransform={{ width: 460, flexDirection: 'column', padding: 10 }} uiBackground={FRAME}>
-          <Label value="<b>YOUR SOULS</b>  · feed them to fuse their power" fontSize={13} color={GOLD} uiTransform={{ height: 20 }} textAlign="middle-left" />
+        <UiEntity uiTransform={{ width: 470, flexDirection: 'column', padding: 10 }} uiBackground={FRAME}>
+          <Label value="<b>YOUR SOULS</b>  · feed them to the pet walking with you" fontSize={12} color={GOLD} uiTransform={{ height: 20 }} textAlign="middle-left" />
           {owned.length ? (
-            owned.map((k) => (
-              <UiEntity key={k} uiTransform={{ flexDirection: 'row', alignItems: 'center', width: '100%', height: 34, margin: { top: 2 } }}>
-                <UiEntity uiTransform={{ width: 6, height: 26 }} uiBackground={{ color: C(PET_INFO[k].color) }} />
+            owned.slice(0, 7).map((k) => (
+              <UiEntity key={k} uiTransform={{ flexDirection: 'row', alignItems: 'center', width: '100%', height: 30, margin: { top: 1 } }}>
+                <UiEntity uiTransform={{ width: 6, height: 24 }} uiBackground={{ color: C(PET_INFO[k].color) }} />
                 <Label value={`<b>${PET_INFO[k].name}</b>`} fontSize={13} color={C(PET_INFO[k].color)} uiTransform={{ width: 86, margin: { left: 6 } }} textAlign="middle-left" />
-                <Label value={`✦ ${soulsOf(k).toLocaleString()}`} fontSize={13} color={WHITE} uiTransform={{ width: 86 }} textAlign="middle-left" />
+                <Label value={`✦ ${soulsOf(k).toLocaleString()}`} fontSize={13} color={WHITE} uiTransform={{ width: 90 }} textAlign="middle-left" />
                 {[1, 10, soulsOf(k)].map((n, i) => (
-                  <Button key={String(i)} value={i === 2 ? 'ALL' : `+${n}`} fontSize={12} color={WHITE} uiTransform={{ width: 70, height: 28, margin: 2 }} uiBackground={BTN(soulsOf(k) >= n ? C('#1F7A6A') : C('#2A2A2A'))} onMouseDown={tap(() => soulsOf(k) >= n && n > 0 && feedPet(k, n))} />
+                  <Button key={String(i)} value={i === 2 ? 'ALL' : `+${n}`} fontSize={12} color={WHITE} uiTransform={{ width: 72, height: 26, margin: 2 }} uiBackground={BTN(soulsOf(k) >= n ? C('#1F7A6A') : C('#2A2A2A'))} onMouseDown={tap(() => soulsOf(k) >= n && n > 0 && feedPet(k, n))} />
                 ))}
               </UiEntity>
             ))
@@ -1279,21 +1325,7 @@ function PetModal() {
           )}
         </UiEntity>
       </UiEntity>
-      <UiEntity uiTransform={{ flexDirection: 'row', margin: { top: 8 } }}>
-        {close}
-        <Button
-          value={G.petReleaseAsk ? 'REALLY SET FREE? (souls lost)' : 'SET FREE'}
-          fontSize={13}
-          color={WHITE}
-          uiTransform={{ width: 240, height: 38, margin: 6 }}
-          uiBackground={BTN(G.petReleaseAsk ? C('#B0202A') : C('#4A2A2A'))}
-          onMouseDown={tap(() => {
-            if (!G.petReleaseAsk) return (G.petReleaseAsk = true)
-            G.petReleaseAsk = false
-            releasePet()
-          })}
-        />
-      </UiEntity>
+      {close}
     </Modal>
   )
 }
