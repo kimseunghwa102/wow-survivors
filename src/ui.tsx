@@ -3,7 +3,7 @@ import { CORE_ONLY } from './edition'
 import { Color4 } from '@dcl/sdk/math'
 import { buyPotion, drinkPotion } from './game/game'
 import { Ui as CasinoUi, playerInCasino } from './casino/holdem/ui'
-import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard, openForge, closeForge, forgePick, forgeSwap, forgeConfirm, toggleOthersFx, toggleSkill, tamePet, feedPet, unlockPet, setActivePet, myPetStats } from './game/game'
+import { G, startRun, choose, reroll, skipLevel, collectChest, buyMeta, META, MetaKey, metaCost, returnToSanctuary, playAgain, buyArmory, claimDaily, equipped, toggleAuto, equipWeapon, openGoldShop, buyGold, resumeRun, claimQuest, openQuests, openBoard, openForge, closeForge, forgePick, forgeSwap, forgeConfirm, toggleOthersFx, toggleSkill, SlotFly, SLOT_POP, SLOT_FLY, SLOT_HOLD, SLOT_OUT, slotReveal, tamePet, feedPet, unlockPet, setActivePet, myPetStats } from './game/game'
 import { optionLabel, Option, ARENA_EVENTS, VAULT_PRIZES, COMBO_TIERS, POTION_DEFS, PotionKind } from './game/core'
 import { WEAPONS, PASSIVES, STARTERS, MAX_WEAPON_LVL, MAX_PASSIVE_LVL, WeaponId, PassiveId, ARMORY, NUKE_TIER, NUKE, bossFor, GOLD_PACKS, FIRST_BUY_BONUS, isHoldable, GODS, MAX_GOD_LVL, GOD_UNLOCK, ARTS, ArtId, MAX_ART_LVL, ART_SLOTS, FUSION_LVL, ELEMENTS, ART_ELEMENT, MAX_ESSENCE, recipeKey, RECIPE_REWARD_PER_STAR } from './game/defs'
 import { feed, topRuns, remotes, relayOnline, relayState, heardCount } from './game/net'
@@ -1330,6 +1330,86 @@ function PetModal() {
   )
 }
 
+/** VAULT SLOTS: each vault pops up in the middle, flies to the right edge and spins there while you keep hunting;
+ *  several fly out one after another and spin side by side in a column */
+const SLOT_W = 330
+const SLOT_H = 96
+function SlotFlyers() {
+  if (!G.slots.length || playerInCasino()) return null
+  const cv = UiCanvasInformation.getOrNull(engine.RootEntity)
+  const W = cv?.width || 1920
+  const H = cv?.height || 1080
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { left: 0, top: 0 }, width: '100%', height: '100%' }}>
+      {G.slots.filter((s) => s.lane >= 0 && s.t >= 0).map((s) => (
+        <SlotCard key={String(s.id)} s={s} W={W} H={H} />
+      ))}
+    </UiEntity>
+  )
+}
+function SlotCard(props: { s: SlotFly; W: number; H: number; key?: string }) {
+  const { s, W, H } = props
+  const t = s.t
+  const ease = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : 1 - Math.pow(1 - x, 3))
+  const back = (x: number) => {
+    const c = 1.6
+    return x <= 0 ? 0 : x >= 1 ? 1 : 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2)
+  }
+  const pop = Math.min(1, t / SLOT_POP)
+  const fly = back((t - SLOT_POP) / SLOT_FLY)
+  const reveal = slotReveal(s)
+  const out = ease((t - reveal - SLOT_HOLD) / SLOT_OUT)
+  const sc = 0.55 + 0.45 * back(pop) - 0.12 * fly + 0.12
+  const w = SLOT_W * sc
+  const h = SLOT_H * sc
+  const cx = (W - w) / 2
+  const cy = H * 0.42 - h / 2
+  const tx = W - 282 - w - 10
+  const ty = H * 0.24 + s.lane * (SLOT_H + 8)
+  const x = cx + (tx - cx) * fly + out * 420
+  const y = cy + (ty - cy) * fly
+  const pz = s.prize ? VAULT_PRIZES[s.prize] : null
+  const spinT = t - SLOT_POP - SLOT_FLY
+  const spinning = t < reveal
+  const finalSym = (i: number) => (pz ? pz.sym : s.rolls.length >= 5 ? '7' : s.rolls.length >= 3 ? '★' : ['★', '♦', '●'][i])
+  const locked = (i: number) => spinT >= s.spin * ((i + 1) / 3) - 0.05
+  const reel = (i: number) => (spinT < 0 || !locked(i) ? REEL[Math.floor((t * 22 + i * 3 + s.id) % REEL.length)] : finalSym(i))
+  const col = pz ? C(pz.color) : s.rolls.length >= 5 ? C('#FF5468') : s.rolls.length >= 3 ? GOLD : C('#3DFF8E')
+  const frameCol = s.big ? C('#FFD86A') : C('#B07BFF')
+  const glow = 0.55 + 0.45 * Math.abs(Math.sin(t * 9))
+  const title = spinning ? (s.big ? 'BOSS VAULT' : 'VAULT') : pz ? pz.name : s.rolls.length >= 5 ? 'MEGA JACKPOT!' : s.rolls.length >= 3 ? 'BIG WIN!' : 'WIN'
+  const evo = s.rolls.find((o) => o.kind === 'evolve')
+  const lines = evo ? [optionLabel(evo)] : s.rolls.slice(0, 3).map((o) => optionLabel(o))
+  const fs = (n: number) => Math.max(8, Math.round(n * sc))
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { left: x, top: y }, width: w, height: h, flexDirection: 'row', alignItems: 'center', padding: 4 * sc }}
+      uiBackground={{ color: C(s.big ? '#2A1A00' : '#1A0E2A', 0.92 * (1 - out)) }}>
+      {/* casino frame lights */}
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { left: 0, top: 0 }, width: '100%', height: 3 * sc }} uiBackground={{ color: C(s.big ? '#FFD86A' : '#B07BFF', glow * (1 - out)) }} />
+      <UiEntity uiTransform={{ positionType: 'absolute', position: { left: 0, bottom: 0 }, width: '100%', height: 3 * sc }} uiBackground={{ color: C(s.big ? '#FFD86A' : '#B07BFF', glow * (1 - out)) }} />
+      {spinning ? (
+        <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', width: '100%', height: '100%' }}>
+          <Label value={`<b>${title}</b>`} fontSize={fs(13)} color={frameCol} uiTransform={{ width: 92 * sc }} textAlign="middle-center" />
+          {[0, 1, 2].map((i) => (
+            <UiEntity key={String(i)} uiTransform={{ width: 66 * sc, height: 70 * sc, margin: 3 * sc, justifyContent: 'center', alignItems: 'center' }}
+              uiBackground={{ color: locked(i) && spinT >= 0 ? C(pz ? pz.color : '#FFD86A', 0.28) : C('#000000', 0.9) }}>
+              <Label value={reel(i)} fontSize={fs(40)} color={locked(i) && spinT >= 0 ? col : GOLD} />
+            </UiEntity>
+          ))}
+        </UiEntity>
+      ) : (
+        <UiEntity uiTransform={{ flexDirection: 'column', width: '100%', height: '100%', justifyContent: 'center', padding: { left: 8 * sc } }}>
+          <Label value={`<b>${pz ? pz.sym + pz.sym + pz.sym + ' ' : ''}${title}</b>  <color=#FFD86A>+${s.gold.toLocaleString()} gold</color>`} fontSize={fs(15)} color={col} uiTransform={{ height: 22 * sc }} textAlign="middle-left" />
+          {lines.map((l, i) => (
+            <Label key={String(i)} value={`${evo ? '✦ ' : '▲ '}<b>${l.title}</b> ${l.sub}`} fontSize={fs(evo ? 14 : 12)} color={C(l.color)} uiTransform={{ height: (evo ? 22 : 18) * sc }} textAlign="middle-left" />
+          ))}
+          {!evo && s.rolls.length > 3 ? <Label value={`+${s.rolls.length - 3} more upgrades`} fontSize={fs(11)} color={DIM} uiTransform={{ height: 16 * sc }} textAlign="middle-left" /> : null}
+        </UiEntity>
+      )}
+    </UiEntity>
+  )
+}
+
 /** GOD'S ASCENT: a vortex swallows the screen, a golden flash, then the new floor fades in */
 function WarpOverlay() {
   if (!WARP.on) return null
@@ -1406,6 +1486,7 @@ const Root = () => (
     <SlayerReveal />
     <AutoToast />
     <AscendEnding />
+    <SlotFlyers />
     <WarpOverlay />
   </UiEntity>
 )

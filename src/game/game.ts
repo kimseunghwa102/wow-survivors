@@ -24,6 +24,17 @@ import { save, loadProfile, serverStartRun, serverEndRun, serverBuy, loadBoard, 
 import { getUserAccount, sendAsync, requirePayment } from '~system/EthereumController'
 import { getPlayer } from '@dcl/sdk/players'
 
+export type SlotFly = { id: number; rolls: Option[]; gold: number; prize?: VaultPrize; big: boolean; t: number; spin: number; lane: number; done: boolean }
+/** slot timeline (seconds): pop in at the centre → fly to the right → reels spin → result → slide away */
+export const SLOT_POP = 0.28
+export const SLOT_FLY = 0.42
+export const SLOT_HOLD = 1.7
+export const SLOT_OUT = 0.35
+export const SLOT_LANES = 5
+export const slotReveal = (s: SlotFly) => SLOT_POP + SLOT_FLY + s.spin
+export const slotEnd = (s: SlotFly) => slotReveal(s) + SLOT_HOLD + SLOT_OUT
+let slotId = 1
+let slotSoundT = 0
 export type Phase = 'idle' | 'start' | 'running' | 'levelup' | 'chest' | 'forge' | 'dead'
 export type MetaKey = 'might' | 'hp' | 'magnet' | 'xp'
 export const META: Record<MetaKey, { name: string; desc: string; max: number }> = {
@@ -40,6 +51,8 @@ export const G = {
   choices: [] as Option[],
   chest: null as null | { rolls: Option[]; gold: number; spin: number; big: boolean; prize?: VaultPrize },
   chestQueue: [] as boolean[],
+  /** vault slot machines flying across the screen (they never pause the hunt; several can spin at once) */
+  slots: [] as SlotFly[],
   bank: 0,
   meta: { might: 0, hp: 0, magnet: 0, xp: 0 } as Record<MetaKey, number>,
   best: { t: 0, l: 0, k: 0 },
@@ -793,6 +806,7 @@ function endRun(killer?: string) {
   if (killer && G.lastAttackerId) sendKo(G.lastAttackerId, killer, r.level)
   G.phase = 'dead'
   G.run = null
+  G.slots = []
   clearView()
   play('death')
 }
@@ -821,7 +835,7 @@ function handle(evs: Ev[]) {
         play('coin', 0.8)
         break
       case 'chest':
-        G.chestQueue.push(e.big)
+        launchSlot(r, e.big)
         break
       case 'levelup': {
         play('levelup')
@@ -1063,7 +1077,7 @@ function handle(evs: Ev[]) {
         return
     }
   }
-  if (G.phase === 'running' && G.ascendT <= 0 && (r.pendingLevels > 0 || G.chestQueue.length)) nextModal()
+  if (G.phase === 'running' && G.ascendT <= 0 && r.pendingLevels > 0) nextModal()
   // a new pair of mastered arts can fuse: say so once (the forge button pulses until used)
   if (G.phase === 'running' && G.forgeIntroDone && r.fusionOpen()) {
     const pairs = r.fusablePairs()
@@ -1440,4 +1454,42 @@ export function feedPet(kind: PetKind, n: number) {
     play(after > before ? 'levelup' : 'gem')
     if (after > before) banner(`🐾 ${myPetStats()?.name} grew to Lv ${after}!`, 3)
   })
+}
+
+// ───────── VAULT SLOTS (non-blocking) ─────────
+/** open the vault right away (rewards apply now) and send its slot machine flying; the hunt never stops */
+function launchSlot(r: Run, big: boolean) {
+  const res = r.openChest(big)
+  // several at once leave one after another, like a formation taking off
+  const recent = G.slots.filter((s) => s.t < 0.25).length
+  G.slots.push({ id: slotId++, ...res, big, t: -0.16 * recent, spin: big ? 1.7 : 1.1, lane: -1, done: false })
+}
+/** advance every flying slot (called each frame) */
+export function tickSlots(dt: number) {
+  slotSoundT -= dt
+  const busy = new Set(G.slots.filter((s) => s.lane >= 0).map((s) => s.lane))
+  for (const s of G.slots) {
+    if (s.lane < 0) {
+      // waits for a free lane on the right
+      let free = -1
+      for (let i = 0; i < SLOT_LANES; i++) if (!busy.has(i)) (free = free < 0 ? i : free)
+      if (free < 0) continue
+      s.lane = free
+      busy.add(free)
+    }
+    const before = s.t
+    s.t += dt
+    if (before < 0 && s.t >= 0 && slotSoundT <= 0) {
+      play('jackpot', s.big ? 1 : 1.25)
+      slotSoundT = 0.12
+    }
+    if (!s.done && s.t >= slotReveal(s)) {
+      s.done = true
+      const best = s.rolls.find((o) => o.kind === 'evolve') ?? s.rolls.find((o) => o.kind === 'weapon' || o.kind === 'passive')
+      if (best) showUpgrade(best)
+      if (s.rolls.some((o) => o.kind === 'evolve')) play('evolve')
+      else play('coin', 1.1)
+    }
+  }
+  G.slots = G.slots.filter((s) => s.t < slotEnd(s))
 }
